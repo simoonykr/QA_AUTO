@@ -1,0 +1,88 @@
+04-21 16:02:44.462 11930 11930 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:02:44.462 11930 11930 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:02:44.583 11930 11950 I appium  : Starting ServerInstrumentation
+04-21 16:02:44.635 11930 11950 I appium  : ServerInstrumentation started
+04-21 16:02:57.285 11930 11930 I appium  : Stopping ServerInstrumentation
+04-21 16:02:57.293 11930 11930 I appium  : ServerInstrumentation stopped
+04-21 16:02:57.339   973 12063 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 16:02:57.339   973 12063 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 16:03:01.863 12180 12180 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:03:01.864 12180 12180 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:03:01.985 12180 12202 I appium  : Starting ServerInstrumentation
+04-21 16:03:02.028 12180 12202 I appium  : ServerInstrumentation started
+04-21 16:03:05.583 12231 12231 W ContextImpl: Calling a method in the system process without a qualified user: android.app.ContextImpl.startService:1632 android.content.ContextWrapper.startService:683 com.ims.dm.XDMApplication.onCreate:30 android.app.Instrumentation.callApplicationOnCreate:1190 android.app.ActivityThread.handleMakeApplication:7184 
+04-21 16:03:14.977 12180 12180 I appium  : Stopping ServerInstrumentation
+04-21 16:03:15.002 12180 12180 I appium  : ServerInstrumentation stopped
+04-21 16:03:15.054   973 12277 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 16:03:15.054   973 12277 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 16:25:47.849 13965 13965 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:25:47.849 13965 13965 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:25:47.975 13965 13986 I appium  : Starting ServerInstrumentation
+04-21 16:25:48.553 13965 13986 I appium  : ServerInstrumentation started
+04-21 16:25:55.909 13965 13965 I appium  : Stopping ServerInstrumentation
+04-21 16:25:55.932 13965 13965 I appium  : ServerInstrumentation stopped
+04-21 16:25:55.965   973 14300 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 16:25:55.965   973 14300 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 16:26:08.792 14478 14478 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:26:08.792 14478 14478 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:26:08.914 14478 14510 I appium  : Starting ServerInstrumentation
+04-21 16:26:08.959 14478 14510 I appium  : ServerInstrumentation started
+04-21 16:26:15.771 14478 14478 I appium  : Stopping ServerInstrumentation
+04-21 16:26:15.797 14478 14478 I appium  : ServerInstrumentation stopped
+04-21 16:26:15.845   973 14586 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 16:26:15.845   973 14586 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 16:37:29.824 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:29.826 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:29.831 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:29.832 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:29.832 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:29.845 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:29.967 15010 15164 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.113 15010 15097 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.188 15010 15097 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.190 15010 15097 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.192 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.193 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.193 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.194 15010 15186 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.596 15010 15302 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:37:30.964 15010 15331 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:51:41.338 15010 15589 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:51:41.423 15010 15590 E libc    : Access denied finding property "ro.product.system.name"
+04-21 16:51:48.128 15934 16022 E libc    : Access denied finding property "sys.boot.reason.last"
+04-21 16:51:49.099 15934 16049 E libc    : Access denied finding property "apexd.status"
+04-21 16:51:49.099 15934 16049 E libc    : Access denied finding property "ro.boottime.apexd"
+04-21 16:58:07.887 16913 16931 W Binder  : Caught a RuntimeException from the binder stub implementation.
+04-21 16:58:51.254 18927 18927 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:58:51.255 18927 18927 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:58:51.379 18927 18948 I appium  : Starting ServerInstrumentation
+04-21 16:58:51.433 18927 18948 I appium  : ServerInstrumentation started
+04-21 16:58:57.919 18927 18927 I appium  : Stopping ServerInstrumentation
+04-21 16:58:57.927 18927 18927 I appium  : ServerInstrumentation stopped
+04-21 16:58:57.954   973 18995 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 16:58:57.954   973 18995 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 16:59:18.655 19125 19125 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:59:18.656 19125 19125 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 16:59:18.787 19125 19150 I appium  : Starting ServerInstrumentation
+04-21 16:59:19.354 19125 19150 I appium  : ServerInstrumentation started
+04-21 16:59:25.703 19125 19125 I appium  : Stopping ServerInstrumentation
+04-21 16:59:25.717 19125 19125 I appium  : ServerInstrumentation stopped
+04-21 16:59:25.737   973 19205 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 16:59:25.737   973 19205 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 17:11:25.198   973 20074 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 17:11:25.198   973 20074 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 17:11:25.843   973 20074 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 17:11:25.843   973 20074 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 17:11:30.132 20150 20150 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 17:11:30.133 20150 20150 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 17:11:30.256 20150 20172 I appium  : Starting ServerInstrumentation
+04-21 17:11:30.441 20135 20149 W Binder  : Caught a RuntimeException from the binder stub implementation.
+04-21 17:11:30.441   973 20074 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 17:11:30.441   973 20074 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 17:11:31.144 20190 20190 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Landroid/app/Activity;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 17:11:31.144 20190 20190 W tomator2.serve: Accessing hidden method Landroid/app/Instrumentation;->execStartActivity(Landroid/content/Context;Landroid/os/IBinder;Landroid/os/IBinder;Ljava/lang/String;Landroid/content/Intent;ILandroid/os/Bundle;)Landroid/app/Instrumentation$ActivityResult; (greylist, linking, allowed)
+04-21 17:11:31.272 20190 20231 I appium  : Starting ServerInstrumentation
+04-21 17:11:31.319 20190 20231 I appium  : ServerInstrumentation started
+04-21 17:11:36.305   973 20074 W Binder  : 	at android.app.IInstrumentationWatcher$Stub$Proxy.instrumentationFinished(IInstrumentationWatcher.java:205)
+04-21 17:11:36.305   973 20074 W Binder  : 	at com.android.server.am.InstrumentationReporter$MyThread.run(InstrumentationReporter.java:86)
+04-21 17:11:36.305 20170 20187 W Binder  : Caught a RuntimeException from the binder stub implementation.

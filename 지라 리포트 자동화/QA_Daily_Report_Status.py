@@ -241,6 +241,20 @@ def connect_to_jira(jira_server, email, api_token):
         print(f"Jira 연결 실패: {str(e)}")
         return None
 
+def standardize_status(status):
+    """
+    상태값을 표준화하는 함수
+    '해결됨'과 'Resolved'를 동일하게 처리
+    """
+    status_mapping = {
+        '해결됨': 'Resolved',
+        '다시 열림': 'Reopened',
+        # 필요에 따라 다른 상태값도 매핑 추가 가능
+    }
+    
+    return status_mapping.get(status, status)
+
+# get_jira_metrics 함수에서 이 유틸리티 함수를 호출하도록 수정
 def get_jira_metrics(jira, jql_query):
     """Jira에서 이슈를 검색하고 매트릭스 형태로 집계"""
     try:
@@ -267,22 +281,30 @@ def get_jira_metrics(jira, jql_query):
             priority = issue.fields.priority.name
             if priority.startswith('[') and priority.endswith(']'):
                 priority = priority[1:-1]
+            
+            # 상태값 표준화 적용
+            status = standardize_status(str(issue.fields.status))
                 
             data.append({
                 'key': issue.key,
                 'summary': issue.fields.summary,
-                'status': str(issue.fields.status),
+                'status': status,  # 표준화된 상태값 사용
                 'priority': map_priority(priority),
                 'created': issue.fields.created[:10],
                 'assignee': str(issue.fields.assignee) if issue.fields.assignee else 'Unassigned'
             })
             
         df = pd.DataFrame(data)
+        
+        # 상태별 이슈 수 확인 (디버깅 용도)
+        unique_statuses = df['status'].unique()
+        print(f"발견된 고유 상태값: {unique_statuses}")
+        
         matrix = pd.crosstab(df['status'], df['priority'])
         
         status_order = [
             'COMPLETE',
-            'Resolved',
+            'Resolved',  # 표준화된 이름만 포함
             'OPEN',
             'Known Issue',
             'In Dev',
@@ -509,6 +531,10 @@ def main():
     # Jira 메트릭스 데이터 가져오기
     matrix, df = get_jira_metrics(jira, jql_query)
     if matrix is not None:
+        # 결과 확인 출력
+        print("\n상태별 이슈 분포:")
+        print(df['status'].value_counts())
+        
         # Excel 파일 업데이트
         update_excel_matrix(excel_path, matrix, df)
         
