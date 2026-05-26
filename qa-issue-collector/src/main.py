@@ -137,18 +137,28 @@ class QaIssueCollectorApp:
         frame = self.card(parent, "이슈 정보")
         frame.grid(row=2, column=0, sticky="nsew", pady=(0, 10))
         frame.columnconfigure(1, weight=1)
-        frame.rowconfigure(1, weight=1)
         frame.rowconfigure(2, weight=1)
         frame.rowconfigure(3, weight=1)
+        frame.rowconfigure(4, weight=1)
 
         self.summary_entry = self.add_entry(frame, "요약", 0)
-        self.steps_text = self.add_text(frame, "재현 절차", 1)
-        self.actual_text = self.add_text(frame, "실제 결과", 2)
-        self.expected_text = self.add_text(frame, "기대 결과", 3)
+
+        ttk.Label(frame, text="이슈 속성").grid(row=1, column=0, padx=10, pady=8, sticky="w")
+        issue_meta_frame = ttk.Frame(frame, style="Card.TFrame")
+        issue_meta_frame.grid(row=1, column=1, padx=10, pady=8, sticky="ew")
+        for column in (1, 3, 5):
+            issue_meta_frame.columnconfigure(column, weight=1)
+        self.add_inline_combo(issue_meta_frame, "우선순위", self.priority, ["Blocker", "Critical", "Major", "Minor", "Trivial"], 0)
+        self.add_inline_combo(issue_meta_frame, "테스트 환경", self.test_environment, ["Beta", "Alpha", "Stage", "Live"], 2)
+        self.add_inline_combo(issue_meta_frame, "재현성", self.reproducibility, ["Always", "Sometimes", "Random", "Unable to Reproduce"], 4)
+
+        self.steps_text = self.add_text(frame, "재현 절차", 2)
+        self.actual_text = self.add_text(frame, "실제 결과", 3)
+        self.expected_text = self.add_text(frame, "기대 결과", 4)
 
         option_frame = ttk.Frame(frame, style="Card.TFrame")
-        option_frame.grid(row=4, column=1, padx=10, pady=8, sticky="w")
-        ttk.Label(frame, text="증거 옵션").grid(row=4, column=0, padx=10, pady=8, sticky="w")
+        option_frame.grid(row=5, column=1, padx=10, pady=8, sticky="w")
+        ttk.Label(frame, text="증거 옵션").grid(row=5, column=0, padx=10, pady=8, sticky="w")
         ttk.Label(option_frame, text="로그 범위(초)").pack(side="left")
         ttk.Entry(option_frame, textvariable=self.log_seconds, width=8).pack(side="left", padx=(6, 14))
         ttk.Checkbutton(option_frame, text="영상 녹화", variable=self.record_video).pack(side="left")
@@ -213,10 +223,6 @@ class QaIssueCollectorApp:
         self.assignee_combo.grid(row=2, column=1, padx=10, pady=8, sticky="ew")
         ttk.Button(select_frame, text="담당자 불러오기", command=self.load_jira_assignees, style="Secondary.TButton").grid(row=2, column=2, padx=10, pady=8)
 
-        self.add_combo(select_frame, "우선순위", self.priority, ["Blocker", "Critical", "Major", "Minor", "Trivial"], 3)
-        self.add_combo(select_frame, "테스트 환경", self.test_environment, ["Beta", "Alpha", "Stage", "Live"], 4)
-        self.add_combo(select_frame, "재현성", self.reproducibility, ["Always", "Sometimes", "Random", "Unable to Reproduce"], 5)
-
         self.build_field_frame(parent)
         self.build_jira_status_frame(parent)
 
@@ -271,6 +277,16 @@ class QaIssueCollectorApp:
     def add_combo(self, parent, label, variable, values, row):
         ttk.Label(parent, text=label).grid(row=row, column=0, padx=10, pady=8, sticky="w")
         ttk.Combobox(parent, textvariable=variable, values=values, state="readonly").grid(row=row, column=1, padx=10, pady=8, sticky="ew")
+
+    def add_inline_combo(self, parent, label, variable, values, column):
+        ttk.Label(parent, text=label).grid(row=0, column=column, padx=(0, 6), pady=2, sticky="w")
+        ttk.Combobox(parent, textvariable=variable, values=values, state="readonly", width=18).grid(
+            row=0,
+            column=column + 1,
+            padx=(0, 14),
+            pady=2,
+            sticky="ew",
+        )
 
     def choose_adb_path(self):
         path = filedialog.askopenfilename(title="Select adb.exe", filetypes=[("ADB executable", "adb.exe"), ("EXE files", "*.exe"), ("All files", "*.*")])
