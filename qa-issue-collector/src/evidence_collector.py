@@ -36,7 +36,9 @@ class EvidenceCollector:
             "files": {},
         }
 
-        log_path = issue_dir / "logcat.txt"
+        file_stem = self.safe_name(draft.summary, limit=80)
+
+        log_path = issue_dir / f"{file_stem}.txt"
         self.emit(progress, "logcat 수집 중...")
         log_count = self.adb.collect_logcat(
             draft.device_id,
@@ -47,13 +49,13 @@ class EvidenceCollector:
         metadata["files"]["logcat"] = str(log_path)
         metadata["log_count"] = log_count
 
-        screenshot_path = issue_dir / "screenshot.png"
+        screenshot_path = issue_dir / f"{file_stem}.png"
         self.emit(progress, "스크린샷 저장 중...")
         self.adb.capture_screenshot(draft.device_id, screenshot_path)
         metadata["files"]["screenshot"] = str(screenshot_path)
 
         if draft.record_video:
-            video_path = issue_dir / "screenrecord.mp4"
+            video_path = issue_dir / f"{file_stem}.mp4"
             self.emit(progress, f"{draft.video_seconds}초 화면 녹화 중...")
             self.adb.record_screen(draft.device_id, video_path, seconds=draft.video_seconds)
             metadata["files"]["screenrecord"] = str(video_path)
@@ -71,11 +73,14 @@ class EvidenceCollector:
 
     def create_issue_dir(self, summary):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        safe_summary = "".join(ch if ch.isalnum() or ch in (" ", "-", "_") else "_" for ch in summary)
-        safe_summary = "_".join(safe_summary.split())[:50] or "issue"
+        safe_summary = self.safe_name(summary, limit=50)
         issue_dir = self.issues_dir / f"{timestamp}_{safe_summary}"
         issue_dir.mkdir(parents=True, exist_ok=False)
         return issue_dir
+
+    def safe_name(self, text, limit=80):
+        safe_text = "".join(ch if ch.isalnum() or ch in (" ", "-", "_") else "_" for ch in text)
+        return "_".join(safe_text.split())[:limit] or "issue"
 
     def render_summary(self, metadata):
         issue = metadata["issue"]

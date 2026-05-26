@@ -55,6 +55,12 @@ class JiraUser:
         return self.display_name or identity
 
 
+@dataclass(frozen=True)
+class JiraComponent:
+    id: str
+    name: str
+
+
 class JiraClient:
     def __init__(self, project_root):
         self.project_root = Path(project_root)
@@ -312,6 +318,7 @@ class JiraClient:
         priority=None,
         reproducibility=None,
         test_environment=None,
+        component=None,
     ):
         labels = labels or []
         fields = fields or []
@@ -329,6 +336,8 @@ class JiraClient:
             base_fields["customfield_10400"] = self.to_adf(device_environment)
         if labels and "labels" in field_keys:
             base_fields["labels"] = labels
+        if component and "components" in field_keys:
+            base_fields["components"] = [{"name": component.name}]
         if assignee and "assignee" in field_keys:
             base_fields["assignee"] = self.format_assignee(assignee, cloud=True)
         if priority and "priority" in field_keys:
@@ -377,6 +386,26 @@ class JiraClient:
                 )
             )
         return sorted(users, key=lambda user: user.display_label.lower())
+
+    def list_components(self, project):
+        try:
+            data = self.request_json("GET", f"/rest/api/3/project/{project.key}/components")
+        except JiraError:
+            data = self.request_json("GET", f"/rest/api/2/project/{project.key}/components")
+        components = []
+        for item in data:
+            components.append(JiraComponent(id=str(item.get("id", "")), name=item.get("name", "")))
+        return sorted(components, key=lambda component: component.name.lower())
+
+    def list_labels(self):
+        for path in ("/rest/api/3/label", "/rest/api/2/label"):
+            try:
+                data = self.request_json("GET", path, {"maxResults": 1000})
+                values = data.get("values", data if isinstance(data, list) else [])
+                return sorted({str(value) for value in values if value})
+            except JiraError:
+                continue
+        return []
 
     def format_assignee(self, assignee, cloud=True):
         if cloud and assignee.account_id:

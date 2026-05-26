@@ -10,6 +10,7 @@ Android QA 이슈 등록에 필요한 증거 자료를 수집하고 Jira 이슈 
 - 앱 이름 표시 및 패키지명 보관
 - 이슈 요약, 재현 절차, 실제 결과, 기대 결과 입력
 - 이슈별 우선순위, Test Environment, Reproducibility 선택
+- 이슈별 컴포넌트, 레이블 선택/입력
 - 프로젝트별 담당자 선택
 - Jira 프로젝트, 이슈 타입, 생성 필드 조회
 - 필수 필드 목록 표시
@@ -27,10 +28,11 @@ Android QA 이슈 등록에 필요한 증거 자료를 수집하고 Jira 이슈 
 | 이슈 유형 | `issuetype` | Jira 설정 탭에서 선택 |
 | 담당자 | `assignee` | Jira 설정 탭에서 선택 |
 | 우선순위 | `priority` | 증거 수집 탭의 이슈 정보에서 선택 |
+| 컴포넌트 | `components` | 증거 수집 탭의 이슈 정보에서 선택 |
 | Device Environment | `customfield_10400` | 연결된 디바이스 정보 자동 입력 |
 | Test Environment | `customfield_10027` | 증거 수집 탭의 이슈 정보에서 선택 |
 | Reproducibility | `customfield_10028` | 증거 수집 탭의 이슈 정보에서 선택 |
-| 레이블 | `labels` | `qa-auto`, `android` 자동 입력 |
+| 레이블 | `labels` | 증거 수집 탭의 이슈 정보에서 입력 |
 
 Device Environment에는 제조사, 모델, Android 버전, SDK 버전만 넣습니다.
 
@@ -38,9 +40,9 @@ Device Environment에는 제조사, 모델, Android 버전, SDK 버전만 넣습
 
 Jira에는 아래 파일만 첨부합니다.
 
-- `logcat.txt`
-- `screenshot.png`
-- `screenrecord.mp4` 선택 시
+- `{요약}.txt`
+- `{요약}.png`
+- `{요약}.mp4` 선택 시
 
 ## 실행
 

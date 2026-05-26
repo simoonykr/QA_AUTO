@@ -28,6 +28,7 @@ class QaIssueCollectorApp:
         self.project_by_display_name = {}
         self.issue_type_by_name = {}
         self.assignee_by_display_name = {}
+        self.component_by_name = {}
         self.create_fields = []
 
         self.selected_device = tk.StringVar()
@@ -46,6 +47,8 @@ class QaIssueCollectorApp:
         self.priority = tk.StringVar(value="Major")
         self.reproducibility = tk.StringVar(value="Always")
         self.test_environment = tk.StringVar(value="Stage")
+        self.selected_component = tk.StringVar()
+        self.labels = tk.StringVar(value="android, qa-auto")
 
         self.configure_styles()
         self.build_ui()
@@ -151,6 +154,12 @@ class QaIssueCollectorApp:
         self.add_inline_combo(issue_meta_frame, "우선순위", self.priority, ["Blocker", "Critical", "Major", "Minor", "Trivial"], 0)
         self.add_inline_combo(issue_meta_frame, "테스트 환경", self.test_environment, ["Beta", "Alpha", "Stage", "Live"], 2)
         self.add_inline_combo(issue_meta_frame, "재현성", self.reproducibility, ["Always", "Sometimes", "Random", "Unable to Reproduce"], 4)
+        self.add_inline_combo(issue_meta_frame, "컴포넌트", self.selected_component, [], 0, row=1)
+        self.component_combo = issue_meta_frame.grid_slaves(row=1, column=1)[0]
+        ttk.Button(issue_meta_frame, text="불러오기", command=self.load_jira_components, style="Secondary.TButton").grid(row=1, column=2, padx=(0, 14), pady=(8, 2), sticky="w")
+        self.add_inline_combo(issue_meta_frame, "레이블", self.labels, [], 3, row=1)
+        self.label_combo = issue_meta_frame.grid_slaves(row=1, column=4)[0]
+        ttk.Button(issue_meta_frame, text="불러오기", command=self.load_jira_labels, style="Secondary.TButton").grid(row=1, column=5, padx=(0, 14), pady=(8, 2), sticky="w")
 
         self.steps_text = self.add_text(frame, "재현 절차", 2)
         self.actual_text = self.add_text(frame, "실제 결과", 3)
@@ -278,13 +287,15 @@ class QaIssueCollectorApp:
         ttk.Label(parent, text=label).grid(row=row, column=0, padx=10, pady=8, sticky="w")
         ttk.Combobox(parent, textvariable=variable, values=values, state="readonly").grid(row=row, column=1, padx=10, pady=8, sticky="ew")
 
-    def add_inline_combo(self, parent, label, variable, values, column):
-        ttk.Label(parent, text=label).grid(row=0, column=column, padx=(0, 6), pady=2, sticky="w")
-        ttk.Combobox(parent, textvariable=variable, values=values, state="readonly", width=18).grid(
-            row=0,
+    def add_inline_combo(self, parent, label, variable, values, column, row=0):
+        state = "readonly" if values else "normal"
+        vertical_padding = 2 if row == 0 else 8
+        ttk.Label(parent, text=label).grid(row=row, column=column, padx=(0, 6), pady=(vertical_padding, 2), sticky="w")
+        ttk.Combobox(parent, textvariable=variable, values=values, state=state, width=18).grid(
+            row=row,
             column=column + 1,
             padx=(0, 14),
-            pady=2,
+            pady=(vertical_padding, 2),
             sticky="ew",
         )
 
@@ -392,6 +403,9 @@ class QaIssueCollectorApp:
         display_names = list(self.project_by_display_name)
         self.project_combo["values"] = display_names
         self.selected_project.set(display_names[0] if display_names else "")
+        self.component_by_name = {}
+        self.selected_component.set("")
+        self.component_combo["values"] = []
         self.log_jira_status(f"프로젝트 {len(display_names)}개를 불러왔습니다.")
 
     def load_jira_issue_types(self):
@@ -441,6 +455,48 @@ class QaIssueCollectorApp:
         if display_names and not self.selected_assignee.get().strip():
             self.selected_assignee.set(display_names[0])
         self.log_jira_status(f"담당자 {len(display_names)}명을 불러왔습니다.")
+
+    def load_jira_components(self):
+        project = self.project_by_display_name.get(self.selected_project.get())
+        if not project:
+            messagebox.showwarning("프로젝트 필요", "Jira 프로젝트를 선택해주세요.")
+            return
+        self.log_jira_status(f"{project.key} 컴포넌트 목록을 불러오는 중...")
+        threading.Thread(target=self.load_jira_components_worker, args=(project,), daemon=True).start()
+
+    def load_jira_components_worker(self, project):
+        try:
+            components = self.jira.list_components(project)
+        except JiraError as exc:
+            self.ui_queue.put(("jira_error", str(exc)))
+            return
+        self.ui_queue.put(("jira_components_loaded", components))
+
+    def apply_jira_components(self, components):
+        self.component_by_name = {component.name: component for component in components}
+        names = list(self.component_by_name)
+        self.component_combo["values"] = names
+        if names and not self.selected_component.get().strip():
+            self.selected_component.set(names[0])
+        self.log_jira_status(f"컴포넌트 {len(names)}개를 불러왔습니다.")
+
+    def load_jira_labels(self):
+        if not self.jira.is_configured() and not self.save_jira_settings():
+            return
+        self.log_jira_status("레이블 목록을 불러오는 중...")
+        threading.Thread(target=self.load_jira_labels_worker, daemon=True).start()
+
+    def load_jira_labels_worker(self):
+        try:
+            labels = self.jira.list_labels()
+        except JiraError as exc:
+            self.ui_queue.put(("jira_error", str(exc)))
+            return
+        self.ui_queue.put(("jira_labels_loaded", labels))
+
+    def apply_jira_labels(self, labels):
+        self.label_combo["values"] = labels
+        self.log_jira_status(f"레이블 {len(labels)}개를 불러왔습니다. 여러 개는 쉼표로 입력하세요.")
 
     def load_jira_fields(self):
         project, issue_type = self.get_selected_jira_context()
@@ -511,12 +567,13 @@ class QaIssueCollectorApp:
                 summary=draft.summary,
                 description_text=self.build_jira_description(draft, app_info, metadata.get("files", {})),
                 device_environment=self.build_device_environment(device_info),
-                labels=["qa-auto", "android"],
+                labels=self.get_labels(),
                 fields=self.create_fields,
                 assignee=self.get_selected_assignee(),
                 priority=self.priority.get(),
                 reproducibility=self.reproducibility.get(),
                 test_environment=self.test_environment.get(),
+                component=self.get_selected_component(),
             )
             issue_key = result.get("key", "")
             if not issue_key:
@@ -627,10 +684,27 @@ class QaIssueCollectorApp:
         if self.is_field_required("assignee") and not self.get_selected_assignee():
             messagebox.showwarning("담당자 필요", "담당자 필드가 필수입니다. 담당자를 불러온 뒤 선택해주세요.")
             return False
+        if self.is_field_required("components") and not self.get_selected_component():
+            messagebox.showwarning("컴포넌트 필요", "컴포넌트 필드가 필수입니다. 컴포넌트를 불러온 뒤 선택해주세요.")
+            return False
+        if self.is_field_required("labels") and not self.get_labels():
+            messagebox.showwarning("레이블 필요", "레이블 필드가 필수입니다. 레이블을 입력해주세요.")
+            return False
         return True
 
     def get_selected_assignee(self):
         return self.assignee_by_display_name.get(self.selected_assignee.get().strip())
+
+    def get_selected_component(self):
+        return self.component_by_name.get(self.selected_component.get().strip())
+
+    def get_labels(self):
+        values = []
+        for label in self.labels.get().replace("\n", ",").split(","):
+            cleaned = label.strip()
+            if cleaned and cleaned not in values:
+                values.append(cleaned)
+        return values
 
     def is_field_required(self, field_key):
         return any(field.key == field_key and field.required for field in self.create_fields)
@@ -693,6 +767,10 @@ class QaIssueCollectorApp:
                 self.apply_jira_issue_types(item[1])
             elif event == "jira_assignees_loaded":
                 self.apply_jira_assignees(item[1])
+            elif event == "jira_components_loaded":
+                self.apply_jira_components(item[1])
+            elif event == "jira_labels_loaded":
+                self.apply_jira_labels(item[1])
             elif event == "jira_fields_loaded":
                 self.apply_jira_fields(item[1])
             elif event == "collect_jira_done":
