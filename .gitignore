@@ -7,6 +7,7 @@ venv/
 # Local credentials and runtime config
 settings.json
 config.json
+jira_config.json
 *.env
 *.local.json
 session_cookies.json
@@ -14,6 +15,9 @@ session_cookies.json
 # Generated logs and temporary outputs
 *.log
 *.tmp
+screenshot_*.png
+preprocessed_screenshot_*.png
+extracted_text_*.txt
 temp/
 tmp/
 
