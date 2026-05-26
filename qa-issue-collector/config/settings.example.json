@@ -1,0 +1,9 @@
+{
+  "adb_path": "C:\\path\\to\\adb.exe",
+  "aapt_path": "C:\\path\\to\\aapt.exe",
+  "jira": {
+    "url": "https://your-company.atlassian.net",
+    "email": "your-email@example.com",
+    "api_token": "DO_NOT_COMMIT_REAL_TOKEN"
+  }
+}
