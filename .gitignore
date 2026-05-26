@@ -1,0 +1,24 @@
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local credentials and runtime config
+settings.json
+config.json
+*.env
+*.local.json
+session_cookies.json
+
+# Generated logs and temporary outputs
+*.log
+*.tmp
+temp/
+tmp/
+
+# QA Issue Collector runtime outputs
+qa-issue-collector/config/settings.json
+qa-issue-collector/data/issues/
+qa-issue-collector/data/apk_cache/
+qa-issue-collector/data/app_label_cache.json
