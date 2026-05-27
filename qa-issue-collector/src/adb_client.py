@@ -361,6 +361,20 @@ class AdbClient:
         Path(output_path).write_text("\n".join(filtered) + "\n", encoding="utf-8")
         return len(filtered)
 
+    def collect_logcat_between(self, device_id, output_path, start_time, end_time, package_name=None):
+        args = ["-s", device_id, "logcat", "-v", "threadtime", "-d"]
+        result = self.run(args, timeout=40, check=True)
+        lines = result.stdout.splitlines()
+
+        if package_name:
+            pids = set(self.get_pid(device_id, package_name))
+            if pids:
+                lines = [line for line in lines if self.line_has_pid(line, pids)]
+
+        filtered = self.filter_threadtime_between(lines, start_time, end_time)
+        Path(output_path).write_text("\n".join(filtered) + "\n", encoding="utf-8")
+        return len(filtered)
+
     def line_has_pid(self, line, pids):
         parts = line.split(maxsplit=5)
         return len(parts) >= 3 and parts[2] in pids
@@ -369,6 +383,11 @@ class AdbClient:
         from datetime import datetime, timedelta
 
         start_time = datetime.now() - timedelta(seconds=seconds)
+        return self.filter_threadtime_between(lines, start_time, datetime.now())
+
+    def filter_threadtime_between(self, lines, start_time, end_time):
+        from datetime import datetime
+
         filtered = []
         for line in lines:
             parts = line.split(maxsplit=5)
@@ -381,6 +400,6 @@ class AdbClient:
                 )
             except ValueError:
                 continue
-            if log_time >= start_time:
+            if start_time <= log_time <= end_time:
                 filtered.append(line)
         return filtered

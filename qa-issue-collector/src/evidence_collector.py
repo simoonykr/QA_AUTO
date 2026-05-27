@@ -1,6 +1,8 @@
 import json
+import threading
+import time
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -13,7 +15,8 @@ class IssueDraft:
     severity: str
     package_name: str
     device_id: str
-    log_seconds: int
+    pre_log_seconds: int
+    post_log_seconds: int
     record_video: bool
     video_seconds: int
 
@@ -25,6 +28,7 @@ class EvidenceCollector:
         self.issues_dir = self.project_root / "data" / "issues"
 
     def collect(self, draft, progress=None):
+        anchor_time = datetime.now()
         issue_dir = self.create_issue_dir(draft.summary)
         self.emit(progress, f"이슈 폴더 생성: {issue_dir}")
 
@@ -37,28 +41,62 @@ class EvidenceCollector:
         }
 
         file_stem = self.safe_name(draft.summary, limit=80)
+        video_error = []
+        video_thread = None
 
-        log_path = issue_dir / f"{file_stem}.txt"
-        self.emit(progress, "logcat 수집 중...")
-        log_count = self.adb.collect_logcat(
+        if draft.record_video:
+            video_path = issue_dir / f"{file_stem}.mp4"
+            metadata["files"]["screenrecord"] = str(video_path)
+            self.emit(progress, f"버튼 시점 이후 {draft.video_seconds}초 화면 녹화를 시작합니다.")
+
+            def record_video():
+                try:
+                    self.adb.record_screen(draft.device_id, video_path, seconds=draft.video_seconds)
+                except Exception as exc:
+                    video_error.append(exc)
+
+            video_thread = threading.Thread(target=record_video, daemon=True)
+            video_thread.start()
+
+        before_log_path = issue_dir / f"{file_stem}_before.txt"
+        self.emit(progress, f"버튼 시점 이전 {draft.pre_log_seconds}초 logcat 수집 중...")
+        before_log_count = self.adb.collect_logcat_between(
             draft.device_id,
-            log_path,
+            before_log_path,
+            anchor_time - timedelta(seconds=draft.pre_log_seconds),
+            anchor_time,
             package_name=draft.package_name,
-            seconds=draft.log_seconds,
         )
-        metadata["files"]["logcat"] = str(log_path)
-        metadata["log_count"] = log_count
+        metadata["files"]["logcat_before"] = str(before_log_path)
+        metadata["log_before_count"] = before_log_count
 
         screenshot_path = issue_dir / f"{file_stem}.png"
         self.emit(progress, "스크린샷 저장 중...")
         self.adb.capture_screenshot(draft.device_id, screenshot_path)
         metadata["files"]["screenshot"] = str(screenshot_path)
 
-        if draft.record_video:
-            video_path = issue_dir / f"{file_stem}.mp4"
-            self.emit(progress, f"{draft.video_seconds}초 화면 녹화 중...")
-            self.adb.record_screen(draft.device_id, video_path, seconds=draft.video_seconds)
-            metadata["files"]["screenrecord"] = str(video_path)
+        after_end_time = anchor_time + timedelta(seconds=draft.post_log_seconds)
+        remaining = (after_end_time - datetime.now()).total_seconds()
+        if remaining > 0:
+            self.emit(progress, f"버튼 시점 이후 {draft.post_log_seconds}초 logcat 대기 중...")
+            time.sleep(remaining)
+
+        after_log_path = issue_dir / f"{file_stem}_after.txt"
+        self.emit(progress, f"버튼 시점 이후 {draft.post_log_seconds}초 logcat 수집 중...")
+        after_log_count = self.adb.collect_logcat_between(
+            draft.device_id,
+            after_log_path,
+            anchor_time,
+            after_end_time,
+            package_name=draft.package_name,
+        )
+        metadata["files"]["logcat_after"] = str(after_log_path)
+        metadata["log_after_count"] = after_log_count
+
+        if video_thread:
+            video_thread.join()
+            if video_error:
+                raise video_error[0]
 
         metadata_path = issue_dir / "issue_meta.json"
         metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -108,7 +146,8 @@ class EvidenceCollector:
 {issue["expected_result"]}
 
 ## 첨부 파일
-- 로그: {files.get("logcat", "")}
+- 이전 로그: {files.get("logcat_before", "")}
+- 이후 로그: {files.get("logcat_after", "")}
 - 스크린샷: {files.get("screenshot", "")}
 - 영상: {files.get("screenrecord", "")}
 """

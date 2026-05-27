@@ -33,7 +33,8 @@ class QaIssueCollectorApp:
 
         self.selected_device = tk.StringVar()
         self.selected_package_display = tk.StringVar()
-        self.log_seconds = tk.StringVar(value="30")
+        self.pre_log_seconds = tk.StringVar(value="30")
+        self.post_log_seconds = tk.StringVar(value="10")
         self.video_seconds = tk.StringVar(value="10")
         self.record_video = tk.BooleanVar(value=False)
         self.adb_path = tk.StringVar(value=self.adb.adb_path)
@@ -168,8 +169,10 @@ class QaIssueCollectorApp:
         option_frame = ttk.Frame(frame, style="Card.TFrame")
         option_frame.grid(row=5, column=1, padx=10, pady=8, sticky="w")
         ttk.Label(frame, text="증거 옵션").grid(row=5, column=0, padx=10, pady=8, sticky="w")
-        ttk.Label(option_frame, text="로그 범위(초)").pack(side="left")
-        ttk.Entry(option_frame, textvariable=self.log_seconds, width=8).pack(side="left", padx=(6, 14))
+        ttk.Label(option_frame, text="이전 로그(초)").pack(side="left")
+        ttk.Entry(option_frame, textvariable=self.pre_log_seconds, width=8).pack(side="left", padx=(6, 14))
+        ttk.Label(option_frame, text="이후 로그(초)").pack(side="left")
+        ttk.Entry(option_frame, textvariable=self.post_log_seconds, width=8).pack(side="left", padx=(6, 14))
         ttk.Checkbutton(option_frame, text="영상 녹화", variable=self.record_video).pack(side="left")
         ttk.Entry(option_frame, textvariable=self.video_seconds, width=8).pack(side="left", padx=(6, 4))
         ttk.Label(option_frame, text="초").pack(side="left")
@@ -540,7 +543,7 @@ class QaIssueCollectorApp:
         except Exception as exc:
             self.ui_queue.put(("error", str(exc)))
             return
-        self.ui_queue.put(("done", str(issue_dir), metadata.get("log_count", 0)))
+        self.ui_queue.put(("done", str(issue_dir), metadata.get("log_before_count", 0), metadata.get("log_after_count", 0)))
 
     def start_collect_and_create_jira(self):
         draft = self.build_draft()
@@ -602,9 +605,10 @@ class QaIssueCollectorApp:
             messagebox.showwarning("앱 필요", "앱을 선택하거나 패키지명을 입력해주세요.")
             return None
         try:
-            log_seconds = int(self.log_seconds.get())
+            pre_log_seconds = int(self.pre_log_seconds.get())
+            post_log_seconds = int(self.post_log_seconds.get())
             video_seconds = int(self.video_seconds.get())
-            if log_seconds <= 0 or video_seconds <= 0:
+            if pre_log_seconds <= 0 or post_log_seconds <= 0 or video_seconds <= 0:
                 raise ValueError
         except ValueError:
             messagebox.showwarning("입력 오류", "로그/영상 시간은 양의 정수로 입력해주세요.")
@@ -617,7 +621,8 @@ class QaIssueCollectorApp:
             severity=self.priority.get(),
             package_name=package_name,
             device_id=device_id,
-            log_seconds=log_seconds,
+            pre_log_seconds=pre_log_seconds,
+            post_log_seconds=post_log_seconds,
             record_video=self.record_video.get(),
             video_seconds=video_seconds,
         )
@@ -625,7 +630,7 @@ class QaIssueCollectorApp:
     def build_jira_description(self, draft, app_info, files=None):
         files = files or {}
         attachment_lines = []
-        for label, key in (("로그", "logcat"), ("스크린샷", "screenshot"), ("영상", "screenrecord")):
+        for label, key in (("이전 로그", "logcat_before"), ("이후 로그", "logcat_after"), ("스크린샷", "screenshot"), ("영상", "screenrecord")):
             if files.get(key):
                 attachment_lines.append(f"- {label}: {Path(files[key]).name}")
         if not attachment_lines:
@@ -664,7 +669,7 @@ class QaIssueCollectorApp:
     def get_attachment_files(self, metadata):
         files = metadata.get("files", {})
         paths = []
-        for key in ("logcat", "screenshot", "screenrecord"):
+        for key in ("logcat_before", "logcat_after", "screenshot", "screenrecord"):
             if files.get(key):
                 paths.append(files[key])
         return paths
@@ -754,7 +759,7 @@ class QaIssueCollectorApp:
             elif event == "done":
                 self.set_collect_buttons_state("normal")
                 self.log_status(f"완료: {item[1]}")
-                self.log_status(f"수집된 로그 라인: {item[2]}")
+                self.log_status(f"수집된 로그 라인: 이전 {item[2]} / 이후 {item[3]}")
                 messagebox.showinfo("증거 수집 완료", f"증거 수집이 완료되었습니다.\n{item[1]}")
             elif event == "jira_status":
                 self.log_jira_status(item[1])
