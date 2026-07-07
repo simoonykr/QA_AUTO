@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build outputs
+build/
+dist/
+outputs/
+*.spec
+
+# Runtime data
+aos_game_auto/logs/*
+aos_game_auto/screenshots/*
+aos_game_auto/reports/*
+
+# Local template captures can contain app/game UI assets.
+aos_game_auto/templates/*.png
+aos_game_auto/templates/*/
+
+# Keep folders in source checkouts.
+!aos_game_auto/logs/.gitkeep
+!aos_game_auto/screenshots/.gitkeep
+!aos_game_auto/reports/.gitkeep
+!aos_game_auto/templates/.gitkeep
+
+# Large local installers/tools
+tools/*.exe
+tools/*.msi
+
+# OS/editor noise
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/

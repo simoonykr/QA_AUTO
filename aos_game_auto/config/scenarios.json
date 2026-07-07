@@ -1,0 +1,31 @@
+{
+    "app":  {
+                "package":  ""
+            },
+    "loop":  {
+                 "interval_seconds":  1,
+                 "max_iterations":  300,
+                 "default_script":  "aaw_test1"
+             },
+    "scenarios":  [
+                      {
+                          "name":  "start",
+                          "script":  "default",
+                          "template":  "templates/start.png",
+                          "threshold":  0.85,
+                          "action":  {
+                                         "type":  "tap"
+                                     }
+                      },
+                      {
+                          "name":  "start2",
+                          "script":  "default",
+                          "template":  "templates/start2.png",
+                          "threshold":  0.85,
+                          "action":  {
+                                         "type":  "tap"
+                                     },
+                          "enabled":  false
+                      }
+                  ]
+}
