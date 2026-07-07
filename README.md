@@ -46,3 +46,5 @@ python src\main.py
 ## 리뷰 노트
 
 전체 저장소 개선 항목은 [docs/repository-review.md](docs/repository-review.md)에 정리했습니다.
+
+멀티 플랫폼 증적 수집 도구 요구사항은 [docs/platform-collector-requirements.md](docs/platform-collector-requirements.md)에 정리했습니다.
