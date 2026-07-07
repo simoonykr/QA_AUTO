@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+
+config/settings.json
+data/issues/
+data/apk_cache/
+data/app_label_cache.json
+
+.venv/
+venv/
+dist/
+build/
+*.spec

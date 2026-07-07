@@ -1,13 +1,19 @@
-# Python
+# Python cache and local environments
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
-
-# Virtual environments
 .venv/
 venv/
 env/
+
+# Local credentials and runtime config
+settings.json
+config.json
+jira_config.json
+*.env
+*.local.json
+session_cookies.json
 
 # Build outputs
 build/
@@ -15,7 +21,16 @@ dist/
 outputs/
 *.spec
 
-# Runtime data
+# Generated logs and temporary outputs
+*.log
+*.tmp
+screenshot_*.png
+preprocessed_screenshot_*.png
+extracted_text_*.txt
+temp/
+tmp/
+
+# AOS game automation runtime data
 aos_game_auto/logs/*
 aos_game_auto/screenshots/*
 aos_game_auto/reports/*
@@ -29,6 +44,12 @@ aos_game_auto/templates/*/
 !aos_game_auto/screenshots/.gitkeep
 !aos_game_auto/reports/.gitkeep
 !aos_game_auto/templates/.gitkeep
+
+# QA Issue Collector runtime outputs
+qa-issue-collector/config/settings.json
+qa-issue-collector/data/issues/
+qa-issue-collector/data/apk_cache/
+qa-issue-collector/data/app_label_cache.json
 
 # Large local installers/tools
 tools/*.exe
