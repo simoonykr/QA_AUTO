@@ -11,7 +11,7 @@ import { api } from './api/client'
 import { mockSteps } from './api/mockData'
 import type { TestCaseSummary } from './api/types'
 
-type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result'
+type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done'
 type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
 
@@ -53,9 +53,9 @@ function App() {
           <Nav active={view === 'cases'} icon={<ListChecks/>} label="테스트 케이스" badge="24" onClick={() => setView('cases')}/>
           <Nav active={view === 'run'} icon={<Activity/>} label="실행 모니터" badge="3" onClick={() => setView('run')}/>
           <p className="nav-label spaced">Manage</p>
-          <Nav icon={<TerminalSquare/>} label="실행 환경" onClick={() => toast('환경 관리 화면은 다음 단계에서 연결합니다.')}/>
-          <Nav icon={<Users/>} label="계정 및 데이터" onClick={() => toast('테스트 계정은 별칭으로 안전하게 관리됩니다.')}/>
-          <Nav icon={<ShieldCheck/>} label="정책 및 승인" onClick={() => toast('위험 행동 승인 정책을 준비 중입니다.')}/>
+          <Nav active={view === 'environments'} icon={<TerminalSquare/>} label="실행 환경" onClick={() => setView('environments')}/>
+          <Nav active={view === 'accounts'} icon={<Users/>} label="계정 및 데이터" onClick={() => setView('accounts')}/>
+          <Nav active={view === 'policies'} icon={<ShieldCheck/>} label="정책 및 승인" onClick={() => setView('policies')}/>
         </nav>
         <div className="project-card">
           <div className="project-dot">S</div><div><b>Storefront QA</b><small>Staging · Chromium</small></div><ChevronDown size={16}/>
@@ -75,6 +75,9 @@ function App() {
         {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={startRun}/>} 
         {view === 'run' && <RunMonitor state={runState} activeStep={activeStep} start={startRun} pause={() => setRunState(runState === 'paused' ? 'running' : 'paused')} stop={() => {setRunState('idle'); setActiveStep(0)}} onResult={() => setView('result')}/>}
         {view === 'result' && <ResultDetail onBack={() => setView('dashboard')} onRetry={startRun}/>} 
+        {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
+        {view === 'accounts' && <ManagementPage kind="account" onToast={toast}/>}
+        {view === 'policies' && <ManagementPage kind="policy" onToast={toast}/>}
       </main>
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
@@ -117,10 +120,26 @@ function Dashboard({onRun, onCases}: {onRun: () => void; onCases: () => void}) {
 function Metric({icon,label,value,delta,tone}: {icon: React.ReactNode; label:string; value:string; delta:string; tone:string}) { return <article className="metric"><div className={`metric-icon ${tone}`}>{icon}</div><div><p>{label}</p><strong>{value}</strong><small className={tone}>{delta}</small></div></article> }
 function StatusIcon({type}: {type:'pass'|'running'|'fail'}) { return <span className={`status-icon ${type}`}>{type==='pass'?<Check/>:type==='fail'?<XCircle/>:<Activity/>}</span> }
 
-function Cases({query,setQuery,rows,onRun,onCreate}: {query:string; setQuery:(s:string)=>void; rows:TestCaseSummary[]; onRun:()=>void; onCreate:()=>void; onToast:(s:string)=>void}) {
+function ManagementPage({kind,onToast}:{kind:'environment'|'account'|'policy';onToast:(s:string)=>void}) {
+  const data = {
+    environment: { eyebrow:'EXECUTION TARGETS', title:'실행 환경', desc:'테스트 대상 URL과 브라우저 접근 범위를 관리합니다.', button:'환경 추가', icon:<TerminalSquare/>, rows:[['Staging','https://staging.storefront.test','정상'],['Development','https://dev.storefront.test','정상']] },
+    account: { eyebrow:'TEST DATA', title:'계정 및 데이터', desc:'실행에 사용할 계정 별칭과 데이터 세트를 안전하게 관리합니다.', button:'계정 추가', icon:<Users/>, rows:[['qa-runner-01','signup-default-v2','사용 가능'],['qa-runner-02','checkout-default-v1','사용 가능']] },
+    policy: { eyebrow:'SAFETY GUARDRAILS', title:'정책 및 승인', desc:'외부 이동과 파괴적 행동에 대한 실행 승인 규칙을 설정합니다.', button:'정책 추가', icon:<ShieldCheck/>, rows:[['외부 도메인 이동','항상 차단','활성'],['결제·삭제 행동','실행 전 승인','활성'],['파일 다운로드','허용 목록만','활성']] },
+  }[kind]
+  return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">{data.eyebrow}</p><h1>{data.title}</h1><p>{data.desc}</p></div><button className="primary" onClick={()=>onToast(`${data.button} 기능은 API 연결 후 저장됩니다.`)}><Plus size={16}/>{data.button}</button></div>
+    <div className="manage-summary"><article className="panel"><span>{data.icon}</span><div><small>등록 항목</small><b>{data.rows.length}</b></div></article><article className="panel"><span><CheckCircle2/></span><div><small>정상 상태</small><b>{data.rows.length}</b></div></article><article className="panel"><span><Clock3/></span><div><small>최근 변경</small><b>오늘 18:32</b></div></article></div>
+    <article className="panel manage-list"><div className="panel-head"><div><h2>{data.title} 목록</h2><p>변경 사항은 감사 로그에 기록됩니다.</p></div><button className="secondary" onClick={()=>onToast('목록을 새로고침했습니다.')}><RefreshCw size={14}/> 새로고침</button></div>{data.rows.map((row)=><div className="manage-row" key={row[0]}><span className="manage-icon">{data.icon}</span><div><b>{row[0]}</b><small>{row[1]}</small></div><span className="pill pass">{row[2]}</span><button className="icon-button" aria-label={`${row[0]} 설정`} onClick={()=>onToast(`${row[0]} 상세 설정을 선택했습니다.`)}><Settings size={16}/></button></div>)}</article>
+  </section>
+}
+
+function Cases({query,setQuery,rows,onRun,onCreate,onToast}: {query:string; setQuery:(s:string)=>void; rows:TestCaseSummary[]; onRun:()=>void; onCreate:()=>void; onToast:(s:string)=>void}) {
+  const [status,setStatus] = useState('ALL')
+  const [group,setGroup] = useState('ALL')
+  const visibleRows = rows.filter(row => (status === 'ALL' || row.status === status) && (group === 'ALL' || row.group === group))
+  const groups = [...new Set(rows.map(row => row.group))]
   return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">TEST LIBRARY</p><h1>테스트 케이스</h1><p>자연어 TC를 구조화하고 실행 준비 상태를 관리합니다.</p></div><button className="primary" onClick={onCreate}><Plus size={16}/> 새 테스트 케이스</button></div>
-    <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="ID, 이름 또는 그룹 검색"/></div><button className="secondary">상태: 전체 <ChevronDown size={15}/></button><button className="secondary">그룹: 전체 <ChevronDown size={15}/></button></div>
-    <article className="panel table-panel"><table><thead><tr><th>테스트 케이스</th><th>그룹</th><th>준비 상태</th><th>최근 성공률</th><th>마지막 실행</th><th/></tr></thead><tbody>{rows.map((row)=><tr key={row.id}><td><span className="file-icon"><FileText/></span><span><b>{row.title}</b><small>{row.id}</small></span></td><td>{row.group}</td><td><span className={`pill ${row.status==='READY'?'pass':'review'}`}>{row.status.replace('_',' ')}</span></td><td><div className="rate"><span><i style={{width:`${row.passRate}%`}}/></span>{row.passRate}%</div></td><td>{row.lastExecutedAt}</td><td><button className="row-play" onClick={onRun}><Play size={14}/></button></td></tr>)}</tbody></table></article>
+    <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="ID, 이름 또는 그룹 검색"/></div><Select value={status} setValue={setStatus} options={['ALL','READY','REVIEW_REQUIRED']}/><Select value={group} setValue={setGroup} options={['ALL',...groups]}/><button className="secondary" onClick={()=>onToast('XLSX 가져오기는 백엔드 파서 연결 후 활성화됩니다.')}><Upload size={15}/> 파일 가져오기</button></div>
+    <article className="panel table-panel"><table><thead><tr><th>테스트 케이스</th><th>그룹</th><th>준비 상태</th><th>최근 성공률</th><th>마지막 실행</th><th/></tr></thead><tbody>{visibleRows.map((row)=><tr key={row.id}><td><span className="file-icon"><FileText/></span><span><b>{row.title}</b><small>{row.id}</small></span></td><td>{row.group}</td><td><span className={`pill ${row.status==='READY'?'pass':'review'}`}>{row.status.replace('_',' ')}</span></td><td><div className="rate"><span><i style={{width:`${row.passRate}%`}}/></span>{row.passRate}%</div></td><td>{row.lastExecutedAt}</td><td><button className="row-play" onClick={onRun}><Play size={14}/></button></td></tr>)}</tbody></table>{visibleRows.length===0&&<div className="empty-table">조건에 맞는 테스트 케이스가 없습니다.</div>}</article>
   </section>
 }
 
