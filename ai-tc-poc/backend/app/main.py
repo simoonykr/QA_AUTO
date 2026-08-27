@@ -1,0 +1,31 @@
+from uuid import uuid4
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from app.core.config import get_settings
+from app.core.errors import DomainError, domain_error_handler
+from app.modules.executions.router import router as execution_router
+from app.modules.test_cases.router import router as test_case_router, version_router
+
+
+settings = get_settings()
+app = FastAPI(title=settings.app_name, version="0.1.0")
+app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_exception_handler(DomainError, domain_error_handler)
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    request.state.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok", "environment": settings.app_env}
+
+
+app.include_router(test_case_router, prefix="/api/v1")
+app.include_router(version_router, prefix="/api/v1")
+app.include_router(execution_router, prefix="/api/v1")

@@ -20,6 +20,10 @@ build/
 dist/
 outputs/
 *.spec
+node_modules/
+*.egg-info/
+coverage/
+.coverage
 
 # Generated logs and temporary outputs
 *.log
