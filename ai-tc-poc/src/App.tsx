@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowRight, Bot, Check, CheckCircle2,
   ChevronDown, CircleDot, Clock3, FileText, Gauge, LayoutDashboard,
@@ -146,12 +146,22 @@ function Cases({query,setQuery,rows,onRun,onCreate,onToast}: {query:string; setQ
 function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setStage:(s:AuthorStage)=>void; onBack:()=>void; onRun:()=>void; onToast:(s:string)=>void}) {
   const [title,setTitle] = useState('신규 사용자 이메일 회원가입')
   const [raw,setRaw] = useState('Staging 환경에 접속한다.\n회원가입 버튼을 누르고 사용하지 않은 이메일과 안전한 비밀번호를 입력한다.\n약관에 동의한 뒤 가입을 완료한다.\n가입 완료 후 환영 메시지와 대시보드가 표시되는지 확인한다.')
+  const [importedFile,setImportedFile] = useState('')
+  const fileInput = useRef<HTMLInputElement>(null)
+  const importFile = (file?: File) => {
+    if (!file) return
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    if (!['csv','xlsx','docx','txt'].includes(extension ?? '')) return onToast('지원하지 않는 파일 형식입니다.')
+    setImportedFile(file.name)
+    if (extension === 'txt' || extension === 'csv') file.text().then(text => { setRaw(text); setTitle(file.name.replace(/\.[^.]+$/, '')); onToast(`${file.name} 내용을 불러왔습니다.`) })
+    else onToast(`${file.name}을 선택했습니다. 서버 파서 연결 후 분석할 수 있습니다.`)
+  }
   const structure = async () => { setStage('structuring'); try { await api.structureTestCase(title,raw); setStage('review') } catch { setStage('draft'); onToast('TC 구조화에 실패했습니다. 다시 시도해 주세요.') } }
   return <section className="page author-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>setStage('ready')}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'ANALYZING':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>AI 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
-      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary"><Upload size={15}/> 파일 가져오기</button></div><label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>setTitle(e.target.value)}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>setRaw(e.target.value)}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT 지원</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'}>{stage==='structuring'?<><Activity className="spin"/> TC를 분석하고 있습니다...</>:<><WandSparkles/> AI로 구조화하기 <ArrowRight/></>}</button></article>
+      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()}><Upload size={15}/> 파일 가져오기</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거"><XCircle size={14}/></button></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>setTitle(e.target.value)}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>setRaw(e.target.value)}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT 지원</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'}>{stage==='structuring'?<><Activity className="spin"/> TC를 분석하고 있습니다...</>:<><WandSparkles/> AI로 구조화하기 <ArrowRight/></>}</button></article>
       <article className={`panel review-panel ${stage==='draft'?'empty-review':''}`}>
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>AI가 전제조건, 실행 단계와 기대 결과를 분리하고 모호한 부분을 알려드립니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
