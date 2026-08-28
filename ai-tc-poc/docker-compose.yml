@@ -38,6 +38,16 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_started }
+  outbox-publisher:
+    build: ./backend
+    command: ["python", "-m", "app.workers.outbox_publisher"]
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://tracepilot:tracepilot@postgres:5432/tracepilot
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
 volumes:
   postgres_data:
   redis_data:

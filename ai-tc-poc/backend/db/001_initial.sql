@@ -23,3 +23,13 @@ CREATE TABLE outbox_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), organ
 CREATE INDEX outbox_pending_idx ON outbox_events(status,available_at) WHERE status='PENDING';
 CREATE TABLE audit_events (id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, organization_id uuid NOT NULL REFERENCES organizations(id), actor_id uuid REFERENCES users(id), action text NOT NULL, resource_type text NOT NULL, resource_id text NOT NULL, request_id uuid NOT NULL, metadata jsonb NOT NULL DEFAULT '{}', occurred_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX audit_org_time_idx ON audit_events(organization_id,occurred_at DESC);
+
+-- Stable local-development records. Secrets remain external; only a secret reference is stored.
+INSERT INTO organizations (id,name) VALUES ('00000000-0000-0000-0000-000000000001','TracePilot Local');
+INSERT INTO users (id,email,display_name) VALUES ('00000000-0000-0000-0000-000000000101','local@tracepilot.test','Local Admin');
+INSERT INTO memberships (organization_id,user_id,role) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000101','OWNER');
+INSERT INTO projects (id,organization_id,project_key,name) VALUES ('00000000-0000-0000-0000-000000000201','00000000-0000-0000-0000-000000000001','POC','TracePilot PoC');
+INSERT INTO environments (id,organization_id,project_id,name,base_url,allowed_domains,viewport) VALUES ('00000000-0000-0000-0000-000000000301','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000201','Staging','https://example.test','["example.test"]','{"width":1440,"height":900}');
+INSERT INTO test_cases (id,organization_id,project_id,display_id,title,group_name) VALUES ('00000000-0000-0000-0000-000000000401','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000201','TC-142','신규 사용자 이메일 회원가입','Authentication');
+INSERT INTO test_case_versions (id,organization_id,test_case_id,version_no,raw_text,status) VALUES ('00000000-0000-0000-0000-000000000501','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000401',1,'회원가입 후 대시보드 진입을 확인한다.','READY');
+INSERT INTO test_accounts (id,organization_id,project_id,name,secret_ref) VALUES ('00000000-0000-0000-0000-000000000601','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000201','qa-runner-01','secret://local/qa-runner-01');

@@ -3,6 +3,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+ExecutionStatusValue = Literal[
+    "QUEUED", "PROVISIONING", "RUNNING", "WAITING_APPROVAL", "CANCEL_REQUESTED",
+    "PASS", "FAIL", "BLOCKED", "NEEDS_REVIEW", "CANCELLED", "SYSTEM_ERROR",
+]
+
+
 class ExecutionLimits(BaseModel):
     timeoutMinutes: int = Field(ge=1, le=30)
     maxAiCalls: int = Field(ge=0, le=50)
@@ -22,6 +28,14 @@ class CreateExecutionRequest(BaseModel):
 
 class ExecutionResponse(BaseModel):
     id: str
-    status: Literal["QUEUED", "RUNNING", "WAITING_APPROVAL", "PASS", "FAIL", "BLOCKED", "CANCELLED"]
+    status: ExecutionStatusValue
     testCaseVersionId: str
     queuedAt: datetime
+    startedAt: datetime | None = None
+    endedAt: datetime | None = None
+    parentExecutionId: str | None = None
+
+
+class ExecutionActionResponse(BaseModel):
+    execution: ExecutionResponse
+    accepted: bool = True

@@ -1,4 +1,9 @@
-from fastapi import APIRouter
+from uuid import UUID
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.config import get_settings
+from app.core.database import get_session
+from app.modules.test_cases.repository import SqlTestCaseRepository
 from app.schemas.test_cases import StructureRequest, StructuredStep, StructuredTestCase, TestCaseSummary
 
 
@@ -7,21 +12,16 @@ version_router = APIRouter(prefix="/test-case-versions", tags=["test-cases"])
 
 
 @router.get("", response_model=list[TestCaseSummary])
-async def list_test_cases() -> list[TestCaseSummary]:
-    # Repository wiring replaces this seed in the next slice.
-    return [
-        TestCaseSummary(id="TC-142", title="신규 사용자 이메일 회원가입", group="Authentication", status="READY", passRate=96, lastExecutedAt="12분 전"),
-        TestCaseSummary(id="TC-138", title="상품 검색 및 가격 필터 적용", group="Search", status="READY", passRate=89, lastExecutedAt="어제"),
-        TestCaseSummary(id="TC-131", title="장바구니 수량 변경 후 합계 검증", group="Checkout", status="REVIEW_REQUIRED", passRate=72, lastExecutedAt="2일 전"),
-        TestCaseSummary(id="TC-127", title="만료된 세션에서 로그인 화면 이동", group="Authentication", status="READY", passRate=100, lastExecutedAt="4일 전"),
-    ]
+async def list_test_cases(session: AsyncSession = Depends(get_session)) -> list[TestCaseSummary]:
+    repository = SqlTestCaseRepository(session, UUID(get_settings().default_organization_id))
+    return await repository.list()
 
 
 @version_router.post("/current/structure", response_model=StructuredTestCase)
 async def structure_test_case(body: StructureRequest) -> StructuredTestCase:
     # Deterministic placeholder keeps the API contract stable until AI Gateway integration.
     return StructuredTestCase(
-        versionId="tcv-new-v1", title=body.title,
+        versionId="00000000-0000-0000-0000-000000000501", title=body.title,
         preconditions=["Staging 환경과 미사용 이메일 계정이 준비되어 있다."],
         steps=[
             StructuredStep(id="step-1", title="로그인 페이지 진입", note="URL과 로그인 폼을 확인합니다.", action="navigate"),

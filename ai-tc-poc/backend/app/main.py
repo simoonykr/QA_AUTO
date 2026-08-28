@@ -1,8 +1,9 @@
 from uuid import uuid4
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
-from app.core.errors import DomainError, domain_error_handler
+from app.core.errors import DomainError, domain_error_handler, unexpected_error_handler, validation_error_handler
 from app.modules.executions.router import router as execution_router
 from app.modules.test_cases.router import router as test_case_router, version_router
 
@@ -11,6 +12,8 @@ settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.add_exception_handler(DomainError, domain_error_handler)
+app.add_exception_handler(RequestValidationError, validation_error_handler)
+app.add_exception_handler(Exception, unexpected_error_handler)
 
 
 @app.middleware("http")

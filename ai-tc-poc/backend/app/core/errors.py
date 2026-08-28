@@ -1,5 +1,6 @@
 from uuid import uuid4
 from fastapi import Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
@@ -17,4 +18,26 @@ async def domain_error_handler(request: Request, exc: DomainError) -> JSONRespon
     return JSONResponse(status_code=exc.status_code, content={
         "code": exc.code, "message": exc.message, "requestId": request_id,
         "retryable": exc.retryable, "details": exc.details,
+    })
+
+
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return JSONResponse(status_code=422, content={
+        "code": "VALIDATION_ERROR",
+        "message": "요청 값이 올바르지 않습니다.",
+        "requestId": request_id,
+        "retryable": False,
+        "details": {"errors": exc.errors()},
+    })
+
+
+async def unexpected_error_handler(request: Request, _exc: Exception) -> JSONResponse:
+    request_id = getattr(request.state, "request_id", str(uuid4()))
+    return JSONResponse(status_code=500, content={
+        "code": "INTERNAL_SERVER_ERROR",
+        "message": "서버에서 요청을 처리하지 못했습니다.",
+        "requestId": request_id,
+        "retryable": True,
+        "details": {},
     })
