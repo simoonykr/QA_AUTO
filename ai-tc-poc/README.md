@@ -1,6 +1,6 @@
 # AI TC PoC 로컬 실행 가이드
 
-이 프로젝트는 사용자 화면(React/Vite)과 백엔드 API(FastAPI), PostgreSQL, Redis, MinIO로 구성됩니다.
+이 프로젝트는 사용자 화면(React/Vite), 백엔드 API(FastAPI), Playwright Worker, PostgreSQL, Redis, MinIO로 구성됩니다.
 
 ## 다른 개발자 PC에서 실행하기
 
@@ -56,6 +56,8 @@ pnpm dev
 - 백엔드 API: http://127.0.0.1:8000
 - API 문서: http://127.0.0.1:8000/docs
 - MinIO 관리 화면: http://127.0.0.1:9001
+
+Docker Compose에는 Chromium Worker와 내부 통합 테스트용 `demo-target`도 함께 실행됩니다. 실행 버튼을 누르면 Redis 작업 큐를 거쳐 실제 Chromium 페이지 접속 결과가 실행 상태에 반영됩니다.
 
 `127.0.0.1` 주소는 실행한 PC에서만 접근할 수 있습니다. 인증 기능을 완성하기 전에는 API와 DB를 인터넷에 직접 공개하지 않습니다.
 

@@ -1,0 +1,6 @@
+FROM mcr.microsoft.com/playwright/python:v1.62.0-noble
+WORKDIR /app
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
+COPY app ./app
+CMD ["python", "-m", "app.workers.playwright_worker"]

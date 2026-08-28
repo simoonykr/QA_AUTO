@@ -37,6 +37,17 @@
 3. 환경·테스트 계정·정책 관리 목록 endpoint
 4. 로컬 개발 CORS에 `http://127.0.0.1:5174` 추가 또는 프론트 포트를 5173으로 고정
 
+## Playwright Worker 반영
+
+- Redis Stream의 `execution.requested` 작업 소비
+- Chromium으로 허용된 환경 URL 실제 접속
+- 실행 상태 `QUEUED → PROVISIONING → RUNNING → PASS/FAIL` 반영
+- 1차 navigation 단계 결과를 `step_runs`에 저장
+- `CANCEL_REQUESTED` 확인 후 `CANCELLED` 처리
+- 로컬 통합 검증용 `demo-target` 서비스 추가
+
+프론트는 기존 `GET /executions/{executionId}` 2초 polling을 유지하면 실제 Worker 상태가 화면에 반영된다. 현재 Worker는 Chromium과 페이지 접속 smoke test만 지원하며, click/fill/assertion 해석과 증적 API는 다음 작업 범위다.
+
 ## 로컬 연동 방법
 
 ```env

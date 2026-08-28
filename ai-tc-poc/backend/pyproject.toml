@@ -11,6 +11,7 @@ dependencies = [
   "pydantic-settings>=2.5,<3",
   "redis>=5,<7",
   "alembic>=1.14,<2",
+  "playwright==1.62.0",
 ]
 
 [project.optional-dependencies]

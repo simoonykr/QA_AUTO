@@ -25,6 +25,13 @@ services:
       MINIO_ROOT_PASSWORD: tracepilot-local-only
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio_data:/data"]
+  demo-target:
+    build: ./backend/demo_target
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:80 >/dev/null"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
   migrate:
     build: ./backend
     command: ["alembic", "upgrade", "head"]
@@ -54,6 +61,20 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
+  playwright-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://tracepilot:tracepilot@postgres:5432/tracepilot
+      REDIS_URL: redis://redis:6379/0
+    init: true
+    ipc: host
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+      demo-target: { condition: service_healthy }
 volumes:
   postgres_data:
   redis_data:

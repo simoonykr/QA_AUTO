@@ -8,6 +8,7 @@ from app.main import app
 from app.modules.executions.repository import SqlExecutionRepository
 from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
+from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _parse_viewport
 
 
 async def fake_session():
@@ -190,3 +191,10 @@ def test_frontend_poc_aliases_resolve_to_seed_uuids() -> None:
     assert str(SqlExecutionRepository._resolve_id("tcv-new-v1")) == "00000000-0000-0000-0000-000000000501"
     assert str(SqlExecutionRepository._resolve_id("env-staging")) == "00000000-0000-0000-0000-000000000301"
     assert str(SqlExecutionRepository._resolve_id("qa-runner-01")) == "00000000-0000-0000-0000-000000000601"
+
+
+def test_worker_parses_viewport_and_blocks_unknown_domains() -> None:
+    assert _parse_viewport("1440x900") == {"width": 1440, "height": 900}
+    _assert_allowed_url("http://demo-target", ["demo-target"])
+    with pytest.raises(WorkerExecutionError, match="허용되지 않은"):
+        _assert_allowed_url("https://example.com", ["demo-target"])

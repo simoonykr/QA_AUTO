@@ -128,6 +128,8 @@ class Execution(Base):
     status: Mapped[ExecutionStatus] = mapped_column(Enum(ExecutionStatus, name="execution_status"), nullable=False)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(Text)
     queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
