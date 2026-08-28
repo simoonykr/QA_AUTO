@@ -7,6 +7,7 @@
 - `GET /api/v1/test-cases` 로딩·오류 상태 처리
 - `POST /api/v1/test-case-versions/current/structure` 응답을 구조화 검토 화면에 실제 반영
 - `POST /api/v1/executions` 요청 중 중복 클릭 방지 및 표준 오류 메시지 처리
+- 실행 설정 화면의 환경·브라우저·viewport·locale·계정·한도·승인 값을 `CreateExecutionRequest`에 실제 반영
 - Mock/Backend API 연결 상태를 상단에 표시
 - JSON이 아닌 오류 응답과 네트워크 오류를 `ApiError`로 정규화
 

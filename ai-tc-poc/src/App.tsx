@@ -9,13 +9,14 @@ import {
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
 import { mockSteps } from './api/mockData'
-import type { StructuredTestCase, TestCaseSummary } from './api/types'
+import type { CreateExecutionRequest, StructuredTestCase, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done'
 type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
 
 const steps = mockSteps.map((step) => ({ ...step, type: step.action }))
+const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true }
 
 function App() {
   const [view, setView] = useState<View>('dashboard')
@@ -32,11 +33,11 @@ function App() {
 
   const filtered = useMemo(() => testCases.filter((t) => `${t.id} ${t.title} ${t.group}`.toLowerCase().includes(query.toLowerCase())), [query, testCases])
 
-  const startRun = async () => {
+  const createRun = async (input: CreateExecutionRequest) => {
     if (startingRun) return
     setStartingRun(true)
     try {
-      await api.createExecution({ testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true })
+      await api.createExecution(input)
       setRunState('running'); setActiveStep(1); setView('run')
       window.setTimeout(() => setActiveStep(2), 900)
       window.setTimeout(() => setActiveStep(3), 1800)
@@ -45,6 +46,7 @@ function App() {
       toast(error instanceof ApiError ? error.body.message : '실행을 시작하지 못했습니다.')
     } finally { setStartingRun(false) }
   }
+  const startRun = () => createRun(defaultExecution)
 
   const toast = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2200) }
 
@@ -80,7 +82,7 @@ function App() {
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
-        {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={startRun}/>} 
+        {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
         {view === 'run' && <RunMonitor state={runState} activeStep={activeStep} start={startRun} pause={() => setRunState(runState === 'paused' ? 'running' : 'paused')} stop={() => {setRunState('idle'); setActiveStep(0)}} onResult={() => setView('result')}/>}
         {view === 'result' && <ResultDetail onBack={() => setView('dashboard')} onRetry={startRun}/>} 
         {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
@@ -185,25 +187,31 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   </section>
 }
 
-function RunConfigure({onBack,onStart}: {onBack:()=>void; onStart:()=>void}) {
-  const [browser,setBrowser]=useState('Chromium')
+function RunConfigure({onBack,onStart,starting}: {onBack:()=>void; onStart:(input:CreateExecutionRequest)=>void; starting:boolean}) {
+  const [environment,setEnvironment]=useState('env-staging')
+  const [browser,setBrowser]=useState<CreateExecutionRequest['browser']>('Chromium')
   const [account,setAccount]=useState('qa-runner-01')
-  const [duration,setDuration]=useState('15분')
+  const [viewport,setViewport]=useState('1440x900')
+  const [locale,setLocale]=useState('ko-KR')
+  const [duration,setDuration]=useState('15')
+  const [maxAiCalls,setMaxAiCalls]=useState('20')
+  const [retryCount,setRetryCount]=useState('2')
   const [approval,setApproval]=useState(true)
+  const submit = () => onStart({ testCaseVersionId:'tcv-new-v1', environmentId:environment, browser, accountId:account, viewport, locale, limits:{timeoutMinutes:Number(duration),maxAiCalls:Number(maxAiCalls),retryCount:Number(retryCount)}, requireRiskApproval:approval })
   return <section className="page config-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 구조화 검토</button><span className="config-id">TC-NEW · Version 1 · READY</span></div>
     <div className="page-heading compact"><div><p className="eyebrow">EXECUTION SETUP</p><h1>실행 설정</h1><p>격리된 브라우저에서 사용할 환경, 계정과 안전 한도를 확인하세요.</p></div></div>
     <div className="config-grid"><div className="config-main">
       <ConfigCard icon={<MonitorCheck/>} title="실행 환경" caption="테스트 대상과 브라우저 조건">
-        <div className="form-grid"><Field label="환경"><Select value="Staging" options={['Staging','Development']}/></Field><Field label="브라우저"><Select value={browser} setValue={setBrowser} options={['Chromium','Firefox','WebKit']}/></Field><Field label="화면 크기"><Select value="1440 × 900" options={['1440 × 900','1920 × 1080','1280 × 720']}/></Field><Field label="언어"><Select value="ko-KR" options={['ko-KR','en-US']}/></Field></div><div className="safe-domain"><ShieldCheck/><div><b>허용 도메인</b><span>staging.storefront.test 및 하위 경로만 접근할 수 있습니다.</span></div></div>
+        <div className="form-grid"><Field label="환경"><Select value={environment} setValue={setEnvironment} options={['env-staging','env-development']}/></Field><Field label="브라우저"><Select value={browser} setValue={value=>setBrowser(value as CreateExecutionRequest['browser'])} options={['Chromium','Firefox','WebKit']}/></Field><Field label="화면 크기"><Select value={viewport} setValue={setViewport} options={['1440x900','1920x1080','1280x720']}/></Field><Field label="언어"><Select value={locale} setValue={setLocale} options={['ko-KR','en-US']}/></Field></div><div className="safe-domain"><ShieldCheck/><div><b>허용 도메인</b><span>staging.storefront.test 및 하위 경로만 접근할 수 있습니다.</span></div></div>
       </ConfigCard>
       <ConfigCard icon={<KeyRound/>} title="테스트 계정과 데이터" caption="비밀값은 실행 시에만 Worker 메모리에 주입됩니다." tone="violet">
         <div className="form-grid"><Field label="테스트 계정"><Select value={account} setValue={setAccount} options={['qa-runner-01','qa-runner-02','신규 계정 자동 생성']}/></Field><Field label="데이터 세트"><Select value="signup-default-v2" options={['signup-default-v2','empty-account-pool']}/></Field></div><div className="account-status"><span/><div><b>{account}</b><small>사용 가능 · 마지막 초기화 8분 전</small></div><button>계정 상세 <ExternalLink/></button></div>
       </ConfigCard>
       <ConfigCard icon={<Gauge/>} title="실행 한도" caption="무한 반복과 예상치 못한 비용을 방지합니다." tone="amber">
-        <div className="form-grid triple"><Field label="최대 실행 시간"><Select value={duration} setValue={setDuration} options={['10분','15분','30분']}/></Field><Field label="최대 AI 호출"><Select value="20회" options={['10회','20회','30회']}/></Field><Field label="오류 재시도"><Select value="최대 2회" options={['사용 안 함','최대 1회','최대 2회']}/></Field></div><div className="toggle-row"><div><b>위험 행동 시 사람 승인</b><span>삭제·결제·계정 변경을 감지하면 실행을 일시정지합니다.</span></div><button className={`toggle ${approval?'on':''}`} onClick={()=>setApproval(!approval)}><i/></button></div>
+        <div className="form-grid triple"><Field label="최대 실행 시간"><Select value={duration} setValue={setDuration} options={['10','15','30']}/></Field><Field label="최대 AI 호출"><Select value={maxAiCalls} setValue={setMaxAiCalls} options={['10','20','30']}/></Field><Field label="오류 재시도"><Select value={retryCount} setValue={setRetryCount} options={['0','1','2']}/></Field></div><div className="toggle-row"><div><b>위험 행동 시 사람 승인</b><span>삭제·결제·계정 변경을 감지하면 실행을 일시정지합니다.</span></div><button className={`toggle ${approval?'on':''}`} onClick={()=>setApproval(!approval)} aria-pressed={approval}><i/></button></div>
       </ConfigCard>
-    </div><aside className="panel launch-summary"><p className="eyebrow">EXECUTION SUMMARY</p><h2>신규 사용자 이메일 회원가입</h2><span className="summary-ready"><CheckCircle2/> 실행 준비 완료</span><dl><div><dt>환경</dt><dd>Staging</dd></div><div><dt>브라우저</dt><dd>{browser}</dd></div><div><dt>계정</dt><dd>{account}</dd></div><div><dt>실행 단계</dt><dd>4 steps</dd></div><div><dt>Assertion</dt><dd>2 rules</dd></div><div><dt>시간 제한</dt><dd>{duration}</dd></div></dl><div className="cost-estimate"><Sparkles/><div><span>예상 AI 비용</span><b>$0.08 – $0.14</b></div></div><button className="primary wide launch" onClick={onStart}><Play fill="currentColor"/> 격리 세션에서 실행</button><p className="launch-note"><ShieldCheck/> 허용된 action만 정책 검사 후 수행됩니다.</p></aside></div>
+    </div><aside className="panel launch-summary"><p className="eyebrow">EXECUTION SUMMARY</p><h2>신규 사용자 이메일 회원가입</h2><span className="summary-ready"><CheckCircle2/> 실행 준비 완료</span><dl><div><dt>환경</dt><dd>{environment}</dd></div><div><dt>브라우저</dt><dd>{browser}</dd></div><div><dt>계정</dt><dd>{account}</dd></div><div><dt>화면</dt><dd>{viewport}</dd></div><div><dt>AI 호출</dt><dd>{maxAiCalls}회</dd></div><div><dt>시간 제한</dt><dd>{duration}분</dd></div></dl><div className="cost-estimate"><Sparkles/><div><span>예상 AI 비용</span><b>$0.08 – $0.14</b></div></div><button className="primary wide launch" onClick={submit} disabled={starting}>{starting?<Activity className="spin"/>:<Play fill="currentColor"/>} {starting?'실행 생성 중':'격리 세션에서 실행'}</button><p className="launch-note"><ShieldCheck/> 허용된 action만 정책 검사 후 수행됩니다.</p></aside></div>
   </section>
 }
 
