@@ -7,9 +7,9 @@ import {
   Upload, WandSparkles, Save, Database, KeyRound, MonitorCheck,
   Download, ExternalLink, RefreshCw, Eye, ChevronRight,
 } from 'lucide-react'
-import { api } from './api/client'
+import { api, apiConfig, ApiError } from './api/client'
 import { mockSteps } from './api/mockData'
-import type { TestCaseSummary } from './api/types'
+import type { StructuredTestCase, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done'
@@ -25,17 +25,25 @@ function App() {
   const [notice, setNotice] = useState('')
   const [authorStage, setAuthorStage] = useState<AuthorStage>('draft')
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([])
+  const [loadingCases, setLoadingCases] = useState(true)
+  const [startingRun, setStartingRun] = useState(false)
 
-  useEffect(() => { api.listTestCases().then(setTestCases).catch(() => setNotice('테스트 케이스를 불러오지 못했습니다.')) }, [])
+  useEffect(() => { api.listTestCases().then(setTestCases).catch((error) => setNotice(error instanceof ApiError ? error.body.message : '테스트 케이스를 불러오지 못했습니다.')).finally(() => setLoadingCases(false)) }, [])
 
-  const filtered = useMemo(() => testCases.filter((t) => `${t.id} ${t.title} ${t.group}`.toLowerCase().includes(query.toLowerCase())), [query])
+  const filtered = useMemo(() => testCases.filter((t) => `${t.id} ${t.title} ${t.group}`.toLowerCase().includes(query.toLowerCase())), [query, testCases])
 
   const startRun = async () => {
-    await api.createExecution({ testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true })
-    setRunState('running'); setActiveStep(1); setView('run')
-    window.setTimeout(() => setActiveStep(2), 900)
-    window.setTimeout(() => setActiveStep(3), 1800)
-    window.setTimeout(() => { setActiveStep(4); setRunState('done') }, 2800)
+    if (startingRun) return
+    setStartingRun(true)
+    try {
+      await api.createExecution({ testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true })
+      setRunState('running'); setActiveStep(1); setView('run')
+      window.setTimeout(() => setActiveStep(2), 900)
+      window.setTimeout(() => setActiveStep(3), 1800)
+      window.setTimeout(() => { setActiveStep(4); setRunState('done') }, 2800)
+    } catch (error) {
+      toast(error instanceof ApiError ? error.body.message : '실행을 시작하지 못했습니다.')
+    } finally { setStartingRun(false) }
   }
 
   const toast = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2200) }
@@ -65,12 +73,12 @@ function App() {
 
       <main>
         <header className="topbar">
-          <div><span className="environment"><CircleDot size={13}/> Staging</span><span className="sync"><span/> 모든 시스템 정상</span></div>
-          <div className="top-actions"><button className="icon-button" aria-label="알림"><AlertTriangle size={18}/><i/></button><button className="primary" onClick={startRun}><Play size={16} fill="currentColor"/> 새 실행</button></div>
+          <div><span className="environment"><CircleDot size={13}/> Staging</span><span className="sync"><span/> {apiConfig.mock ? 'Mock API 사용 중' : 'Backend API 연결'}</span></div>
+          <div className="top-actions"><button className="icon-button" aria-label="알림"><AlertTriangle size={18}/><i/></button><button className="primary" onClick={startRun} disabled={startingRun}>{startingRun?<Activity className="spin" size={16}/>:<Play size={16} fill="currentColor"/>} {startingRun?'실행 생성 중':'새 실행'}</button></div>
         </header>
 
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
-        {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>} 
+        {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
         {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={startRun}/>} 
         {view === 'run' && <RunMonitor state={runState} activeStep={activeStep} start={startRun} pause={() => setRunState(runState === 'paused' ? 'running' : 'paused')} stop={() => {setRunState('idle'); setActiveStep(0)}} onResult={() => setView('result')}/>}
@@ -132,14 +140,14 @@ function ManagementPage({kind,onToast}:{kind:'environment'|'account'|'policy';on
   </section>
 }
 
-function Cases({query,setQuery,rows,onRun,onCreate,onToast}: {query:string; setQuery:(s:string)=>void; rows:TestCaseSummary[]; onRun:()=>void; onCreate:()=>void; onToast:(s:string)=>void}) {
+function Cases({query,setQuery,rows,loading,onRun,onCreate,onToast}: {query:string; setQuery:(s:string)=>void; rows:TestCaseSummary[]; loading:boolean; onRun:()=>void; onCreate:()=>void; onToast:(s:string)=>void}) {
   const [status,setStatus] = useState('ALL')
   const [group,setGroup] = useState('ALL')
   const visibleRows = rows.filter(row => (status === 'ALL' || row.status === status) && (group === 'ALL' || row.group === group))
   const groups = [...new Set(rows.map(row => row.group))]
   return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">TEST LIBRARY</p><h1>테스트 케이스</h1><p>자연어 TC를 구조화하고 실행 준비 상태를 관리합니다.</p></div><button className="primary" onClick={onCreate}><Plus size={16}/> 새 테스트 케이스</button></div>
     <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="ID, 이름 또는 그룹 검색"/></div><Select value={status} setValue={setStatus} options={['ALL','READY','REVIEW_REQUIRED']}/><Select value={group} setValue={setGroup} options={['ALL',...groups]}/><button className="secondary" onClick={()=>onToast('XLSX 가져오기는 백엔드 파서 연결 후 활성화됩니다.')}><Upload size={15}/> 파일 가져오기</button></div>
-    <article className="panel table-panel"><table><thead><tr><th>테스트 케이스</th><th>그룹</th><th>준비 상태</th><th>최근 성공률</th><th>마지막 실행</th><th/></tr></thead><tbody>{visibleRows.map((row)=><tr key={row.id}><td><span className="file-icon"><FileText/></span><span><b>{row.title}</b><small>{row.id}</small></span></td><td>{row.group}</td><td><span className={`pill ${row.status==='READY'?'pass':'review'}`}>{row.status.replace('_',' ')}</span></td><td><div className="rate"><span><i style={{width:`${row.passRate}%`}}/></span>{row.passRate}%</div></td><td>{row.lastExecutedAt}</td><td><button className="row-play" onClick={onRun}><Play size={14}/></button></td></tr>)}</tbody></table>{visibleRows.length===0&&<div className="empty-table">조건에 맞는 테스트 케이스가 없습니다.</div>}</article>
+    <article className="panel table-panel"><table><thead><tr><th>테스트 케이스</th><th>그룹</th><th>준비 상태</th><th>최근 성공률</th><th>마지막 실행</th><th/></tr></thead><tbody>{visibleRows.map((row)=><tr key={row.id}><td><span className="file-icon"><FileText/></span><span><b>{row.title}</b><small>{row.id}</small></span></td><td>{row.group}</td><td><span className={`pill ${row.status==='READY'?'pass':'review'}`}>{row.status.replace('_',' ')}</span></td><td><div className="rate"><span><i style={{width:`${row.passRate}%`}}/></span>{row.passRate}%</div></td><td>{row.lastExecutedAt}</td><td><button className="row-play" onClick={onRun} aria-label={`${row.title} 실행`}><Play size={14}/></button></td></tr>)}</tbody></table>{loading&&<div className="empty-table"><Activity className="spin" size={16}/> 테스트 케이스를 불러오는 중입니다.</div>}{!loading&&visibleRows.length===0&&<div className="empty-table">조건에 맞는 테스트 케이스가 없습니다.</div>}</article>
   </section>
 }
 
@@ -147,6 +155,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   const [title,setTitle] = useState('신규 사용자 이메일 회원가입')
   const [raw,setRaw] = useState('Staging 환경에 접속한다.\n회원가입 버튼을 누르고 사용하지 않은 이메일과 안전한 비밀번호를 입력한다.\n약관에 동의한 뒤 가입을 완료한다.\n가입 완료 후 환영 메시지와 대시보드가 표시되는지 확인한다.')
   const [importedFile,setImportedFile] = useState('')
+  const [structured,setStructured] = useState<StructuredTestCase | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const importFile = (file?: File) => {
     if (!file) return
@@ -156,7 +165,12 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
     if (extension === 'txt' || extension === 'csv') file.text().then(text => { setRaw(text); setTitle(file.name.replace(/\.[^.]+$/, '')); onToast(`${file.name} 내용을 불러왔습니다.`) })
     else onToast(`${file.name}을 선택했습니다. 서버 파서 연결 후 분석할 수 있습니다.`)
   }
-  const structure = async () => { setStage('structuring'); try { await api.structureTestCase(title,raw); setStage('review') } catch { setStage('draft'); onToast('TC 구조화에 실패했습니다. 다시 시도해 주세요.') } }
+  const structure = async () => {
+    if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
+    setStage('structuring')
+    try { setStructured(await api.structureTestCase(title.trim(),raw.trim())); setStage('review') }
+    catch (error) { setStage('draft'); onToast(error instanceof ApiError ? error.body.message : 'TC 구조화에 실패했습니다. 다시 시도해 주세요.') }
+  }
   return <section className="page author-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>setStage('ready')}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'ANALYZING':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>AI 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
@@ -165,7 +179,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
       <article className={`panel review-panel ${stage==='draft'?'empty-review':''}`}>
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>AI가 전제조건, 실행 단계와 기대 결과를 분리하고 모호한 부분을 알려드립니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
-        {(stage==='review'||stage==='ready')&&<><div className="section-head"><div><h2>구조화 검토</h2><p>AI 생성 결과를 실행 전에 확인하세요.</p></div><span className="confidence">신뢰도 <b>94%</b></span></div><div className="review-block"><label>전제조건</label><div className="condition"><CheckCircle2/> Staging 환경과 미사용 이메일 계정이 준비되어 있다.</div></div><div className="review-block"><label>실행 단계 · 4</label>{steps.map((s,i)=><div className="structured-step" key={s.title}><span>{i+1}</span><div><b>{i===0?'Staging 회원가입 페이지로 이동':i===1?'회원가입 버튼을 선택':i===2?'이메일과 비밀번호를 입력하고 약관에 동의': '가입 완료 버튼을 선택'}</b><small><em>{i===0?'NAVIGATE':i===2?'FILL':'CLICK'}</em> {i===2?'secret_ref: test_user':'후보 요소 기반 탐색'}</small></div><button><MoreHorizontal/></button></div>)}</div><div className="review-block"><label>기대 결과 · 2</label><div className="assertion"><ShieldCheck/><div><b>환영 메시지가 표시된다.</b><small>TEXT · CONTAINS · timeout 10s</small></div></div><div className="assertion"><ShieldCheck/><div><b>대시보드 URL로 이동한다.</b><small>URL · MATCHES · /dashboard</small></div></div></div>{stage==='review'&&<div className="ambiguity"><AlertTriangle/><div><b>확인이 필요한 가정 1개</b><p>‘안전한 비밀번호’는 테스트 데이터 변수 <code>test_password</code>를 사용하도록 해석했습니다.</p></div></div>}{stage==='ready'&&<div className="ready-box"><CheckCircle2/><div><b>실행 준비가 완료되었습니다.</b><p>승인된 Version 1은 수정할 수 없으며 변경 시 새 버전이 생성됩니다.</p></div></div>}</>}
+        {(stage==='review'||stage==='ready')&&structured&&<><div className="section-head"><div><h2>구조화 검토</h2><p>AI 생성 결과를 실행 전에 확인하세요.</p></div><span className="confidence">신뢰도 <b>{Math.round(structured.confidence*100)}%</b></span></div><div className="review-block"><label>전제조건 · {structured.preconditions.length}</label>{structured.preconditions.map(item=><div className="condition" key={item}><CheckCircle2/> {item}</div>)}</div><div className="review-block"><label>실행 단계 · {structured.steps.length}</label>{structured.steps.map((step,i)=><div className="structured-step" key={step.id}><span>{i+1}</span><div><b>{step.title}</b><small><em>{step.action.toUpperCase()}</em> {step.note}</small></div><button aria-label={`${step.title} 추가 메뉴`}><MoreHorizontal/></button></div>)}</div><div className="review-block"><label>기대 결과 · {structured.assertions.length}</label>{structured.assertions.map((assertion,i)=><div className="assertion" key={`${assertion.type}-${i}`}><ShieldCheck/><div><b>{assertion.expected}</b><small>{assertion.type.toUpperCase()} · {assertion.operator.toUpperCase()} · timeout {assertion.timeoutMs/1000}s</small></div></div>)}</div>{stage==='review'&&structured.assumptions.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>확인이 필요한 가정 {structured.assumptions.length}개</b>{structured.assumptions.map(item=><p key={item}>{item}</p>)}</div></div>}{stage==='ready'&&<div className="ready-box"><CheckCircle2/><div><b>실행 준비가 완료되었습니다.</b><p>승인된 {structured.versionId}은 수정할 수 없으며 변경 시 새 버전이 생성됩니다.</p></div></div>}</>}
       </article>
     </div>
   </section>

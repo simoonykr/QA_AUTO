@@ -3,18 +3,28 @@ import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false'
+export const apiConfig = { baseUrl: API_BASE_URL, mock: USE_MOCK_API }
 
 export class ApiError extends Error {
   constructor(public body: ApiErrorBody, public status: number) { super(body.message) }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-  })
-  if (!response.ok) throw new ApiError(await response.json() as ApiErrorBody, response.status)
-  return response.json() as Promise<T>
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...init?.headers },
+    })
+    if (!response.ok) {
+      const fallback: ApiErrorBody = { code: 'HTTP_ERROR', message: `요청에 실패했습니다. (${response.status})`, requestId: response.headers.get('x-request-id') ?? 'unknown', retryable: response.status >= 500 }
+      const body = await response.json().catch(() => fallback) as Partial<ApiErrorBody>
+      throw new ApiError({ ...fallback, ...body }, response.status)
+    }
+    return response.json() as Promise<T>
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError({ code: 'NETWORK_ERROR', message: 'API 서버에 연결할 수 없습니다.', requestId: 'client', retryable: true }, 0)
+  }
 }
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
