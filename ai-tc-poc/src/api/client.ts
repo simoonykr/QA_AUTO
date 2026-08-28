@@ -1,4 +1,4 @@
-import type { ApiErrorBody, CreateExecutionRequest, Execution, StructuredTestCase, TestCaseSummary } from './types'
+import type { ApiErrorBody, CreateExecutionRequest, Execution, ExecutionActionResponse, StructuredTestCase, TestCaseSummary } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -56,5 +56,20 @@ export const api = {
     if (!USE_MOCK_API) return request('/executions', { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': crypto.randomUUID() } })
     await wait(300)
     return { id: `EX-${Date.now()}`, status: 'QUEUED', testCaseVersionId: input.testCaseVersionId, queuedAt: new Date().toISOString() }
+  },
+
+  async getExecution(id: string): Promise<Execution> {
+    if (!USE_MOCK_API) return request(`/executions/${id}`)
+    return { id, status: 'RUNNING', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString(), startedAt: new Date().toISOString() }
+  },
+
+  async cancelExecution(id: string): Promise<ExecutionActionResponse> {
+    if (!USE_MOCK_API) return request(`/executions/${id}/cancel`, { method: 'POST' })
+    return { accepted: true, execution: { id, status: 'CANCEL_REQUESTED', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString() } }
+  },
+
+  async retryExecution(id: string): Promise<ExecutionActionResponse> {
+    if (!USE_MOCK_API) return request(`/executions/${id}/retry`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } })
+    return { accepted: true, execution: { id: `EX-${Date.now()}`, status: 'QUEUED', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString(), parentExecutionId: id } }
   },
 }

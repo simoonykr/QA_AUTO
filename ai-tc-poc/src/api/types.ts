@@ -1,5 +1,5 @@
 export type TestCaseStatus = 'DRAFT' | 'REVIEW_REQUIRED' | 'READY' | 'ARCHIVED'
-export type ExecutionStatus = 'QUEUED' | 'RUNNING' | 'WAITING_APPROVAL' | 'PASS' | 'FAIL' | 'BLOCKED' | 'CANCELLED'
+export type ExecutionStatus = 'QUEUED' | 'PROVISIONING' | 'RUNNING' | 'WAITING_APPROVAL' | 'CANCEL_REQUESTED' | 'PASS' | 'FAIL' | 'BLOCKED' | 'NEEDS_REVIEW' | 'CANCELLED' | 'SYSTEM_ERROR'
 export type ActionType = 'navigate' | 'click' | 'fill' | 'select' | 'press' | 'scroll' | 'wait' | 'upload'
 export type AssertionType = 'url' | 'element' | 'text' | 'attribute' | 'count' | 'network' | 'visual_change'
 
@@ -46,7 +46,12 @@ export interface Execution {
   status: ExecutionStatus
   testCaseVersionId: string
   queuedAt: string
+  startedAt?: string | null
+  endedAt?: string | null
+  parentExecutionId?: string | null
 }
+
+export interface ExecutionActionResponse { execution: Execution; accepted: boolean }
 
 export interface ApiErrorBody {
   code: string

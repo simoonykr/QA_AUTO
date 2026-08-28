@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
 import { mockSteps } from './api/mockData'
-import type { CreateExecutionRequest, StructuredTestCase, TestCaseSummary } from './api/types'
+import type { CreateExecutionRequest, Execution, StructuredTestCase, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done'
@@ -28,8 +28,20 @@ function App() {
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([])
   const [loadingCases, setLoadingCases] = useState(true)
   const [startingRun, setStartingRun] = useState(false)
+  const [execution, setExecution] = useState<Execution | null>(null)
 
   useEffect(() => { api.listTestCases().then(setTestCases).catch((error) => setNotice(error instanceof ApiError ? error.body.message : '테스트 케이스를 불러오지 못했습니다.')).finally(() => setLoadingCases(false)) }, [])
+
+  useEffect(() => {
+    if (apiConfig.mock || !execution || !['QUEUED','PROVISIONING','RUNNING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(execution.status)) return
+    const timer = window.setInterval(() => api.getExecution(execution.id).then(next => {
+      setExecution(next)
+      if (next.status === 'PASS') { setActiveStep(4); setRunState('done') }
+      else if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(next.status)) setRunState('idle')
+      else { setRunState(next.status === 'WAITING_APPROVAL' ? 'paused' : 'running'); setActiveStep(step => Math.min(step + 1, 3)) }
+    }).catch(error => toast(error instanceof ApiError ? error.body.message : '실행 상태를 확인하지 못했습니다.')), 2000)
+    return () => window.clearInterval(timer)
+  }, [execution?.id, execution?.status])
 
   const filtered = useMemo(() => testCases.filter((t) => `${t.id} ${t.title} ${t.group}`.toLowerCase().includes(query.toLowerCase())), [query, testCases])
 
@@ -37,16 +49,33 @@ function App() {
     if (startingRun) return
     setStartingRun(true)
     try {
-      await api.createExecution(input)
+      const created = await api.createExecution(input)
+      setExecution(created)
       setRunState('running'); setActiveStep(1); setView('run')
-      window.setTimeout(() => setActiveStep(2), 900)
-      window.setTimeout(() => setActiveStep(3), 1800)
-      window.setTimeout(() => { setActiveStep(4); setRunState('done') }, 2800)
+      if (apiConfig.mock) {
+        window.setTimeout(() => setActiveStep(2), 900)
+        window.setTimeout(() => setActiveStep(3), 1800)
+        window.setTimeout(() => { setActiveStep(4); setRunState('done') }, 2800)
+      }
     } catch (error) {
       toast(error instanceof ApiError ? error.body.message : '실행을 시작하지 못했습니다.')
     } finally { setStartingRun(false) }
   }
   const startRun = () => createRun(defaultExecution)
+  const cancelRun = async () => {
+    if (execution && !apiConfig.mock) {
+      try { setExecution((await api.cancelExecution(execution.id)).execution); toast('실행 중단을 요청했습니다.') }
+      catch (error) { return toast(error instanceof ApiError ? error.body.message : '실행을 중단하지 못했습니다.') }
+    }
+    setRunState('idle'); setActiveStep(0)
+  }
+  const retryRun = async () => {
+    if (execution && !apiConfig.mock) {
+      try { const retried=(await api.retryExecution(execution.id)).execution; setExecution(retried); setRunState('running'); setActiveStep(0); setView('run'); return }
+      catch (error) { return toast(error instanceof ApiError ? error.body.message : '실행을 재시도하지 못했습니다.') }
+    }
+    startRun()
+  }
 
   const toast = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2200) }
 
@@ -83,8 +112,8 @@ function App() {
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
         {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
-        {view === 'run' && <RunMonitor state={runState} activeStep={activeStep} start={startRun} pause={() => setRunState(runState === 'paused' ? 'running' : 'paused')} stop={() => {setRunState('idle'); setActiveStep(0)}} onResult={() => setView('result')}/>}
-        {view === 'result' && <ResultDetail onBack={() => setView('dashboard')} onRetry={startRun}/>} 
+        {view === 'run' && <RunMonitor state={runState} execution={execution} activeStep={activeStep} start={startRun} pause={() => setRunState(runState === 'paused' ? 'running' : 'paused')} stop={cancelRun} onResult={() => setView('result')}/>}
+        {view === 'result' && <ResultDetail execution={execution} onBack={() => setView('dashboard')} onRetry={retryRun}/>}
         {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
         {view === 'accounts' && <ManagementPage kind="account" onToast={toast}/>}
         {view === 'policies' && <ManagementPage kind="policy" onToast={toast}/>}
@@ -219,15 +248,15 @@ function ConfigCard({icon,title,caption,tone='',children}:{icon:React.ReactNode;
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="config-field"><span>{label}</span>{children}</label>}
 function Select({value,options,setValue}:{value:string;options:string[];setValue?:(v:string)=>void}){return <div className="select-wrap"><select value={value} onChange={e=>setValue?.(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select><ChevronDown/></div>}
 
-function RunMonitor({state,activeStep,start,pause,stop,onResult}: {state:RunState; activeStep:number; start:()=>void; pause:()=>void; stop:()=>void; onResult:()=>void}) {
+function RunMonitor({state,execution,activeStep,start,pause,stop,onResult}: {state:RunState; execution:Execution|null; activeStep:number; start:()=>void; pause:()=>void; stop:()=>void; onResult:()=>void}) {
   const running = state === 'running' || state === 'paused'
-  return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">LIVE EXECUTION</p><h1>실행 모니터</h1><p>{running ? 'TC-142 · 신규 사용자 이메일 회원가입' : state==='done' ? '실행이 성공적으로 완료되었습니다.' : '현재 실행 중인 테스트가 없습니다.'}</p></div><div className="run-controls">{!running && state!=='done' && <button className="primary" onClick={start}><Play size={16}/> 실행 시작</button>}{running && <><button className="secondary" onClick={pause}>{state==='paused'?<Play size={16}/>:<Pause size={16}/>} {state==='paused'?'재개':'일시정지'}</button><button className="danger" onClick={stop}><Square size={15}/> 중단</button></>}{state==='done'&&<><button className="secondary" onClick={start}><RefreshCw size={15}/> 다시 실행</button><button className="primary" onClick={onResult}>결과 상세 <ArrowRight size={15}/></button></>}</div></div>
+  return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">LIVE EXECUTION</p><h1>실행 모니터</h1><p>{running ? `${execution?.id ?? '실행 준비 중'} · ${execution?.status ?? 'RUNNING'}` : state==='done' ? '실행이 성공적으로 완료되었습니다.' : '현재 실행 중인 테스트가 없습니다.'}</p></div><div className="run-controls">{!running && state!=='done' && <button className="primary" onClick={start}><Play size={16}/> 실행 시작</button>}{running && <><button className="secondary" onClick={pause}>{state==='paused'?<Play size={16}/>:<Pause size={16}/>} {state==='paused'?'재개':'일시정지'}</button><button className="danger" onClick={stop}><Square size={15}/> 중단</button></>}{state==='done'&&<><button className="secondary" onClick={start}><RefreshCw size={15}/> 다시 실행</button><button className="primary" onClick={onResult}>결과 상세 <ArrowRight size={15}/></button></>}</div></div>
     <div className="monitor-grid"><article className="panel browser-panel"><div className="browser-top"><span/><span/><span/><div>https://staging.storefront.test/login</div><ShieldCheck size={15}/></div><div className="mock-site"><div className="mock-logo">storefront</div><div className="mock-login"><h2>다시 만나서 반가워요</h2><p>테스트 계정으로 안전하게 로그인합니다.</p><label>이메일</label><div className="mock-input">qa.runner@company.test</div><label>비밀번호</label><div className="mock-input">••••••••••••</div><div className={`mock-button ${activeStep===3?'targeted':''}`}>로그인</div></div>{state==='done'&&<div className="success-overlay"><CheckCircle2/><b>검증 완료</b><span>대시보드가 정상적으로 표시되었습니다.</span></div>}</div></article>
       <article className="panel timeline"><div className="panel-head"><div><h2>실행 타임라인</h2><p>Step {Math.min(activeStep+1,4)} of 4</p></div><span className={`live ${state}`}>{state==='running'?'LIVE':state==='done'?'PASS':state==='paused'?'PAUSED':'READY'}</span></div><div className="step-list">{steps.map((s,i)=>{const done=i<activeStep; const active=i===activeStep&&running; return <div className={`step ${done?'done':''} ${active?'active':''}`} key={s.title}><span>{done?<Check/>:active?<Activity/>:i+1}</span><div><b>{s.title}</b><p>{s.note}</p><small>{s.type.toUpperCase()} {done&&'· 완료'}</small></div></div>})}</div><div className="budget"><div><span>AI 호출</span><b>{Math.min(activeStep*2,7)} / 20</b></div><div className="budget-bar"><i style={{width:`${Math.min(activeStep*10,35)}%`}}/></div><div><span>예상 비용</span><b>${(activeStep*0.031).toFixed(3)}</b></div></div></article></div>
   </section>
 }
 
-function ResultDetail({onBack,onRetry}:{onBack:()=>void;onRetry:()=>void}){
+function ResultDetail({execution,onBack,onRetry}:{execution:Execution|null;onBack:()=>void;onRetry:()=>void}){
   const [selected,setSelected]=useState(3)
   const evidence=[
     {title:'로그인 페이지 진입',action:'NAVIGATE',time:'1.2s',detail:'허용 URL 이동 및 로그인 폼 확인'},
@@ -236,7 +265,7 @@ function ResultDetail({onBack,onRetry}:{onBack:()=>void;onRetry:()=>void}){
     {title:'대시보드 노출 검증',action:'ASSERT',time:'1.9s',detail:'URL과 환영 문구 규칙 검증'},
   ]
   return <section className="page result-page"><div className="author-top"><button className="back-button" onClick={onBack}>← 대시보드</button><div className="author-actions"><button className="secondary"><Download/> 결과 내보내기</button><button className="primary" onClick={onRetry}><RefreshCw/> 다시 실행</button></div></div>
-    <div className="result-hero"><div className="result-check"><Check/></div><div><p className="eyebrow">EXECUTION COMPLETED</p><h1>모든 검증을 통과했습니다.</h1><p>신규 사용자 이메일 회원가입 · EX-20260827-0184</p></div><div className="result-stats"><div><span>결과</span><b className="green-text">PASS</b></div><div><span>소요 시간</span><b>4.8s</b></div><div><span>AI 비용</span><b>$0.093</b></div><div><span>완료 시각</span><b>16:42:18</b></div></div></div>
+    <div className="result-hero"><div className="result-check"><Check/></div><div><p className="eyebrow">EXECUTION COMPLETED</p><h1>모든 검증을 통과했습니다.</h1><p>신규 사용자 이메일 회원가입 · {execution?.id ?? 'EX-DEMO'}</p></div><div className="result-stats"><div><span>결과</span><b className="green-text">{execution?.status ?? 'PASS'}</b></div><div><span>소요 시간</span><b>4.8s</b></div><div><span>AI 비용</span><b>$0.093</b></div><div><span>완료 시각</span><b>{execution?.endedAt ? new Date(execution.endedAt).toLocaleTimeString('ko-KR') : '16:42:18'}</b></div></div></div>
     <div className="result-grid"><article className="panel evidence-list"><div className="panel-head"><div><h2>단계별 증적</h2><p>4개 단계 · 2개 assertion</p></div><span className="pill pass">ALL PASS</span></div>{evidence.map((e,i)=><button className={`evidence-row ${selected===i?'selected':''}`} onClick={()=>setSelected(i)} key={e.title}><span className="evidence-check"><Check/></span><div><b>{e.title}</b><small><em>{e.action}</em> · {e.detail}</small></div><time>{e.time}</time><ChevronRight/></button>)}</article>
       <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 화면 증적</button><button><TerminalSquare/> 실행 로그</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>staging.storefront.test/dashboard</span></div><div className="screen-content"><div className="mini-nav"><b>storefront</b><span/><span/><span/></div><div className="mini-welcome"><small>WELCOME BACK</small><h2>안녕하세요, QA Runner님.</h2><p>오늘의 테스트 환경이 정상적으로 준비되었습니다.</p><div><span/><span/><span/></div></div><div className="assert-highlight"><CheckCircle2/><b>Assertion matched</b><span>“안녕하세요” 텍스트가 화면에 표시됨</span></div></div></div><div className="evidence-meta"><div><span>선택한 단계</span><b>{selected+1}. {evidence[selected].title}</b></div><div><span>판정 방식</span><b>{selected===3?'URL + TEXT assertion':'DOM / Accessibility tree'}</b></div><div><span>AI 신뢰도</span><b>{selected===3?'규칙 기반':'96%'}</b></div></div></article>
     </div>

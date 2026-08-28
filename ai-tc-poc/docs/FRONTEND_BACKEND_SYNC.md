@@ -22,13 +22,20 @@
 
 ## 백엔드 담당자 확인 요청
 
-1. 실행 생성 후 실제 상태를 조회할 `GET /executions/{executionId}` 계약
-2. 실행 중단 `POST /executions/{executionId}/cancel`과 재시도 endpoint
-3. 실시간 이벤트 방식 결정: SSE 우선, 불가하면 polling 주기와 종료 상태 정의
-4. XLSX/DOCX 업로드·파싱 endpoint 및 파일 크기·확장자 제한
-5. 환경·테스트 계정·정책 관리 목록 endpoint
-6. 모든 오류 응답이 `{ code, message, requestId, retryable, details? }` 형태인지 확인
-7. 로컬 개발 CORS 또는 Vite `/api` proxy 운용 방식 확정
+완료된 연동:
+
+- `GET /executions/{executionId}`: 프론트 2초 polling 연결
+- `POST /executions/{executionId}/cancel`: 실행 모니터 중단 버튼 연결
+- `POST /executions/{executionId}/retry`: 결과 화면 재시도 연결
+- 확장 상태: `PROVISIONING`, `CANCEL_REQUESTED`, `NEEDS_REVIEW`, `SYSTEM_ERROR` 포함
+- 표준 validation 및 서버 오류 envelope 반영
+
+남은 확인 요청:
+
+1. SSE 도입 여부와 단계별 진행률·증적 event 계약
+2. XLSX/DOCX 업로드·파싱 endpoint 및 파일 크기·확장자 제한
+3. 환경·테스트 계정·정책 관리 목록 endpoint
+4. 로컬 개발 CORS에 `http://127.0.0.1:5174` 추가 또는 프론트 포트를 5173으로 고정
 
 ## 로컬 연동 방법
 
