@@ -4,6 +4,7 @@ import { mockSteps, mockTestCases } from './mockData'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false'
 export const apiConfig = { baseUrl: API_BASE_URL, mock: USE_MOCK_API }
+export type HealthStatus = { status: string; environment: string }
 
 export class ApiError extends Error {
   constructor(public body: ApiErrorBody, public status: number) { super(body.message) }
@@ -11,7 +12,8 @@ export class ApiError extends Error {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const url = /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`
+    const response = await fetch(url, {
       ...init,
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     })
@@ -30,6 +32,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 export const api = {
+  async checkHealth(): Promise<HealthStatus> {
+    if (USE_MOCK_API) return { status: 'ok', environment: 'mock' }
+    const healthUrl = /^https?:\/\//.test(API_BASE_URL)
+      ? `${new URL(API_BASE_URL).origin}/health`
+      : '/health'
+    return request(healthUrl)
+  },
+
   async listTestCases(): Promise<TestCaseSummary[]> {
     if (!USE_MOCK_API) return request('/test-cases')
     await wait(180)

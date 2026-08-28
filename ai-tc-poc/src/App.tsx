@@ -14,6 +14,7 @@ import type { CreateExecutionRequest, Execution, StructuredTestCase, TestCaseSum
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done'
 type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
+type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
 
 const steps = mockSteps.map((step) => ({ ...step, type: step.action }))
 const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true }
@@ -29,8 +30,25 @@ function App() {
   const [loadingCases, setLoadingCases] = useState(true)
   const [startingRun, setStartingRun] = useState(false)
   const [execution, setExecution] = useState<Execution | null>(null)
+  const [apiConnection, setApiConnection] = useState<ApiConnection>(apiConfig.mock ? 'mock' : 'checking')
+  const [backendEnvironment, setBackendEnvironment] = useState(apiConfig.mock ? 'mock' : '')
 
   useEffect(() => { api.listTestCases().then(setTestCases).catch((error) => setNotice(error instanceof ApiError ? error.body.message : '테스트 케이스를 불러오지 못했습니다.')).finally(() => setLoadingCases(false)) }, [])
+
+  const checkBackend = async () => {
+    if (apiConfig.mock) return
+    setApiConnection('checking')
+    try {
+      const health = await api.checkHealth()
+      setBackendEnvironment(health.environment)
+      setApiConnection(health.status === 'ok' ? 'online' : 'offline')
+    } catch {
+      setBackendEnvironment('')
+      setApiConnection('offline')
+    }
+  }
+
+  useEffect(() => { void checkBackend() }, [])
 
   useEffect(() => {
     if (apiConfig.mock || !execution || !['QUEUED','PROVISIONING','RUNNING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(execution.status)) return
@@ -104,7 +122,11 @@ function App() {
 
       <main>
         <header className="topbar">
-          <div><span className="environment"><CircleDot size={13}/> Staging</span><span className="sync"><span/> {apiConfig.mock ? 'Mock API 사용 중' : 'Backend API 연결'}</span></div>
+          <div className="connection-area">
+            <span className="environment"><CircleDot size={13}/> Staging</span>
+            <span className={`sync ${apiConnection}`}><span/> {apiConnection === 'mock' ? 'Mock API 사용 중' : apiConnection === 'checking' ? 'Backend 확인 중' : apiConnection === 'online' ? `Backend 연결됨${backendEnvironment ? ` · ${backendEnvironment}` : ''}` : 'Backend 연결 끊김'}</span>
+            {apiConnection === 'offline' && <button className="sync-retry" onClick={checkBackend}><RefreshCw size={12}/> 재연결</button>}
+          </div>
           <div className="top-actions"><button className="icon-button" aria-label="알림"><AlertTriangle size={18}/><i/></button><button className="primary" onClick={startRun} disabled={startingRun}>{startingRun?<Activity className="spin" size={16}/>:<Play size={16} fill="currentColor"/>} {startingRun?'실행 생성 중':'새 실행'}</button></div>
         </header>
 
