@@ -8,6 +8,8 @@ Run the local stack from `ai-tc-poc` with `docker compose up --build`. The one-s
 
 Execution creation now verifies that the test-case version is `READY`, and that the environment and available account belong to the configured organization/project. A canonical SHA-256 request digest detects reuse of an idempotency key with a different body. Execution, outbox, and audit records are committed in the same database transaction.
 
+For compatibility with the current PoC frontend, `tcv-new-v1`, `env-staging`, and `qa-runner-01` are resolved to the stable local seed UUIDs by the backend. New API contracts should use UUIDs directly; these aliases are temporary compatibility values.
+
 Frontend execution integration endpoints:
 
 - `POST /api/v1/executions` — create an execution (`Idempotency-Key` required)

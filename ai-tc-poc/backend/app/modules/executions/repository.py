@@ -13,6 +13,13 @@ from app.db.models import (
 from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
 
 
+POC_ID_ALIASES = {
+    "tcv-new-v1": UUID("00000000-0000-0000-0000-000000000501"),
+    "env-staging": UUID("00000000-0000-0000-0000-000000000301"),
+    "qa-runner-01": UUID("00000000-0000-0000-0000-000000000601"),
+}
+
+
 class ExecutionRuleError(Exception):
     def __init__(self, code: str, message: str):
         self.code = code
@@ -35,9 +42,9 @@ class SqlExecutionRepository:
                 raise ExecutionRuleError("IDEMPOTENCY_CONFLICT", "같은 Idempotency-Key에 다른 요청 내용이 사용되었습니다.")
             return self._response(existing)
 
-        version_id = UUID(body.testCaseVersionId)
-        environment_id = UUID(body.environmentId)
-        account_id = UUID(body.accountId) if body.accountId else None
+        version_id = self._resolve_id(body.testCaseVersionId)
+        environment_id = self._resolve_id(body.environmentId)
+        account_id = self._resolve_id(body.accountId) if body.accountId else None
         await self._validate_resources(version_id, environment_id, account_id)
 
         execution = Execution(
@@ -199,6 +206,15 @@ class SqlExecutionRepository:
     def _request_digest(body: CreateExecutionRequest) -> str:
         canonical = json.dumps(body.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _resolve_id(value: str) -> UUID:
+        if value in POC_ID_ALIASES:
+            return POC_ID_ALIASES[value]
+        try:
+            return UUID(value)
+        except ValueError as exc:
+            raise ExecutionRuleError("INVALID_RESOURCE_ID", "TC·환경·계정 ID 형식이 올바르지 않습니다.") from exc
 
     @staticmethod
     def _response(execution: Execution) -> ExecutionResponse:

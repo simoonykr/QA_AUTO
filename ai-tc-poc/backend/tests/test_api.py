@@ -184,3 +184,9 @@ def test_execution_request_digest_is_stable() -> None:
 
 def test_required_database_models_are_registered() -> None:
     assert len(Base.metadata.tables) == 13
+
+
+def test_frontend_poc_aliases_resolve_to_seed_uuids() -> None:
+    assert str(SqlExecutionRepository._resolve_id("tcv-new-v1")) == "00000000-0000-0000-0000-000000000501"
+    assert str(SqlExecutionRepository._resolve_id("env-staging")) == "00000000-0000-0000-0000-000000000301"
+    assert str(SqlExecutionRepository._resolve_id("qa-runner-01")) == "00000000-0000-0000-0000-000000000601"
