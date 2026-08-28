@@ -4,7 +4,9 @@ The backend is a modular FastAPI monolith. PostgreSQL is the source of truth, Re
 
 Current slice implements health, PostgreSQL-backed test-case listing and execution creation, deterministic TC structuring, common error envelopes, request IDs, CORS, and the initial PostgreSQL schema. Execution creation and its `execution.queued` outbox event are committed atomically. The `outbox-publisher` Compose service publishes pending events to the `tracepilot:executions` Redis Stream.
 
-Run the local stack from `ai-tc-poc` with `docker compose up --build`. Existing PostgreSQL volumes created before the seed/schema update must be recreated for local development.
+Run the local stack from `ai-tc-poc` with `docker compose up --build`. The one-shot `migrate` service runs `alembic upgrade head` before the API and outbox publisher start. Existing PostgreSQL volumes created before Alembic adoption must be recreated once for local development.
+
+Execution creation now verifies that the test-case version is `READY`, and that the environment and available account belong to the configured organization/project. A canonical SHA-256 request digest detects reuse of an idempotency key with a different body. Execution, outbox, and audit records are committed in the same database transaction.
 
 Frontend execution integration endpoints:
 

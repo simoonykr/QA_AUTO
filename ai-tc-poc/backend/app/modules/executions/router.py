@@ -1,31 +1,41 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import DomainError
-from app.modules.executions.repository import SqlExecutionRepository
+from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
 from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionResponse
 
 
 router = APIRouter(prefix="/executions", tags=["executions"])
 
 
-def repository_for(session: AsyncSession) -> SqlExecutionRepository:
+def repository_for(session: AsyncSession, request: Request) -> SqlExecutionRepository:
     settings = get_settings()
-    return SqlExecutionRepository(session, UUID(settings.default_organization_id), UUID(settings.default_project_id))
+    return SqlExecutionRepository(
+        session,
+        UUID(settings.default_organization_id),
+        UUID(settings.default_project_id),
+        UUID(settings.default_user_id),
+        UUID(request.state.request_id),
+    )
 
 
 @router.post("", response_model=ExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
-async def create_execution(body: CreateExecutionRequest, idempotency_key: str | None = Header(default=None), session: AsyncSession = Depends(get_session)) -> ExecutionResponse:
+async def create_execution(body: CreateExecutionRequest, request: Request, idempotency_key: str | None = Header(default=None), session: AsyncSession = Depends(get_session)) -> ExecutionResponse:
     if not idempotency_key:
         raise DomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key 헤더가 필요합니다.")
-    return await repository_for(session).create(body, idempotency_key)
+    try:
+        return await repository_for(session, request).create(body, idempotency_key)
+    except ExecutionRuleError as exc:
+        status_code = 409 if exc.code == "IDEMPOTENCY_CONFLICT" else 400
+        raise DomainError(exc.code, exc.message, status_code) from None
 
 
 @router.get("/{execution_id}", response_model=ExecutionResponse)
-async def get_execution(execution_id: UUID, session: AsyncSession = Depends(get_session)) -> ExecutionResponse:
-    repository = repository_for(session)
+async def get_execution(execution_id: UUID, request: Request, session: AsyncSession = Depends(get_session)) -> ExecutionResponse:
+    repository = repository_for(session, request)
     execution = await repository.get(execution_id)
     if not execution:
         raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
@@ -33,8 +43,8 @@ async def get_execution(execution_id: UUID, session: AsyncSession = Depends(get_
 
 
 @router.post("/{execution_id}/cancel", response_model=ExecutionActionResponse, status_code=status.HTTP_202_ACCEPTED)
-async def cancel_execution(execution_id: UUID, session: AsyncSession = Depends(get_session)) -> ExecutionActionResponse:
-    repository = repository_for(session)
+async def cancel_execution(execution_id: UUID, request: Request, session: AsyncSession = Depends(get_session)) -> ExecutionActionResponse:
+    repository = repository_for(session, request)
     existing = await repository.get(execution_id)
     if not existing:
         raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
@@ -45,10 +55,10 @@ async def cancel_execution(execution_id: UUID, session: AsyncSession = Depends(g
 
 
 @router.post("/{execution_id}/retry", response_model=ExecutionActionResponse, status_code=status.HTTP_202_ACCEPTED)
-async def retry_execution(execution_id: UUID, idempotency_key: str | None = Header(default=None), session: AsyncSession = Depends(get_session)) -> ExecutionActionResponse:
+async def retry_execution(execution_id: UUID, request: Request, idempotency_key: str | None = Header(default=None), session: AsyncSession = Depends(get_session)) -> ExecutionActionResponse:
     if not idempotency_key:
         raise DomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key 헤더가 필요합니다.")
-    repository = repository_for(session)
+    repository = repository_for(session, request)
     try:
         execution = await repository.retry(execution_id, idempotency_key)
     except ValueError:

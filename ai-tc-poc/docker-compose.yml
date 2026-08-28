@@ -6,9 +6,7 @@ services:
       POSTGRES_USER: tracepilot
       POSTGRES_PASSWORD: tracepilot
     ports: ["5432:5432"]
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/db/001_initial.sql:/docker-entrypoint-initdb.d/001_initial.sql:ro
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tracepilot"]
       interval: 5s
@@ -27,6 +25,14 @@ services:
       MINIO_ROOT_PASSWORD: tracepilot-local-only
     ports: ["9000:9000", "9001:9001"]
     volumes: ["minio_data:/data"]
+  migrate:
+    build: ./backend
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: local
+      DATABASE_URL: postgresql+asyncpg://tracepilot:tracepilot@postgres:5432/tracepilot
+    depends_on:
+      postgres: { condition: service_healthy }
   api:
     build: ./backend
     environment:
@@ -36,7 +42,7 @@ services:
       CORS_ORIGINS: '["http://127.0.0.1:5173"]'
     ports: ["8000:8000"]
     depends_on:
-      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
   outbox-publisher:
     build: ./backend
@@ -46,7 +52,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://tracepilot:tracepilot@postgres:5432/tracepilot
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
 volumes:
   postgres_data:

@@ -3,8 +3,10 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.core.database import get_session
+from app.db.models import Base
 from app.main import app
-from app.schemas.executions import ExecutionResponse
+from app.modules.executions.repository import SqlExecutionRepository
+from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 
 
@@ -157,3 +159,28 @@ def test_validation_error_uses_standard_envelope() -> None:
     assert response.status_code == 422
     assert response.json()["code"] == "VALIDATION_ERROR"
     assert response.json()["requestId"]
+
+
+def test_invalid_request_id_is_replaced_with_uuid() -> None:
+    response = client.get("/health", headers={"X-Request-ID": "not-a-uuid"})
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] != "not-a-uuid"
+
+
+def test_execution_request_digest_is_stable() -> None:
+    payload = CreateExecutionRequest.model_validate({
+        "testCaseVersionId": "00000000-0000-0000-0000-000000000501",
+        "environmentId": "00000000-0000-0000-0000-000000000301",
+        "browser": "Chromium",
+        "accountId": "00000000-0000-0000-0000-000000000601",
+        "viewport": "1440x900",
+        "locale": "ko-KR",
+        "limits": {"timeoutMinutes": 15, "maxAiCalls": 20, "retryCount": 2},
+        "requireRiskApproval": True,
+    })
+    assert SqlExecutionRepository._request_digest(payload) == SqlExecutionRepository._request_digest(payload.model_copy())
+    assert len(SqlExecutionRepository._request_digest(payload)) == 64
+
+
+def test_required_database_models_are_registered() -> None:
+    assert len(Base.metadata.tables) == 13

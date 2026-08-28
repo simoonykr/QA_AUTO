@@ -1,37 +1,60 @@
+import hashlib
+import json
 from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Execution, ExecutionStatus, OutboxEvent, OutboxStatus
+from app.db.models import (
+    AuditEvent, Environment, Execution, ExecutionStatus, OutboxEvent, OutboxStatus,
+    TestAccount, TestCase, TestCaseVersion,
+)
 from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
 
 
+class ExecutionRuleError(Exception):
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.message = message
+
+
 class SqlExecutionRepository:
-    def __init__(self, session: AsyncSession, organization_id: UUID, project_id: UUID):
+    def __init__(self, session: AsyncSession, organization_id: UUID, project_id: UUID, actor_id: UUID, request_id: UUID):
         self.session = session
         self.organization_id = organization_id
         self.project_id = project_id
+        self.actor_id = actor_id
+        self.request_id = request_id
 
     async def create(self, body: CreateExecutionRequest, idempotency_key: str) -> ExecutionResponse:
+        digest = self._request_digest(body)
         existing = await self._find(idempotency_key)
         if existing:
+            if existing.request_digest != digest:
+                raise ExecutionRuleError("IDEMPOTENCY_CONFLICT", "같은 Idempotency-Key에 다른 요청 내용이 사용되었습니다.")
             return self._response(existing)
+
+        version_id = UUID(body.testCaseVersionId)
+        environment_id = UUID(body.environmentId)
+        account_id = UUID(body.accountId) if body.accountId else None
+        await self._validate_resources(version_id, environment_id, account_id)
 
         execution = Execution(
             organization_id=self.organization_id,
             project_id=self.project_id,
-            test_case_version_id=UUID(body.testCaseVersionId),
-            environment_id=UUID(body.environmentId),
-            account_id=UUID(body.accountId) if body.accountId else None,
+            test_case_version_id=version_id,
+            environment_id=environment_id,
+            account_id=account_id,
             idempotency_key=idempotency_key,
+            request_digest=digest,
             status=ExecutionStatus.QUEUED,
             settings=body.model_dump(mode="json"),
         )
         self.session.add(execution)
         await self.session.flush()
         self.session.add(self._queued_event(execution))
+        self.session.add(self._audit("execution.created", execution.id, {"idempotencyKey": idempotency_key}))
         try:
             await self.session.commit()
         except IntegrityError:
@@ -66,6 +89,7 @@ class SqlExecutionRepository:
         )
         execution = result.scalar_one_or_none()
         if execution:
+            self.session.add(self._audit("execution.cancel_requested", execution.id, {}))
             await self.session.commit()
             return self._response(execution)
         return None
@@ -90,6 +114,7 @@ class SqlExecutionRepository:
             environment_id=source.environment_id,
             account_id=source.account_id,
             idempotency_key=idempotency_key,
+            request_digest=source.request_digest,
             status=ExecutionStatus.QUEUED,
             attempt=source.attempt + 1,
             settings=source.settings,
@@ -98,6 +123,7 @@ class SqlExecutionRepository:
         self.session.add(execution)
         await self.session.flush()
         self.session.add(self._queued_event(execution))
+        self.session.add(self._audit("execution.retried", execution.id, {"parentExecutionId": str(source.id)}))
         await self.session.commit()
         await self.session.refresh(execution)
         return self._response(execution)
@@ -124,6 +150,55 @@ class SqlExecutionRepository:
             Execution.organization_id == self.organization_id,
             Execution.idempotency_key == idempotency_key,
         ))
+
+    async def _validate_resources(self, version_id: UUID, environment_id: UUID, account_id: UUID | None) -> None:
+        version = await self.session.scalar(
+            select(TestCaseVersion)
+            .join(TestCase, TestCase.id == TestCaseVersion.test_case_id)
+            .where(
+                TestCaseVersion.id == version_id,
+                TestCaseVersion.organization_id == self.organization_id,
+                TestCase.organization_id == self.organization_id,
+                TestCase.project_id == self.project_id,
+            )
+        )
+        if not version:
+            raise ExecutionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        if version.status != "READY":
+            raise ExecutionRuleError("TC_NOT_READY", "승인되지 않은 테스트 케이스는 실행할 수 없습니다.")
+        environment = await self.session.scalar(select(Environment).where(
+            Environment.id == environment_id,
+            Environment.organization_id == self.organization_id,
+            Environment.project_id == self.project_id,
+        ))
+        if not environment:
+            raise ExecutionRuleError("ENVIRONMENT_NOT_FOUND", "실행 환경을 찾을 수 없습니다.")
+        if account_id:
+            account = await self.session.scalar(select(TestAccount).where(
+                TestAccount.id == account_id,
+                TestAccount.organization_id == self.organization_id,
+                TestAccount.project_id == self.project_id,
+            ))
+            if not account:
+                raise ExecutionRuleError("TEST_ACCOUNT_NOT_FOUND", "테스트 계정을 찾을 수 없습니다.")
+            if account.status != "AVAILABLE":
+                raise ExecutionRuleError("TEST_ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 테스트 계정입니다.")
+
+    def _audit(self, action: str, resource_id: UUID, metadata: dict) -> AuditEvent:
+        return AuditEvent(
+            organization_id=self.organization_id,
+            actor_id=self.actor_id,
+            action=action,
+            resource_type="execution",
+            resource_id=str(resource_id),
+            request_id=self.request_id,
+            metadata_json=metadata,
+        )
+
+    @staticmethod
+    def _request_digest(body: CreateExecutionRequest) -> str:
+        canonical = json.dumps(body.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     @staticmethod
     def _response(execution: Execution) -> ExecutionResponse:

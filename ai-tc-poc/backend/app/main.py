@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +18,11 @@ app.add_exception_handler(Exception, unexpected_error_handler)
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
-    request.state.request_id = request.headers.get("X-Request-ID", str(uuid4()))
+    supplied_request_id = request.headers.get("X-Request-ID")
+    try:
+        request.state.request_id = str(UUID(supplied_request_id)) if supplied_request_id else str(uuid4())
+    except ValueError:
+        request.state.request_id = str(uuid4())
     response = await call_next(request)
     response.headers["X-Request-ID"] = request.state.request_id
     return response
