@@ -5,7 +5,7 @@ from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import DomainError
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
-from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionResponse
+from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionDetailsResponse, ExecutionResponse
 
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -40,6 +40,14 @@ async def get_execution(execution_id: UUID, request: Request, session: AsyncSess
     if not execution:
         raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
     return repository._response(execution)
+
+
+@router.get("/{execution_id}/details", response_model=ExecutionDetailsResponse)
+async def get_execution_details(execution_id: UUID, request: Request, session: AsyncSession = Depends(get_session)) -> ExecutionDetailsResponse:
+    details = await repository_for(session, request).details(execution_id)
+    if not details:
+        raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
+    return details
 
 
 @router.post("/{execution_id}/cancel", response_model=ExecutionActionResponse, status_code=status.HTTP_202_ACCEPTED)

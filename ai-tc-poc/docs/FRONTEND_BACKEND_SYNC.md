@@ -37,6 +37,14 @@
 3. 환경·테스트 계정·정책 관리 목록 endpoint
 4. 로컬 개발 CORS에 `http://127.0.0.1:5174` 추가 또는 프론트 포트를 5173으로 고정
 
+새 상세 조회 계약:
+
+- `GET /api/v1/executions/{executionId}/details`
+- 응답: `{ execution, result, errorCode, steps, artifacts }`
+- `steps`: `stepNo`, `status`, `action`, `assertion`, `errorCode`, 시작·종료 시각
+- `artifacts`: 증적 종류, MinIO object key, SHA-256, 크기, 생성 시각
+- 프론트는 기존 상태 polling을 유지하면서 실행 모니터/결과 화면에서 상세 endpoint를 추가 호출할 수 있음
+
 ## Playwright Worker 반영
 
 - Redis Stream의 `execution.requested` 작업 소비

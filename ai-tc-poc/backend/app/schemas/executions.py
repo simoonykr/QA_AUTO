@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -39,3 +39,32 @@ class ExecutionResponse(BaseModel):
 class ExecutionActionResponse(BaseModel):
     execution: ExecutionResponse
     accepted: bool = True
+
+
+class StepRunResponse(BaseModel):
+    id: str
+    stepNo: int
+    status: str
+    action: dict[str, Any] | None = None
+    assertion: dict[str, Any] | None = None
+    errorCode: str | None = None
+    startedAt: datetime | None = None
+    endedAt: datetime | None = None
+
+
+class ArtifactResponse(BaseModel):
+    id: str
+    stepRunId: str | None = None
+    type: str
+    objectKey: str
+    sha256: str
+    sizeBytes: int
+    createdAt: datetime
+
+
+class ExecutionDetailsResponse(BaseModel):
+    execution: ExecutionResponse
+    result: dict[str, Any] | None = None
+    errorCode: str | None = None
+    steps: list[StepRunResponse]
+    artifacts: list[ArtifactResponse]

@@ -7,10 +7,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
-    AuditEvent, Environment, Execution, ExecutionStatus, OutboxEvent, OutboxStatus,
-    TestAccount, TestCase, TestCaseVersion,
+    Artifact, AuditEvent, Environment, Execution, ExecutionStatus, OutboxEvent, OutboxStatus,
+    StepRun, TestAccount, TestCase, TestCaseVersion,
 )
-from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
+from app.schemas.executions import (
+    ArtifactResponse, CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse, StepRunResponse,
+)
 
 
 POC_ID_ALIASES = {
@@ -78,6 +80,36 @@ class SqlExecutionRepository:
             Execution.id == execution_id,
             Execution.organization_id == self.organization_id,
         ))
+
+    async def details(self, execution_id: UUID) -> ExecutionDetailsResponse | None:
+        execution = await self.get(execution_id)
+        if not execution:
+            return None
+        step_runs = (await self.session.scalars(
+            select(StepRun)
+            .where(StepRun.execution_id == execution.id)
+            .order_by(StepRun.step_no, StepRun.attempt)
+        )).all()
+        artifacts = (await self.session.scalars(
+            select(Artifact)
+            .where(Artifact.execution_id == execution.id)
+            .order_by(Artifact.created_at)
+        )).all()
+        return ExecutionDetailsResponse(
+            execution=self._response(execution),
+            result=execution.result,
+            errorCode=execution.error_code,
+            steps=[StepRunResponse(
+                id=str(item.id), stepNo=item.step_no, status=item.status,
+                action=item.action, assertion=item.assertion, errorCode=item.error_code,
+                startedAt=item.started_at, endedAt=item.ended_at,
+            ) for item in step_runs],
+            artifacts=[ArtifactResponse(
+                id=str(item.id), stepRunId=str(item.step_run_id) if item.step_run_id else None,
+                type=item.artifact_type, objectKey=item.object_key, sha256=item.sha256,
+                sizeBytes=item.size_bytes, createdAt=item.created_at,
+            ) for item in artifacts],
+        )
 
     async def request_cancel(self, execution_id: UUID) -> ExecutionResponse | None:
         cancellable = [

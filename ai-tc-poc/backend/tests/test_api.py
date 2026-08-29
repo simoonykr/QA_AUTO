@@ -6,7 +6,7 @@ from app.core.database import get_session
 from app.db.models import Base
 from app.main import app
 from app.modules.executions.repository import SqlExecutionRepository
-from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
+from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _parse_viewport
 from app.workers.step_executor import StepDefinitionError, execute_step
@@ -40,6 +40,22 @@ class FakeExecutionRepository:
 
     async def get(self, execution_id):
         return next((item for item in self.ids.values() if item.id == str(execution_id)), None)
+
+    async def details(self, execution_id):
+        item = await self.get(execution_id)
+        if not item:
+            return None
+        return ExecutionDetailsResponse(
+            execution=item,
+            result={"status": item.status, "stepCount": 1},
+            steps=[{
+                "id": "00000000-0000-0000-0000-000000000801",
+                "stepNo": 1,
+                "status": "PASS",
+                "action": {"type": "navigate"},
+            }],
+            artifacts=[],
+        )
 
     async def request_cancel(self, execution_id):
         item = await self.get(execution_id)
@@ -140,6 +156,18 @@ def test_execution_get_and_cancel() -> None:
     assert fetched.json()["status"] == "RUNNING"
     assert cancelled.status_code == 202
     assert cancelled.json()["execution"]["status"] == "CANCEL_REQUESTED"
+
+
+def test_execution_details_exposes_steps_and_artifacts() -> None:
+    execution = ExecutionResponse(
+        id="00000000-0000-0000-0000-000000000701", status="PASS",
+        testCaseVersionId="00000000-0000-0000-0000-000000000501", queuedAt=datetime.now(UTC),
+    )
+    FakeExecutionRepository.ids["details"] = execution
+    response = client.get(f"/api/v1/executions/{execution.id}/details")
+    assert response.status_code == 200
+    assert response.json()["result"]["stepCount"] == 1
+    assert response.json()["steps"][0]["action"]["type"] == "navigate"
 
 
 def test_execution_retry_requires_terminal_state() -> None:
