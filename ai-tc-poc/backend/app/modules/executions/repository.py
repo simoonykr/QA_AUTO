@@ -76,10 +76,14 @@ class SqlExecutionRepository:
         return self._response(execution)
 
     async def get(self, execution_id: UUID) -> Execution | None:
-        return await self.session.scalar(select(Execution).where(
-            Execution.id == execution_id,
-            Execution.organization_id == self.organization_id,
-        ))
+        return await self.session.scalar(
+            select(Execution)
+            .where(
+                Execution.id == execution_id,
+                Execution.organization_id == self.organization_id,
+            )
+            .execution_options(populate_existing=True)
+        )
 
     async def details(self, execution_id: UUID) -> ExecutionDetailsResponse | None:
         execution = await self.get(execution_id)

@@ -61,7 +61,6 @@ async def stream_execution_events(execution_id: UUID, request: Request, session:
         raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
 
     async def load_details() -> ExecutionDetailsResponse | None:
-        session.expire_all()
         return await repository.details(execution_id)
 
     return StreamingResponse(
