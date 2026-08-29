@@ -1,4 +1,4 @@
-import type { ApiErrorBody, CreateExecutionRequest, Execution, ExecutionActionResponse, ExecutionDetails, StructuredTestCase, TestCaseSummary } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, Execution, ExecutionActionResponse, ExecutionDetails, LoginResponse, StructuredTestCase, TestCaseSummary } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -15,13 +15,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const url = /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`
     const response = await fetch(url, {
       ...init,
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...init?.headers },
     })
     if (!response.ok) {
       const fallback: ApiErrorBody = { code: 'HTTP_ERROR', message: `요청에 실패했습니다. (${response.status})`, requestId: response.headers.get('x-request-id') ?? 'unknown', retryable: response.status >= 500 }
       const body = await response.json().catch(() => fallback) as Partial<ApiErrorBody>
+      if (response.status === 401 && body.code === 'AUTH_REQUIRED') window.dispatchEvent(new Event('tracepilot:auth-required'))
       throw new ApiError({ ...fallback, ...body }, response.status)
     }
+    if (response.status === 204) return undefined as T
     return response.json() as Promise<T>
   } catch (error) {
     if (error instanceof ApiError) throw error
@@ -32,6 +35,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 export const api = {
+  async login(username: string, password: string): Promise<LoginResponse> {
+    if (USE_MOCK_API) return { user: { id: 'demo:qa', displayName: username || 'qa', role: 'OWNER', approvalStatus: 'APPROVED' }, expiresIn: 28800 }
+    return request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  },
+
+  async me(): Promise<AuthenticatedUser> {
+    if (USE_MOCK_API) return { id: 'demo:qa', displayName: '김민준', role: 'OWNER', approvalStatus: 'APPROVED' }
+    return request('/auth/me')
+  },
+
+  async logout(): Promise<void> {
+    if (!USE_MOCK_API) await request('/auth/logout', { method: 'POST' })
+  },
+
   async checkHealth(): Promise<HealthStatus> {
     if (USE_MOCK_API) return { status: 'ok', environment: 'mock' }
     const healthUrl = /^https?:\/\//.test(API_BASE_URL)

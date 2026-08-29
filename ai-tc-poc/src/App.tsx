@@ -8,12 +8,13 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { CreateExecutionRequest, Execution, ExecutionDetails, ExecutionStepRun, StructuredTestCase, TestCaseSummary } from './api/types'
+import type { AuthenticatedUser, CreateExecutionRequest, Execution, ExecutionDetails, ExecutionStepRun, StructuredTestCase, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
 type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
+type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated'
 const ACTIVE_EXECUTION_KEY = 'tracepilot.activeExecutionId'
 
 const workerSteps = [
@@ -45,11 +46,24 @@ function App() {
   const [executionDetails, setExecutionDetails] = useState<ExecutionDetails | null>(null)
   const [apiConnection, setApiConnection] = useState<ApiConnection>(apiConfig.mock ? 'mock' : 'checking')
   const [backendEnvironment, setBackendEnvironment] = useState(apiConfig.mock ? 'mock' : '')
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
+  const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null)
 
-  useEffect(() => { api.listTestCases().then(setTestCases).catch((error) => setNotice(error instanceof ApiError ? error.body.message : '테스트 케이스를 불러오지 못했습니다.')).finally(() => setLoadingCases(false)) }, [])
+  useEffect(() => {
+    api.me().then(user => { setCurrentUser(user); setAuthStatus('authenticated') }).catch(() => setAuthStatus('unauthenticated'))
+    const requireLogin = () => { setCurrentUser(null); setAuthStatus('unauthenticated') }
+    window.addEventListener('tracepilot:auth-required', requireLogin)
+    return () => window.removeEventListener('tracepilot:auth-required', requireLogin)
+  }, [])
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || currentUser?.approvalStatus !== 'APPROVED') return
+    setLoadingCases(true)
+    api.listTestCases().then(setTestCases).catch((error) => setNotice(error instanceof ApiError ? error.body.message : '테스트 케이스를 불러오지 못했습니다.')).finally(() => setLoadingCases(false))
+  }, [authStatus, currentUser?.approvalStatus])
 
   const checkBackend = async () => {
-    if (apiConfig.mock) return
+    if (apiConfig.mock || authStatus !== 'authenticated') return
     setApiConnection('checking')
     try {
       const health = await api.checkHealth()
@@ -75,7 +89,7 @@ function App() {
       setView('run')
       void api.getExecutionDetails(restored.id).then(setExecutionDetails).catch(() => undefined)
     }).catch(() => window.sessionStorage.removeItem(ACTIVE_EXECUTION_KEY))
-  }, [])
+  }, [authStatus])
 
   useEffect(() => {
     if (apiConfig.mock || !execution || !['QUEUED','PROVISIONING','RUNNING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(execution.status)) return
@@ -127,6 +141,24 @@ function App() {
 
   const toast = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2200) }
 
+  const login = async (username: string, password: string) => {
+    const response = await api.login(username, password)
+    setCurrentUser(response.user)
+    setAuthStatus('authenticated')
+  }
+
+  const logout = async () => {
+    try { await api.logout() } finally {
+      window.sessionStorage.removeItem(ACTIVE_EXECUTION_KEY)
+      setExecution(null); setExecutionDetails(null); setCurrentUser(null); setAuthStatus('unauthenticated')
+    }
+  }
+
+  if (authStatus === 'checking') return <AuthLoading/>
+  if (authStatus === 'unauthenticated') return <LoginPage onLogin={login}/>
+  if (!currentUser) return <LoginPage onLogin={login}/>
+  if (currentUser.approvalStatus !== 'APPROVED') return <ApprovalGate user={currentUser} onLogout={logout}/>
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -147,7 +179,7 @@ function App() {
         <div className="project-card">
           <div className="project-dot">S</div><div><b>Storefront QA</b><small>Staging · Chromium</small></div><ChevronDown size={16}/>
         </div>
-        <button className="user-card"><span className="avatar">김</span><span><b>김민준</b><small>QA Lead</small></span><Settings size={17}/></button>
+        <button className="user-card" onClick={logout} title="로그아웃"><span className="avatar">{currentUser.displayName.slice(0,1)}</span><span><b>{currentUser.displayName}</b><small>{currentUser.role}</small></span><Settings size={17}/></button>
       </aside>
 
       <main>
@@ -173,6 +205,24 @@ function App() {
       {notice && <div className="toast"><Check size={16}/>{notice}</div>}
     </div>
   )
+}
+
+function AuthLoading() {
+  return <main className="auth-shell"><section className="auth-card auth-loading"><span className="brand-mark"><Sparkles size={19}/></span><Activity className="spin"/><p>로그인 상태를 확인하고 있습니다.</p></section></main>
+}
+
+function LoginPage({onLogin}:{onLogin:(username:string,password:string)=>Promise<void>}) {
+  const [username,setUsername]=useState('')
+  const [password,setPassword]=useState('')
+  const [submitting,setSubmitting]=useState(false)
+  const [error,setError]=useState('')
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();if(submitting)return;setSubmitting(true);setError('');try{await onLogin(username,password)}catch(err){setError(err instanceof ApiError?err.body.message:'로그인 요청에 실패했습니다.')}finally{setSubmitting(false)}}
+  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={19}/></span><div><strong>TracePilot</strong><small>AI Test Operations</small></div></div><p className="eyebrow">SECURE DEMO ACCESS</p><h1>테스트 워크스페이스 로그인</h1><p className="auth-copy">관리자에게 전달받은 데모 계정으로 로그인해 주세요. 세션은 안전한 HttpOnly 쿠키로 유지됩니다.</p><form onSubmit={submit}><label>아이디<input autoFocus autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required/></label><label>비밀번호<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="auth-error"><AlertTriangle size={15}/>{error}</div>}<button className="primary wide" disabled={submitting}>{submitting?<Activity className="spin" size={16}/>:<KeyRound size={16}/>} {submitting?'로그인 중':'로그인'}</button></form><small className="auth-help"><ShieldCheck size={13}/> 계정 정보는 브라우저 저장소에 저장하지 않습니다.</small></section></main>
+}
+
+function ApprovalGate({user,onLogout}:{user:AuthenticatedUser;onLogout:()=>void}) {
+  const rejected=user.approvalStatus==='REJECTED'
+  return <main className="auth-shell"><section className="auth-card approval-card"><span className={`approval-icon ${rejected?'rejected':''}`}>{rejected?<XCircle/>:<Clock3/>}</span><p className="eyebrow">ACCOUNT APPROVAL</p><h1>{rejected?'접근 승인이 거절되었습니다.':'관리자 승인을 기다리고 있습니다.'}</h1><p className="auth-copy">{user.displayName} 계정은 현재 <b>{user.approvalStatus}</b> 상태입니다. 승인 상태가 변경된 후 다시 로그인해 주세요.</p><button className="secondary wide" onClick={onLogout}>로그아웃</button></section></main>
 }
 
 function Nav({active, icon, label, badge, onClick}: {active?: boolean; icon: React.ReactNode; label: string; badge?: string; onClick: () => void}) {
