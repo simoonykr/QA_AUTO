@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     minio_secret_key: str = "tracepilot-local-only"
     minio_secure: bool = False
     minio_artifact_bucket: str = "tracepilot-artifacts"
+    demo_auth_enabled: bool = False
+    demo_auth_username: str = ""
+    demo_auth_password: str = ""
+    demo_session_secret: str = ""
+    demo_session_ttl_hours: int = 8
+    demo_cookie_secure: bool = False
     outbox_poll_interval_seconds: float = 1.0
     outbox_batch_size: int = 50
     outbox_max_attempts: int = 10

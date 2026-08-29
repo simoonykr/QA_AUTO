@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.core.database import get_session
+from app.core.config import get_settings
 from app.db.models import Base
 from app.main import app
 from app.modules.executions.repository import SqlExecutionRepository
@@ -133,6 +134,41 @@ def test_health() -> None:
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.headers["X-Request-ID"]
+
+
+def test_demo_auth_protects_api_and_uses_http_only_cookie() -> None:
+    settings = get_settings()
+    settings.demo_auth_enabled = True
+    settings.demo_auth_username = "demo-user"
+    settings.demo_auth_password = "demo-password"
+    settings.demo_session_secret = "test-session-secret-that-is-longer-than-32-characters"
+    try:
+        unauthorized = client.get("/api/v1/test-cases")
+        rejected = client.post("/api/v1/auth/login", json={
+            "username": "demo-user", "password": "wrong-password",
+        })
+        logged_in = client.post("/api/v1/auth/login", json={
+            "username": "demo-user", "password": "demo-password",
+        })
+        me = client.get("/api/v1/auth/me")
+        authorized = client.get("/api/v1/test-cases")
+        logged_out = client.post("/api/v1/auth/logout")
+        after_logout = client.get("/api/v1/test-cases")
+        assert unauthorized.status_code == 401
+        assert unauthorized.json()["code"] == "AUTH_REQUIRED"
+        assert rejected.status_code == 401
+        assert logged_in.status_code == 200
+        assert "HttpOnly" in logged_in.headers["set-cookie"]
+        assert me.json()["approvalStatus"] == "APPROVED"
+        assert authorized.status_code == 200
+        assert logged_out.status_code == 204
+        assert after_logout.status_code == 401
+    finally:
+        settings.demo_auth_enabled = False
+        settings.demo_auth_username = ""
+        settings.demo_auth_password = ""
+        settings.demo_session_secret = ""
+        client.cookies.clear()
 
 
 def test_list_test_cases_matches_frontend_contract() -> None:

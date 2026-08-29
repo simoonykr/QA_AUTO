@@ -59,6 +59,18 @@ pnpm dev
 
 Docker Compose에는 Chromium Worker와 내부 통합 테스트용 `demo-target`도 함께 실행됩니다. 실행 버튼을 누르면 Redis 작업 큐를 거쳐 실제 Chromium 페이지 접속 결과가 실행 상태에 반영됩니다.
 
+공유 데모 로그인을 켜려면 Git에 포함되지 않는 `.env`에 다음 서버 설정을 추가합니다.
+
+```env
+DEMO_AUTH_ENABLED=true
+DEMO_AUTH_USERNAME=공유할-아이디
+DEMO_AUTH_PASSWORD=공유할-비밀번호
+DEMO_SESSION_SECRET=32자-이상의-임의-문자열
+DEMO_COOKIE_SECURE=false
+```
+
+인터넷 HTTPS 배포에서는 `DEMO_COOKIE_SECURE=true`를 사용합니다. 비밀번호와 session secret을 `.env.example`, Compose 파일 또는 프론트 코드에 직접 기록하지 않습니다.
+
 `127.0.0.1` 주소는 실행한 PC에서만 접근할 수 있습니다. 인증 기능을 완성하기 전에는 API와 DB를 인터넷에 직접 공개하지 않습니다.
 
 ## 종료 및 재실행

@@ -57,6 +57,18 @@
 - `GET /api/v1/test-accounts`: 계정 ID, 별칭, 사용 상태만 반환 (`secret_ref`는 반환 금지)
 - `GET /api/v1/execution-policies/current`: 허용 action, 지원 브라우저, 최대 시간·AI 호출·재시도 및 위험 승인 정책
 
+## 데모 로그인 계약
+
+- `POST /api/v1/auth/login`: `{ username, password }`를 받아 HttpOnly 세션 쿠키 발급
+- `GET /api/v1/auth/me`: 현재 사용자 `{ id, displayName, role, approvalStatus }` 반환
+- `POST /api/v1/auth/logout`: 세션 쿠키 삭제, HTTP 204
+- 미로그인 상태에서 `/api/v1/**` 호출 시 HTTP 401 `AUTH_REQUIRED`
+- 프론트의 모든 실제 API 요청은 `credentials: 'include'` 사용
+- 프론트와 API는 배포 시 동일 사이트의 `/`와 `/api`로 reverse proxy하는 구성을 우선 사용
+- 데모 계정 값과 서명 secret은 서버 환경변수로만 주입하며 Git에 저장하지 않음
+
+향후 가입·승인 방식에서도 위 응답을 유지하고 `approvalStatus`를 `PENDING`, `APPROVED`, `REJECTED`로 확장한다. `PENDING` 사용자는 승인 대기 화면만 접근하며, `role`은 `OWNER`, `QA`, `VIEWER`로 구분한다.
+
 ## Playwright Worker 반영
 
 - Redis Stream의 `execution.requested` 작업 소비
