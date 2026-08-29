@@ -31,15 +31,18 @@ jobs:
         working-directory: ai-tc-poc
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: ai-tc-poc/package-lock.json
+          cache: pnpm
+          cache-dependency-path: ai-tc-poc/pnpm-lock.yaml
       - name: Install frontend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Type check and build
-        run: npm run build
+        run: pnpm build
 
   compose-config:
     runs-on: ubuntu-latest
