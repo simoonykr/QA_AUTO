@@ -14,6 +14,7 @@ type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
 type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
+const ACTIVE_EXECUTION_KEY = 'tracepilot.activeExecutionId'
 
 const workerSteps = [
   { title: '실행 대기열 등록', note: 'Redis Stream에서 Worker 할당을 기다립니다.', type: 'QUEUE' },
@@ -21,6 +22,14 @@ const workerSteps = [
   { title: '대상 페이지 접속', note: '허용 도메인을 검사하고 DOM 로드를 확인합니다.', type: 'NAVIGATE' },
 ]
 const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true }
+
+function executionPresentation(status: Execution['status']): { runState: RunState; activeStep: number } {
+  if (status === 'PASS') return { runState: 'done', activeStep: 3 }
+  if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(status)) return { runState: 'failed', activeStep: 3 }
+  if (status === 'WAITING_APPROVAL') return { runState: 'paused', activeStep: 2 }
+  if (status === 'RUNNING' || status === 'CANCEL_REQUESTED') return { runState: 'running', activeStep: 2 }
+  return { runState: 'running', activeStep: status === 'PROVISIONING' ? 1 : 0 }
+}
 
 function App() {
   const [view, setView] = useState<View>('dashboard')
@@ -54,15 +63,25 @@ function App() {
   useEffect(() => { void checkBackend() }, [])
 
   useEffect(() => {
+    if (apiConfig.mock) return
+    const executionId = window.sessionStorage.getItem(ACTIVE_EXECUTION_KEY)
+    if (!executionId) return
+    api.getExecution(executionId).then(restored => {
+      const presentation = executionPresentation(restored.status)
+      setExecution(restored)
+      setRunState(presentation.runState)
+      setActiveStep(presentation.activeStep)
+      setView('run')
+    }).catch(() => window.sessionStorage.removeItem(ACTIVE_EXECUTION_KEY))
+  }, [])
+
+  useEffect(() => {
     if (apiConfig.mock || !execution || !['QUEUED','PROVISIONING','RUNNING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(execution.status)) return
     const timer = window.setInterval(() => api.getExecution(execution.id).then(next => {
       setExecution(next)
-      if (next.status === 'PASS') { setActiveStep(3); setRunState('done') }
-      else if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(next.status)) { setActiveStep(3); setRunState('failed') }
-      else {
-        setRunState(next.status === 'WAITING_APPROVAL' ? 'paused' : 'running')
-        setActiveStep(next.status === 'RUNNING' ? 2 : next.status === 'PROVISIONING' ? 1 : 0)
-      }
+      const presentation = executionPresentation(next.status)
+      setRunState(presentation.runState)
+      setActiveStep(presentation.activeStep)
     }).catch(error => toast(error instanceof ApiError ? error.body.message : '실행 상태를 확인하지 못했습니다.')), 2000)
     return () => window.clearInterval(timer)
   }, [execution?.id, execution?.status])
@@ -74,6 +93,7 @@ function App() {
     setStartingRun(true)
     try {
       const created = await api.createExecution(input)
+      if (!apiConfig.mock) window.sessionStorage.setItem(ACTIVE_EXECUTION_KEY, created.id)
       setExecution(created)
       setRunState('running'); setActiveStep(1); setView('run')
       if (apiConfig.mock) {
@@ -95,7 +115,7 @@ function App() {
   }
   const retryRun = async () => {
     if (execution && !apiConfig.mock) {
-      try { const retried=(await api.retryExecution(execution.id)).execution; setExecution(retried); setRunState('running'); setActiveStep(0); setView('run'); return }
+      try { const retried=(await api.retryExecution(execution.id)).execution; window.sessionStorage.setItem(ACTIVE_EXECUTION_KEY, retried.id); setExecution(retried); setRunState('running'); setActiveStep(0); setView('run'); return }
       catch (error) { return toast(error instanceof ApiError ? error.body.message : '실행을 재시도하지 못했습니다.') }
     }
     startRun()
