@@ -92,5 +92,6 @@ docker compose down
 - 백엔드 스키마: `backend/app/schemas/`
 - 프론트·백엔드 연동 메모: `docs/FRONTEND_BACKEND_SYNC.md`
 - 백엔드 상세 내용: `backend/README.md`
+- 공개 데모 서버 배포: `docs/PUBLIC_DEMO_DEPLOYMENT.md`
 
 프론트가 Mock API를 사용해야 할 때만 `.env`의 `VITE_USE_MOCK_API`를 `true`로 변경합니다.

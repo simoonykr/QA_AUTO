@@ -52,10 +52,15 @@ services:
       DEMO_AUTH_PASSWORD: ${DEMO_AUTH_PASSWORD:-}
       DEMO_SESSION_SECRET: ${DEMO_SESSION_SECRET:-}
       DEMO_COOKIE_SECURE: ${DEMO_COOKIE_SECURE:-false}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: tracepilot
+      MINIO_SECRET_KEY: tracepilot-local-only
+      MINIO_ARTIFACT_BUCKET: tracepilot-artifacts
     ports: ["8000:8000"]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_started }
+      minio: { condition: service_started }
   outbox-publisher:
     build: ./backend
     command: ["python", "-m", "app.workers.outbox_publisher"]

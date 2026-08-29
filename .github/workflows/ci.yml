@@ -53,3 +53,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate Docker Compose
         run: docker compose config --quiet
+      - name: Validate public demo Compose
+        env:
+          POSTGRES_PASSWORD: ciDatabasePassword123456
+          MINIO_ROOT_USER: tracepilot
+          MINIO_ROOT_PASSWORD: ciMinioPassword123456
+          DEMO_AUTH_USERNAME: ci-demo
+          DEMO_AUTH_PASSWORD: ci-demo-password
+          DEMO_SESSION_SECRET: ci-session-secret-longer-than-thirty-two-characters
+        run: docker compose -f compose.public-demo.yml config --quiet
+      - name: Build public frontend image
+        run: docker build -f Dockerfile.frontend .
