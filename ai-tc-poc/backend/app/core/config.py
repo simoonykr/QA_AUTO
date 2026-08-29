@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     app_env: str = "local"
     database_url: str = "postgresql+asyncpg://tracepilot:tracepilot@127.0.0.1:5432/tracepilot"
     redis_url: str = "redis://127.0.0.1:6379/0"
-    cors_origins: list[str] = ["http://127.0.0.1:5173"]
+    cors_origins: list[str] = ["http://127.0.0.1:5173", "http://127.0.0.1:5174"]
     default_organization_id: str = "00000000-0000-0000-0000-000000000001"
     default_user_id: str = "00000000-0000-0000-0000-000000000101"
     default_project_id: str = "00000000-0000-0000-0000-000000000201"

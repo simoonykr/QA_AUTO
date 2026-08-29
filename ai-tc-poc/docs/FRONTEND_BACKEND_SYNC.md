@@ -32,10 +32,7 @@
 
 남은 확인 요청:
 
-1. SSE 도입 여부와 단계별 진행률·증적 event 계약
-2. XLSX/DOCX 업로드·파싱 endpoint 및 파일 크기·확장자 제한
-3. 환경·테스트 계정·정책 관리 목록 endpoint
-4. 로컬 개발 CORS에 `http://127.0.0.1:5174` 추가 또는 프론트 포트를 5173으로 고정
+1. XLSX/DOCX 업로드·파싱 endpoint 및 파일 크기·확장자 제한
 
 새 상세 조회 계약:
 
@@ -53,6 +50,12 @@
 - 종료 상태: `PASS`, `FAIL`, `BLOCKED`, `NEEDS_REVIEW`, `CANCELLED`, `SYSTEM_ERROR`
 - `GET /api/v1/executions/{executionId}/artifacts/{artifactId}`: 권한 범위가 확인된 PNG 증적 반환
 - SSE 연결이 불가능한 환경에서는 기존 2초 polling을 fallback으로 유지
+
+실행 설정 리소스 계약:
+
+- `GET /api/v1/environments`: 환경 ID, 이름, base URL, 허용 도메인, 기본 viewport
+- `GET /api/v1/test-accounts`: 계정 ID, 별칭, 사용 상태만 반환 (`secret_ref`는 반환 금지)
+- `GET /api/v1/execution-policies/current`: 허용 action, 지원 브라우저, 최대 시간·AI 호출·재시도 및 위험 승인 정책
 
 ## Playwright Worker 반영
 

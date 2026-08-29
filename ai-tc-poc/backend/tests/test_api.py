@@ -9,6 +9,7 @@ from app.main import app
 from app.modules.executions.repository import SqlExecutionRepository
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
+from app.schemas.resources import EnvironmentSummary, TestAccountSummary
 from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _parse_viewport
 from app.workers.step_executor import StepDefinitionError, execute_step
 
@@ -92,11 +93,33 @@ class FakeExecutionRepository:
         return item
 
 
+class FakeResourceRepository:
+    def __init__(self, *_args):
+        pass
+
+    async def environments(self):
+        return [EnvironmentSummary(
+            id="00000000-0000-0000-0000-000000000301",
+            name="Staging",
+            baseUrl="http://demo-target",
+            allowedDomains=["demo-target"],
+            defaultViewport="1440x900",
+        )]
+
+    async def test_accounts(self):
+        return [TestAccountSummary(
+            id="00000000-0000-0000-0000-000000000601",
+            name="qa-runner-01",
+            status="AVAILABLE",
+        )]
+
+
 @pytest.fixture(autouse=True)
 def isolate_database(monkeypatch):
     app.dependency_overrides[get_session] = fake_session
     monkeypatch.setattr("app.modules.test_cases.router.SqlTestCaseRepository", FakeTestCaseRepository)
     monkeypatch.setattr("app.modules.executions.router.SqlExecutionRepository", FakeExecutionRepository)
+    monkeypatch.setattr("app.modules.resources.router.SqlResourceRepository", FakeResourceRepository)
     FakeExecutionRepository.ids.clear()
     yield
     app.dependency_overrides.clear()
@@ -128,6 +151,21 @@ def test_structure_test_case() -> None:
     assert body["confidence"] == 0.94
     assert len(body["steps"]) == 4
     assert len(body["assertions"]) == 2
+
+
+def test_execution_resources_hide_secrets_and_expose_policy() -> None:
+    environments = client.get("/api/v1/environments")
+    accounts = client.get("/api/v1/test-accounts")
+    policy = client.get("/api/v1/execution-policies/current")
+    assert environments.status_code == accounts.status_code == policy.status_code == 200
+    assert environments.json()[0]["defaultViewport"] == "1440x900"
+    assert accounts.json()[0] == {
+        "id": "00000000-0000-0000-0000-000000000601",
+        "name": "qa-runner-01",
+        "status": "AVAILABLE",
+    }
+    assert "secretRef" not in accounts.json()[0]
+    assert policy.json()["supportedBrowsers"] == ["Chromium"]
 
 
 def test_execution_requires_idempotency_key() -> None:

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.errors import DomainError, domain_error_handler, unexpected_error_handler, validation_error_handler
 from app.modules.executions.router import router as execution_router
+from app.modules.resources.router import router as resource_router
 from app.modules.test_cases.router import router as test_case_router, version_router
 
 
@@ -36,3 +37,4 @@ async def health() -> dict[str, str]:
 app.include_router(test_case_router, prefix="/api/v1")
 app.include_router(version_router, prefix="/api/v1")
 app.include_router(execution_router, prefix="/api/v1")
+app.include_router(resource_router, prefix="/api/v1")
