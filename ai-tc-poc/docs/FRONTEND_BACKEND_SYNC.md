@@ -45,6 +45,15 @@
 - `artifacts`: 증적 종류, MinIO object key, SHA-256, 크기, 생성 시각
 - 프론트는 기존 상태 polling을 유지하면서 실행 모니터/결과 화면에서 상세 endpoint를 추가 호출할 수 있음
 
+실시간·증적 계약:
+
+- `GET /api/v1/executions/{executionId}/events`: SSE 연결
+- 이벤트 `execution.updated`: 상태 또는 단계/증적 목록이 변경될 때 상세 응답 전체 전달
+- 이벤트 `execution.completed`: 종료 상태에서 마지막으로 전달한 뒤 서버가 연결 종료
+- 종료 상태: `PASS`, `FAIL`, `BLOCKED`, `NEEDS_REVIEW`, `CANCELLED`, `SYSTEM_ERROR`
+- `GET /api/v1/executions/{executionId}/artifacts/{artifactId}`: 권한 범위가 확인된 PNG 증적 반환
+- SSE 연결이 불가능한 환경에서는 기존 2초 polling을 fallback으로 유지
+
 ## Playwright Worker 반영
 
 - Redis Stream의 `execution.requested` 작업 소비

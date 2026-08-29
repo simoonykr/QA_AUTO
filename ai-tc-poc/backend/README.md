@@ -17,7 +17,7 @@ Frontend execution integration endpoints:
 - `POST /api/v1/executions/{executionId}/cancel` — request cancellation
 - `POST /api/v1/executions/{executionId}/retry` — create a child execution (`Idempotency-Key` required)
 
-The PoC will use SSE for live execution events. Until the worker/event projection is implemented, the frontend can poll the GET endpoint every two seconds and stop on `PASS`, `FAIL`, `BLOCKED`, `NEEDS_REVIEW`, `CANCELLED`, or `SYSTEM_ERROR`.
+The PoC exposes SSE at `GET /api/v1/executions/{id}/events`. It emits `execution.updated` snapshots when status, steps, or artifacts change, then `execution.completed` and closes on a terminal state. The frontend can retain two-second polling as a fallback. Evidence PNGs are proxied through `GET /api/v1/executions/{id}/artifacts/{artifactId}` after organization-scoped authorization.
 
 The `playwright-worker` Compose service consumes `execution.requested` jobs from the Redis Stream. It supports Chromium and executes allow-listed `navigate`, `fill`, `click`, and `assert` steps from the approved test-case version. Every step is written to `step_runs`; a failed step captures a full-page PNG in MinIO and records its checksum and object key in `artifacts`. `demo-target` is an internal Nginx page used for deterministic local integration tests.
 

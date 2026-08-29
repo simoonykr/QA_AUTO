@@ -34,6 +34,9 @@ class ArtifactStore:
             size_bytes=len(content),
         )
 
+    async def get(self, object_key: str) -> bytes:
+        return await asyncio.to_thread(self._get, object_key)
+
     def _put_png(self, object_key: str, content: bytes) -> None:
         if not self.client.bucket_exists(self.bucket):
             self.client.make_bucket(self.bucket)
@@ -44,3 +47,11 @@ class ArtifactStore:
             length=len(content),
             content_type="image/png",
         )
+
+    def _get(self, object_key: str) -> bytes:
+        response = self.client.get_object(self.bucket, object_key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()

@@ -111,6 +111,13 @@ class SqlExecutionRepository:
             ) for item in artifacts],
         )
 
+    async def artifact(self, execution_id: UUID, artifact_id: UUID) -> Artifact | None:
+        return await self.session.scalar(select(Artifact).where(
+            Artifact.id == artifact_id,
+            Artifact.execution_id == execution_id,
+            Artifact.organization_id == self.organization_id,
+        ))
+
     async def request_cancel(self, execution_id: UUID) -> ExecutionResponse | None:
         cancellable = [
             ExecutionStatus.QUEUED, ExecutionStatus.PROVISIONING, ExecutionStatus.RUNNING,

@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from fastapi.testclient import TestClient
 import pytest
 
@@ -55,6 +56,15 @@ class FakeExecutionRepository:
                 "action": {"type": "navigate"},
             }],
             artifacts=[],
+        )
+
+    async def artifact(self, execution_id, artifact_id):
+        if str(artifact_id) != "00000000-0000-0000-0000-000000000901":
+            return None
+        return SimpleNamespace(
+            id=artifact_id,
+            object_key=f"executions/{execution_id}/steps/1/failure.png",
+            sha256="a" * 64,
         )
 
     async def request_cancel(self, execution_id):
@@ -168,6 +178,38 @@ def test_execution_details_exposes_steps_and_artifacts() -> None:
     assert response.status_code == 200
     assert response.json()["result"]["stepCount"] == 1
     assert response.json()["steps"][0]["action"]["type"] == "navigate"
+
+
+def test_execution_events_close_after_terminal_status() -> None:
+    execution = ExecutionResponse(
+        id="00000000-0000-0000-0000-000000000701", status="PASS",
+        testCaseVersionId="00000000-0000-0000-0000-000000000501", queuedAt=datetime.now(UTC),
+    )
+    FakeExecutionRepository.ids["events"] = execution
+    response = client.get(f"/api/v1/executions/{execution.id}/events")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: execution.updated" in response.text
+    assert "event: execution.completed" in response.text
+
+
+def test_execution_artifact_download(monkeypatch) -> None:
+    execution = ExecutionResponse(
+        id="00000000-0000-0000-0000-000000000701", status="FAIL",
+        testCaseVersionId="00000000-0000-0000-0000-000000000501", queuedAt=datetime.now(UTC),
+    )
+    FakeExecutionRepository.ids["artifact"] = execution
+
+    async def fake_get(_self, _object_key):
+        return b"png-content"
+
+    monkeypatch.setattr("app.modules.executions.router.ArtifactStore.get", fake_get)
+    response = client.get(
+        f"/api/v1/executions/{execution.id}/artifacts/00000000-0000-0000-0000-000000000901"
+    )
+    assert response.status_code == 200
+    assert response.content == b"png-content"
+    assert response.headers["etag"] == "a" * 64
 
 
 def test_execution_retry_requires_terminal_state() -> None:

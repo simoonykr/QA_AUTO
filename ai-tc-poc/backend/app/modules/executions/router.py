@@ -1,11 +1,15 @@
 from uuid import UUID
+from io import BytesIO
 from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import DomainError
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
+from app.modules.executions.events import execution_event_stream
 from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionDetailsResponse, ExecutionResponse
+from app.workers.artifacts import ArtifactStore
 
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -48,6 +52,43 @@ async def get_execution_details(execution_id: UUID, request: Request, session: A
     if not details:
         raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
     return details
+
+
+@router.get("/{execution_id}/events")
+async def stream_execution_events(execution_id: UUID, request: Request, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
+    repository = repository_for(session, request)
+    if not await repository.get(execution_id):
+        raise DomainError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.", 404)
+
+    async def load_details() -> ExecutionDetailsResponse | None:
+        session.expire_all()
+        return await repository.details(execution_id)
+
+    return StreamingResponse(
+        execution_event_stream(request, load_details),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/{execution_id}/artifacts/{artifact_id}")
+async def download_execution_artifact(execution_id: UUID, artifact_id: UUID, request: Request, session: AsyncSession = Depends(get_session)) -> StreamingResponse:
+    artifact = await repository_for(session, request).artifact(execution_id, artifact_id)
+    if not artifact:
+        raise DomainError("ARTIFACT_NOT_FOUND", "실행 증적을 찾을 수 없습니다.", 404)
+    try:
+        content = await ArtifactStore().get(artifact.object_key)
+    except Exception:
+        raise DomainError("ARTIFACT_STORAGE_ERROR", "증적 저장소에서 파일을 읽을 수 없습니다.", 503, retryable=True) from None
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'inline; filename="{artifact.id}.png"',
+            "Content-Length": str(len(content)),
+            "ETag": artifact.sha256,
+        },
+    )
 
 
 @router.post("/{execution_id}/cancel", response_model=ExecutionActionResponse, status_code=status.HTTP_202_ACCEPTED)
