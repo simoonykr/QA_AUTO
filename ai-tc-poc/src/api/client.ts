@@ -1,4 +1,4 @@
-import type { ApiErrorBody, CreateExecutionRequest, Execution, ExecutionActionResponse, StructuredTestCase, TestCaseSummary } from './types'
+import type { ApiErrorBody, CreateExecutionRequest, Execution, ExecutionActionResponse, ExecutionDetails, StructuredTestCase, TestCaseSummary } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -71,6 +71,22 @@ export const api = {
   async getExecution(id: string): Promise<Execution> {
     if (!USE_MOCK_API) return request(`/executions/${id}`)
     return { id, status: 'RUNNING', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString(), startedAt: new Date().toISOString() }
+  },
+
+  async getExecutionDetails(id: string): Promise<ExecutionDetails> {
+    if (!USE_MOCK_API) return request(`/executions/${id}/details`)
+    const execution = await this.getExecution(id)
+    return {
+      execution: { ...execution, status: 'PASS', endedAt: new Date().toISOString() },
+      result: { status: 'PASS', stepCount: 3, errorCode: null },
+      errorCode: null,
+      steps: [
+        { id: 'step-1', stepNo: 1, status: 'PASS', action: { type: 'navigate', url: 'https://staging.storefront.test' } },
+        { id: 'step-2', stepNo: 2, status: 'PASS', action: { type: 'fill', selector: '#email', value: '***' } },
+        { id: 'step-3', stepNo: 3, status: 'PASS', action: { type: 'assert', selector: 'h1' }, assertion: { type: 'text', operator: 'contains', expected: '환영' } },
+      ],
+      artifacts: [],
+    }
   },
 
   async cancelExecution(id: string): Promise<ExecutionActionResponse> {

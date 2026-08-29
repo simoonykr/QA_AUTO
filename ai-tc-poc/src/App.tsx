@@ -8,7 +8,7 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { CreateExecutionRequest, Execution, StructuredTestCase, TestCaseSummary } from './api/types'
+import type { CreateExecutionRequest, Execution, ExecutionDetails, ExecutionStepRun, StructuredTestCase, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
@@ -42,6 +42,7 @@ function App() {
   const [loadingCases, setLoadingCases] = useState(true)
   const [startingRun, setStartingRun] = useState(false)
   const [execution, setExecution] = useState<Execution | null>(null)
+  const [executionDetails, setExecutionDetails] = useState<ExecutionDetails | null>(null)
   const [apiConnection, setApiConnection] = useState<ApiConnection>(apiConfig.mock ? 'mock' : 'checking')
   const [backendEnvironment, setBackendEnvironment] = useState(apiConfig.mock ? 'mock' : '')
 
@@ -72,6 +73,7 @@ function App() {
       setRunState(presentation.runState)
       setActiveStep(presentation.activeStep)
       setView('run')
+      void api.getExecutionDetails(restored.id).then(setExecutionDetails).catch(() => undefined)
     }).catch(() => window.sessionStorage.removeItem(ACTIVE_EXECUTION_KEY))
   }, [])
 
@@ -82,6 +84,7 @@ function App() {
       const presentation = executionPresentation(next.status)
       setRunState(presentation.runState)
       setActiveStep(presentation.activeStep)
+      void api.getExecutionDetails(next.id).then(setExecutionDetails).catch(() => undefined)
     }).catch(error => toast(error instanceof ApiError ? error.body.message : '실행 상태를 확인하지 못했습니다.')), 2000)
     return () => window.clearInterval(timer)
   }, [execution?.id, execution?.status])
@@ -95,6 +98,7 @@ function App() {
       const created = await api.createExecution(input)
       if (!apiConfig.mock) window.sessionStorage.setItem(ACTIVE_EXECUTION_KEY, created.id)
       setExecution(created)
+      setExecutionDetails(null)
       setRunState('running'); setActiveStep(1); setView('run')
       if (apiConfig.mock) {
         window.setTimeout(() => setActiveStep(2), 900)
@@ -115,7 +119,7 @@ function App() {
   }
   const retryRun = async () => {
     if (execution && !apiConfig.mock) {
-      try { const retried=(await api.retryExecution(execution.id)).execution; window.sessionStorage.setItem(ACTIVE_EXECUTION_KEY, retried.id); setExecution(retried); setRunState('running'); setActiveStep(0); setView('run'); return }
+      try { const retried=(await api.retryExecution(execution.id)).execution; window.sessionStorage.setItem(ACTIVE_EXECUTION_KEY, retried.id); setExecution(retried); setExecutionDetails(null); setRunState('running'); setActiveStep(0); setView('run'); return }
       catch (error) { return toast(error instanceof ApiError ? error.body.message : '실행을 재시도하지 못했습니다.') }
     }
     startRun()
@@ -160,8 +164,8 @@ function App() {
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
         {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
-        {view === 'run' && <RunMonitor state={runState} execution={execution} activeStep={activeStep} start={startRun} stop={cancelRun} onResult={() => setView('result')}/>}
-        {view === 'result' && <ResultDetail execution={execution} onBack={() => setView('dashboard')} onRetry={retryRun}/>}
+        {view === 'run' && <RunMonitor state={runState} execution={execution} details={executionDetails} activeStep={activeStep} start={startRun} stop={cancelRun} onResult={() => setView('result')}/>}
+        {view === 'result' && <ResultDetail execution={execution} details={executionDetails} onBack={() => setView('dashboard')} onRetry={retryRun}/>}
         {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
         {view === 'accounts' && <ManagementPage kind="account" onToast={toast}/>}
         {view === 'policies' && <ManagementPage kind="policy" onToast={toast}/>}
@@ -296,22 +300,34 @@ function ConfigCard({icon,title,caption,tone='',children}:{icon:React.ReactNode;
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="config-field"><span>{label}</span>{children}</label>}
 function Select({value,options,setValue}:{value:string;options:string[];setValue?:(v:string)=>void}){return <div className="select-wrap"><select value={value} onChange={e=>setValue?.(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select><ChevronDown/></div>}
 
-function RunMonitor({state,execution,activeStep,start,stop,onResult}: {state:RunState; execution:Execution|null; activeStep:number; start:()=>void; stop:()=>void; onResult:()=>void}) {
+function stepAction(step: ExecutionStepRun) {
+  return typeof step.action?.type === 'string' ? step.action.type.toUpperCase() : 'ACTION'
+}
+
+function stepTitle(step: ExecutionStepRun) {
+  const type = stepAction(step)
+  return type === 'NAVIGATE' ? '페이지 이동' : type === 'FILL' ? '값 입력' : type === 'CLICK' ? '요소 클릭' : type === 'ASSERT' ? '화면 검증' : `단계 ${step.stepNo}`
+}
+
+function RunMonitor({state,execution,details,activeStep,start,stop,onResult}: {state:RunState; execution:Execution|null; details:ExecutionDetails|null; activeStep:number; start:()=>void; stop:()=>void; onResult:()=>void}) {
   const running = state === 'running' || state === 'paused'
   const terminal = state === 'done' || state === 'failed'
   const statusLabel = execution?.status ?? (state === 'idle' ? 'READY' : 'RUNNING')
   return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">LIVE EXECUTION</p><h1>실행 모니터</h1><p>{running ? `${execution?.id ?? '실행 준비 중'} · ${statusLabel}` : state==='done' ? '실행이 성공적으로 완료되었습니다.' : state==='failed' ? `실행이 ${statusLabel} 상태로 종료되었습니다.` : '현재 실행 중인 테스트가 없습니다.'}</p></div><div className="run-controls">{!running && !terminal && <button className="primary" onClick={start}><Play size={16}/> 실행 시작</button>}{running && <button className="danger" onClick={stop}><Square size={15}/> 중단 요청</button>}{terminal&&<><button className="secondary" onClick={start}><RefreshCw size={15}/> 다시 실행</button><button className="primary" onClick={onResult}>결과 상세 <ArrowRight size={15}/></button></>}</div></div>
     <div className="monitor-grid"><article className="panel browser-panel"><div className="browser-top"><span/><span/><span/><div>Playwright Chromium smoke test</div><ShieldCheck size={15}/></div><div className="mock-site"><div className="mock-logo">storefront</div><div className="mock-login"><h2>다시 만나서 반가워요</h2><p>테스트 계정으로 안전하게 로그인합니다.</p><label>이메일</label><div className="mock-input">qa.runner@company.test</div><label>비밀번호</label><div className="mock-input">••••••••••••</div><div className={`mock-button ${activeStep===3?'targeted':''}`}>로그인</div></div>{state==='done'&&<div className="success-overlay"><CheckCircle2/><b>페이지 접속 성공</b><span>Chromium smoke test가 정상적으로 완료되었습니다.</span></div>}{state==='failed'&&<div className="success-overlay failed-overlay"><XCircle/><b>페이지 접속 실패</b><span>{statusLabel} · 실행 결과 상세를 확인해 주세요.</span></div>}</div></article>
-      <article className="panel timeline"><div className="panel-head"><div><h2>Worker 실행 단계</h2><p>실제 상태 · {statusLabel}</p></div><span className={`live ${state}`}>{statusLabel}</span></div><div className="step-list">{workerSteps.map((s,i)=>{const done=i<activeStep&&state!=='failed'; const active=i===activeStep&&running; return <div className={`step ${done?'done':''} ${active?'active':''}`} key={s.title}><span>{done?<Check/>:active?<Activity/>:i+1}</span><div><b>{s.title}</b><p>{s.note}</p><small>{s.type} {done&&'· 완료'}</small></div></div>})}</div><div className="budget"><div><span>실행 방식</span><b>Playwright Worker</b></div><div className="budget-bar"><i style={{width:`${Math.min(activeStep*33,100)}%`}}/></div><div><span>브라우저</span><b>Chromium · Headless</b></div></div></article></div>
+      <article className="panel timeline"><div className="panel-head"><div><h2>Worker 실행 단계</h2><p>실제 상태 · {statusLabel}</p></div><span className={`live ${state}`}>{statusLabel}</span></div><div className="step-list">{details?.steps.length ? details.steps.map((s,i)=>{const done=s.status==='PASS'; const failed=s.status==='FAIL'||Boolean(s.errorCode); return <div className={`step ${done?'done':''} ${failed?'failed':''}`} key={s.id}><span>{done?<Check/>:failed?<XCircle/>:i+1}</span><div><b>{stepTitle(s)}</b><p>{typeof s.action?.selector==='string'?s.action.selector:typeof s.action?.url==='string'?s.action.url:'구조화된 테스트 단계'}</p><small>{stepAction(s)} · {s.status}{s.errorCode&&` · ${s.errorCode}`}</small></div></div>}) : workerSteps.map((s,i)=>{const done=i<activeStep&&state!=='failed'; const active=i===activeStep&&running; return <div className={`step ${done?'done':''} ${active?'active':''}`} key={s.title}><span>{done?<Check/>:active?<Activity/>:i+1}</span><div><b>{s.title}</b><p>{s.note}</p><small>{s.type} {done&&'· 완료'}</small></div></div>})}</div><div className="budget"><div><span>완료 단계</span><b>{details?.steps.filter(s=>s.status==='PASS').length ?? activeStep} / {details?.steps.length || workerSteps.length}</b></div><div className="budget-bar"><i style={{width:`${details?.steps.length ? details.steps.filter(s=>s.status==='PASS').length/details.steps.length*100 : Math.min(activeStep*33,100)}%`}}/></div><div><span>증적 파일</span><b>{details?.artifacts.length ?? 0}개</b></div></div></article></div>
   </section>
 }
 
-function ResultDetail({execution,onBack,onRetry}:{execution:Execution|null;onBack:()=>void;onRetry:()=>void}){
+function ResultDetail({execution,details,onBack,onRetry}:{execution:Execution|null;details:ExecutionDetails|null;onBack:()=>void;onRetry:()=>void}){
+  const [selected,setSelected]=useState(0)
   const passed=execution?.status==='PASS'||!execution
-  return <section className="page result-page"><div className="author-top"><button className="back-button" onClick={onBack}>← 대시보드</button><div className="author-actions"><button className="secondary"><Download/> 결과 내보내기</button><button className="primary" onClick={onRetry}><RefreshCw/> 다시 실행</button></div></div>
-    <div className={`result-hero ${passed?'':'result-failed'}`}><div className="result-check">{passed?<Check/>:<XCircle/>}</div><div><p className="eyebrow">EXECUTION COMPLETED</p><h1>{passed?'페이지 접속 검증을 통과했습니다.':'페이지 접속 검증에 실패했습니다.'}</h1><p>Playwright Chromium smoke test · {execution?.id ?? 'EX-DEMO'}</p></div><div className="result-stats"><div><span>결과</span><b className={passed?'green-text':'red-text'}>{execution?.status ?? 'PASS'}</b></div><div><span>시작 시각</span><b>{execution?.startedAt ? new Date(execution.startedAt).toLocaleTimeString('ko-KR') : '-'}</b></div><div><span>브라우저</span><b>Chromium</b></div><div><span>완료 시각</span><b>{execution?.endedAt ? new Date(execution.endedAt).toLocaleTimeString('ko-KR') : '-'}</b></div></div></div>
-    <div className="result-grid"><article className="panel evidence-list"><div className="panel-head"><div><h2>Worker 실행 결과</h2><p>현재 PoC는 페이지 접속 smoke test 1단계를 지원합니다.</p></div><span className={`pill ${passed?'pass':'fail'}`}>{execution?.status ?? 'PASS'}</span></div><div className="evidence-row selected"><span className="evidence-check">{passed?<Check/>:<XCircle/>}</span><div><b>Chromium 페이지 접속</b><small><em>NAVIGATE</em> · 허용 도메인 검사 및 DOMContentLoaded 확인</small></div><time>{execution?.endedAt?'완료':'-'}</time><ChevronRight/></div></article>
-      <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 실행 요약</button><button><TerminalSquare/> 실행 로그</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>Worker가 설정된 테스트 환경 URL로 접속합니다.</span></div><div className="screen-content"><div className="mini-nav"><b>Playwright Worker</b><span/><span/><span/></div><div className="mini-welcome"><small>CHROMIUM SMOKE TEST</small><h2>{passed?'페이지가 정상적으로 로드되었습니다.':'페이지 로드에 실패했습니다.'}</h2><p>{passed?'HTTP 오류 없이 DOMContentLoaded 이벤트를 확인했습니다.':'상세 오류 코드는 백엔드 응답 연동 후 표시됩니다.'}</p><div><span/><span/><span/></div></div><div className="assert-highlight">{passed?<CheckCircle2/>:<XCircle/>}<b>{passed?'Page loaded':'Execution failed'}</b><span>{execution?.status ?? 'PASS'}</span></div></div></div><div className="evidence-meta"><div><span>검증 단계</span><b>1. 페이지 접속</b></div><div><span>판정 방식</span><b>HTTP + DOM 로드</b></div><div><span>브라우저</span><b>Chromium</b></div></div></article>
+  const selectedStep=details?.steps[selected]
+  const selectedArtifact=details?.artifacts.find(a=>a.stepRunId===selectedStep?.id) ?? details?.artifacts[0]
+  return <section className="page result-page"><div className="author-top"><button className="back-button" onClick={onBack}>← 대시보드</button><div className="author-actions"><button className="secondary" disabled><Download/> 내보내기 준비 중</button><button className="primary" onClick={onRetry}><RefreshCw/> 다시 실행</button></div></div>
+    <div className={`result-hero ${passed?'':'result-failed'}`}><div className="result-check">{passed?<Check/>:<XCircle/>}</div><div><p className="eyebrow">EXECUTION COMPLETED</p><h1>{passed?'구조화 테스트를 통과했습니다.':'구조화 테스트 실행에 실패했습니다.'}</h1><p>{details?.steps.length ?? 0}개 단계 실행 · {execution?.id ?? 'EX-DEMO'}</p></div><div className="result-stats"><div><span>결과</span><b className={passed?'green-text':'red-text'}>{execution?.status ?? 'PASS'}</b></div><div><span>오류 코드</span><b>{details?.errorCode ?? '-'}</b></div><div><span>증적</span><b>{details?.artifacts.length ?? 0}개</b></div><div><span>완료 시각</span><b>{execution?.endedAt ? new Date(execution.endedAt).toLocaleTimeString('ko-KR') : '-'}</b></div></div></div>
+    <div className="result-grid"><article className="panel evidence-list"><div className="panel-head"><div><h2>단계별 실행 결과</h2><p>{details?.steps.length ?? 0}개 단계 · {details?.artifacts.length ?? 0}개 증적</p></div><span className={`pill ${passed?'pass':'fail'}`}>{execution?.status ?? 'PASS'}</span></div>{details?.steps.length ? details.steps.map((step,i)=><button className={`evidence-row ${selected===i?'selected':''}`} onClick={()=>setSelected(i)} key={step.id}><span className="evidence-check">{step.status==='PASS'?<Check/>:<XCircle/>}</span><div><b>{step.stepNo}. {stepTitle(step)}</b><small><em>{stepAction(step)}</em> · {step.errorCode ?? step.status}</small></div><time>{step.endedAt?'완료':'-'}</time><ChevronRight/></button>) : <div className="empty-table">저장된 단계 결과가 없습니다.</div>}</article>
+      <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 단계 상세</button><button><TerminalSquare/> 증적 정보</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>{selectedArtifact?.objectKey ?? '저장된 화면 증적이 없습니다.'}</span></div><div className="screen-content"><div className="mini-nav"><b>Playwright Worker</b><span/><span/><span/></div><div className="mini-welcome"><small>{selectedStep ? stepAction(selectedStep) : 'NO STEP'}</small><h2>{selectedStep ? stepTitle(selectedStep) : '단계를 선택해 주세요.'}</h2><p>{selectedStep?.errorCode ? `오류 코드: ${selectedStep.errorCode}` : selectedStep?.assertion ? `Assertion: ${String(selectedStep.assertion.operator ?? '검증 완료')}` : `상태: ${selectedStep?.status ?? '-'}`}</p><div><span/><span/><span/></div></div><div className="assert-highlight">{selectedStep?.status==='PASS'?<CheckCircle2/>:<XCircle/>}<b>{selectedStep?.status ?? '대기'}</b><span>{selectedArtifact ? `${selectedArtifact.type} · ${Math.ceil(selectedArtifact.sizeBytes/1024)} KB` : '증적 없음'}</span></div></div></div><div className="evidence-meta"><div><span>선택 단계</span><b>{selectedStep?.stepNo ?? '-'}. {selectedStep ? stepTitle(selectedStep) : '-'}</b></div><div><span>Selector</span><b>{typeof selectedStep?.action?.selector==='string'?selectedStep.action.selector:'-'}</b></div><div><span>오류 코드</span><b>{selectedStep?.errorCode ?? details?.errorCode ?? '-'}</b></div></div></article>
     </div>
   </section>
 }

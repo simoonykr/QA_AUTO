@@ -53,6 +53,35 @@ export interface Execution {
 
 export interface ExecutionActionResponse { execution: Execution; accepted: boolean }
 
+export interface ExecutionStepRun {
+  id: string
+  stepNo: number
+  status: string
+  action?: Record<string, unknown> | null
+  assertion?: Record<string, unknown> | null
+  errorCode?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
+}
+
+export interface ExecutionArtifact {
+  id: string
+  stepRunId?: string | null
+  type: string
+  objectKey: string
+  sha256: string
+  sizeBytes: number
+  createdAt: string
+}
+
+export interface ExecutionDetails {
+  execution: Execution
+  result?: Record<string, unknown> | null
+  errorCode?: string | null
+  steps: ExecutionStepRun[]
+  artifacts: ExecutionArtifact[]
+}
+
 export interface ApiErrorBody {
   code: string
   message: string
