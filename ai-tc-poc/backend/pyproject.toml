@@ -12,6 +12,7 @@ dependencies = [
   "redis>=5,<7",
   "alembic>=1.14,<2",
   "playwright==1.62.0",
+  "minio>=7.2,<8",
 ]
 
 [project.optional-dependencies]

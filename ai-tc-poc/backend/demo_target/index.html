@@ -4,7 +4,15 @@
   <body>
     <main>
       <h1>TracePilot 자동 실행 대상</h1>
-      <p data-testid="ready">브라우저 자동 실행 준비 완료</p>
+      <label>이메일 <input data-testid="email" type="email"></label>
+      <button data-testid="login" type="button">로그인</button>
+      <p data-testid="welcome" hidden>환영합니다. 대시보드가 준비되었습니다.</p>
     </main>
+    <script>
+      document.querySelector('[data-testid="login"]').addEventListener('click', () => {
+        const email = document.querySelector('[data-testid="email"]')
+        if (email.value) document.querySelector('[data-testid="welcome"]').hidden = false
+      })
+    </script>
   </body>
 </html>

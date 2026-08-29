@@ -43,10 +43,12 @@
 - Chromium으로 허용된 환경 URL 실제 접속
 - 실행 상태 `QUEUED → PROVISIONING → RUNNING → PASS/FAIL` 반영
 - 1차 navigation 단계 결과를 `step_runs`에 저장
+- 승인된 구조화 명세의 `navigate`·`fill`·`click`·`assert` 단계 실행
+- 각 단계 결과를 `step_runs`에 저장하고 실패 화면을 MinIO `tracepilot-artifacts` 버킷에 보관
 - `CANCEL_REQUESTED` 확인 후 `CANCELLED` 처리
 - 로컬 통합 검증용 `demo-target` 서비스 추가
 
-프론트는 기존 `GET /executions/{executionId}` 2초 polling을 유지하면 실제 Worker 상태가 화면에 반영된다. 현재 Worker는 Chromium과 페이지 접속 smoke test만 지원하며, click/fill/assertion 해석과 증적 API는 다음 작업 범위다.
+프론트는 기존 `GET /executions/{executionId}` 2초 polling을 유지하면 실제 Worker 상태가 화면에 반영된다. 단계별 결과와 증적을 조회하는 API/SSE 계약은 다음 작업 범위다.
 
 ## 로컬 연동 방법
 

@@ -9,6 +9,7 @@ from app.modules.executions.repository import SqlExecutionRepository
 from app.schemas.executions import CreateExecutionRequest, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _parse_viewport
+from app.workers.step_executor import StepDefinitionError, execute_step
 
 
 async def fake_session():
@@ -198,3 +199,53 @@ def test_worker_parses_viewport_and_blocks_unknown_domains() -> None:
     _assert_allowed_url("http://demo-target", ["demo-target"])
     with pytest.raises(WorkerExecutionError, match="허용되지 않은"):
         _assert_allowed_url("https://example.com", ["demo-target"])
+
+
+class FakeResponse:
+    status = 200
+
+
+class FakeLocator:
+    def __init__(self):
+        self.filled = None
+        self.clicked = False
+
+    async def fill(self, value, **_kwargs):
+        self.filled = value
+
+    async def click(self, **_kwargs):
+        self.clicked = True
+
+
+class FakePage:
+    def __init__(self):
+        self.url = None
+        self.locators = {}
+
+    async def goto(self, url, **_kwargs):
+        self.url = url
+        return FakeResponse()
+
+    def locator(self, selector):
+        return self.locators.setdefault(selector, FakeLocator())
+
+
+@pytest.mark.asyncio
+async def test_step_executor_runs_navigate_fill_and_click() -> None:
+    page = FakePage()
+    await execute_step(page, {"action": "navigate"}, "http://demo-target")
+    fill = await execute_step(page, {"action": "fill", "selector": "#email", "value": "qa@example.test"}, "http://demo-target")
+    await execute_step(page, {"action": "click", "selector": "#submit"}, "http://demo-target")
+    assert page.url == "http://demo-target"
+    assert page.locators["#email"].filled == "qa@example.test"
+    assert page.locators["#submit"].clicked is True
+    assert fill.action["value"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_step_executor_rejects_incomplete_or_unknown_steps() -> None:
+    page = FakePage()
+    with pytest.raises(StepDefinitionError, match="selector"):
+        await execute_step(page, {"action": "fill", "value": "secret"}, "http://demo-target")
+    with pytest.raises(StepDefinitionError, match="지원하지 않는 action"):
+        await execute_step(page, {"action": "upload", "selector": "#file"}, "http://demo-target")

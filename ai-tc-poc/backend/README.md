@@ -19,6 +19,6 @@ Frontend execution integration endpoints:
 
 The PoC will use SSE for live execution events. Until the worker/event projection is implemented, the frontend can poll the GET endpoint every two seconds and stop on `PASS`, `FAIL`, `BLOCKED`, `NEEDS_REVIEW`, `CANCELLED`, or `SYSTEM_ERROR`.
 
-The `playwright-worker` Compose service consumes `execution.requested` jobs from the Redis Stream. The first worker slice supports Chromium, opens the allow-listed environment URL, stores one navigation step run, and transitions the execution through `PROVISIONING`, `RUNNING`, and `PASS` or a terminal error status. `demo-target` is an internal Nginx page used for deterministic local integration tests. Click/fill/assertion interpretation and artifact capture are planned follow-up slices.
+The `playwright-worker` Compose service consumes `execution.requested` jobs from the Redis Stream. It supports Chromium and executes allow-listed `navigate`, `fill`, `click`, and `assert` steps from the approved test-case version. Every step is written to `step_runs`; a failed step captures a full-page PNG in MinIO and records its checksum and object key in `artifacts`. `demo-target` is an internal Nginx page used for deterministic local integration tests.
 
 Local CORS allows `http://127.0.0.1:5173`. The frontend should use `VITE_API_BASE_URL=http://127.0.0.1:8000/api/v1`; a Vite proxy is not required for the local PoC.

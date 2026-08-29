@@ -10,11 +10,13 @@ from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.core.config import get_settings
 from app.core.database import SessionFactory
-from app.db.models import AuditEvent, Environment, Execution, ExecutionStatus, StepRun
+from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, StepRun, TestCaseVersion
+from app.workers.artifacts import ArtifactStore, StoredArtifact
+from app.workers.step_executor import StepDefinitionError, execute_step
 
 
 logger = logging.getLogger(__name__)
@@ -57,7 +59,7 @@ async def _claim_execution(execution_id: UUID) -> bool:
         return claimed
 
 
-async def _load_execution(execution_id: UUID) -> tuple[Execution, Environment]:
+async def _load_execution(execution_id: UUID) -> tuple[Execution, Environment, TestCaseVersion]:
     async with SessionFactory() as session:
         execution = await session.scalar(select(Execution).where(Execution.id == execution_id))
         if not execution:
@@ -65,7 +67,10 @@ async def _load_execution(execution_id: UUID) -> tuple[Execution, Environment]:
         environment = await session.scalar(select(Environment).where(Environment.id == execution.environment_id))
         if not environment:
             raise WorkerExecutionError("ENVIRONMENT_NOT_FOUND", "실행 환경을 찾을 수 없습니다.")
-        return execution, environment
+        version = await session.scalar(select(TestCaseVersion).where(TestCaseVersion.id == execution.test_case_version_id))
+        if not version:
+            raise WorkerExecutionError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        return execution, environment, version
 
 
 async def _set_running(execution_id: UUID) -> bool:
@@ -91,8 +96,6 @@ async def _finish(
     execution_id: UUID,
     status: ExecutionStatus,
     *,
-    action: dict,
-    assertion: dict | None = None,
     error_code: str | None = None,
 ) -> None:
     now = datetime.now(UTC)
@@ -103,20 +106,10 @@ async def _finish(
         execution.status = status
         execution.ended_at = now
         execution.error_code = error_code
-        execution.result = {"status": status.value, "assertion": assertion, "errorCode": error_code}
-        session.add(StepRun(
-            organization_id=execution.organization_id,
-            execution_id=execution.id,
-            step_no=1,
-            attempt=execution.attempt,
-            status=status.value,
-            action=action,
-            assertion=assertion,
-            confidence=1 if status == ExecutionStatus.PASS else 0,
-            error_code=error_code,
-            started_at=execution.started_at,
-            ended_at=now,
-        ))
+        step_count = await session.scalar(
+            select(func.count()).select_from(StepRun).where(StepRun.execution_id == execution.id)
+        )
+        execution.result = {"status": status.value, "stepCount": step_count or 0, "errorCode": error_code}
         session.add(AuditEvent(
             organization_id=execution.organization_id,
             action=f"execution.{status.value.lower()}",
@@ -128,12 +121,64 @@ async def _finish(
         await session.commit()
 
 
+async def _record_step(
+    execution_id: UUID,
+    step_no: int,
+    *,
+    status: str,
+    action: dict,
+    assertion: dict | None,
+    started_at: datetime,
+    error_code: str | None = None,
+) -> UUID | None:
+    async with SessionFactory() as session:
+        execution = await session.scalar(select(Execution).where(Execution.id == execution_id))
+        if not execution:
+            return None
+        step_run = StepRun(
+            organization_id=execution.organization_id,
+            execution_id=execution.id,
+            step_no=step_no,
+            attempt=execution.attempt,
+            status=status,
+            action=action,
+            assertion=assertion,
+            confidence=1 if status == "PASS" else 0,
+            error_code=error_code,
+            started_at=started_at,
+            ended_at=datetime.now(UTC),
+        )
+        session.add(step_run)
+        await session.commit()
+        return step_run.id
+
+
+async def _record_artifact(execution_id: UUID, step_run_id: UUID | None, stored: StoredArtifact) -> None:
+    async with SessionFactory() as session:
+        execution = await session.scalar(select(Execution).where(Execution.id == execution_id))
+        if not execution:
+            return
+        session.add(Artifact(
+            organization_id=execution.organization_id,
+            execution_id=execution.id,
+            step_run_id=step_run_id,
+            artifact_type="FAILURE_SCREENSHOT",
+            object_key=stored.object_key,
+            sha256=stored.sha256,
+            size_bytes=stored.size_bytes,
+        ))
+        await session.commit()
+
+
 async def execute(execution_id: UUID) -> None:
     if not await _claim_execution(execution_id):
         return
 
-    execution, environment = await _load_execution(execution_id)
-    action = {"type": "navigate", "url": environment.base_url}
+    execution, environment, version = await _load_execution(execution_id)
+    current_action = {"type": "worker_start"}
+    current_step_no = 0
+    current_started_at = datetime.now(UTC)
+    page = None
     try:
         if execution.settings.get("browser") != "Chromium":
             raise WorkerExecutionError("UNSUPPORTED_BROWSER", "현재 Worker는 Chromium 실행만 지원합니다.")
@@ -144,40 +189,79 @@ async def execute(execution_id: UUID) -> None:
         timeout_ms = min(max(int(timeout_minutes), 1), 30) * 60_000
 
         if not await _set_running(execution_id):
-            await _finish(execution_id, ExecutionStatus.CANCELLED, action=action)
+            await _finish(execution_id, ExecutionStatus.CANCELLED)
             return
+
+        structured_spec = version.structured_spec or {}
+        steps = structured_spec.get("steps") or [{"action": "navigate", "url": environment.base_url}]
+        if not isinstance(steps, list):
+            raise WorkerExecutionError("INVALID_TEST_SPEC", "구조화된 실행 단계 형식이 올바르지 않습니다.")
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             try:
                 context = await browser.new_context(viewport=viewport, locale=locale)
                 page = await context.new_page()
-                response = await page.goto(environment.base_url, wait_until="domcontentloaded", timeout=timeout_ms)
-                if response and response.status >= 400:
-                    raise WorkerExecutionError("HTTP_ERROR", f"테스트 대상이 HTTP {response.status}를 반환했습니다.")
-                title = await page.title()
+                for current_step_no, step in enumerate(steps, start=1):
+                    if await _is_cancel_requested(execution_id):
+                        await _finish(execution_id, ExecutionStatus.CANCELLED)
+                        return
+                    current_started_at = datetime.now(UTC)
+                    current_action = {"type": step.get("action", "unknown"), "stepId": step.get("id")}
+                    try:
+                        result = await execute_step(page, step, environment.base_url)
+                    except Exception:
+                        await _capture_failure(page, execution_id, current_step_no, current_action, current_started_at)
+                        raise
+                    await _record_step(
+                        execution_id,
+                        current_step_no,
+                        status="PASS",
+                        action=result.action,
+                        assertion=result.assertion,
+                        started_at=current_started_at,
+                    )
             finally:
                 await browser.close()
 
         if await _is_cancel_requested(execution_id):
-            await _finish(execution_id, ExecutionStatus.CANCELLED, action=action)
+            await _finish(execution_id, ExecutionStatus.CANCELLED)
             return
-        await _finish(
-            execution_id,
-            ExecutionStatus.PASS,
-            action=action,
-            assertion={"type": "page_loaded", "title": title, "url": environment.base_url},
-        )
+        await _finish(execution_id, ExecutionStatus.PASS)
     except WorkerExecutionError as exc:
-        await _finish(execution_id, ExecutionStatus.FAIL, action=action, error_code=exc.code)
+        await _finish(execution_id, ExecutionStatus.FAIL, error_code=exc.code)
+    except StepDefinitionError:
+        logger.exception("invalid test step", extra={"execution_id": str(execution_id), "step_no": current_step_no})
+        await _finish(execution_id, ExecutionStatus.FAIL, error_code="INVALID_TEST_STEP")
+    except AssertionError:
+        await _finish(execution_id, ExecutionStatus.FAIL, error_code="ASSERTION_FAILED")
     except PlaywrightTimeoutError:
-        await _finish(execution_id, ExecutionStatus.FAIL, action=action, error_code="NAVIGATION_TIMEOUT")
+        await _finish(execution_id, ExecutionStatus.FAIL, error_code="STEP_TIMEOUT")
     except PlaywrightError:
         logger.exception("browser execution failed", extra={"execution_id": str(execution_id)})
-        await _finish(execution_id, ExecutionStatus.FAIL, action=action, error_code="BROWSER_ERROR")
+        await _finish(execution_id, ExecutionStatus.FAIL, error_code="BROWSER_ERROR")
     except Exception:
         logger.exception("worker execution failed", extra={"execution_id": str(execution_id)})
-        await _finish(execution_id, ExecutionStatus.SYSTEM_ERROR, action=action, error_code="WORKER_ERROR")
+        await _finish(execution_id, ExecutionStatus.SYSTEM_ERROR, error_code="WORKER_ERROR")
+
+
+async def _capture_failure(page, execution_id: UUID, step_no: int, action: dict, started_at: datetime) -> None:
+    step_run_id = await _record_step(
+        execution_id,
+        step_no,
+        status="FAIL",
+        action=action,
+        assertion=None,
+        started_at=started_at,
+        error_code="STEP_FAILED",
+    )
+    try:
+        screenshot = await page.screenshot(full_page=True)
+        object_key = f"executions/{execution_id}/steps/{step_no}/failure.png"
+        stored = await ArtifactStore().put_png(object_key, screenshot)
+        await _record_artifact(execution_id, step_run_id, stored)
+    except Exception:
+        logger.exception("failure screenshot upload failed", extra={"execution_id": str(execution_id), "step_no": step_no})
 
 
 async def _ensure_consumer_group(redis: Redis) -> None:
