@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity, AlertTriangle, ArrowRight, Bot, Check, CheckCircle2,
   ChevronDown, CircleDot, Clock3, FileText, Gauge, LayoutDashboard,
-  ListChecks, MoreHorizontal, Pause, Play, Plus, Search, Settings,
+  ListChecks, MoreHorizontal, Play, Plus, Search, Settings,
   ShieldCheck, Sparkles, Square, TerminalSquare, TestTube2, Users, XCircle,
   Upload, WandSparkles, Save, Database, KeyRound, MonitorCheck,
   Download, ExternalLink, RefreshCw, Eye, ChevronRight,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import { mockSteps } from './api/mockData'
 import type { CreateExecutionRequest, Execution, StructuredTestCase, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
@@ -16,7 +15,11 @@ type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
 type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
 
-const steps = mockSteps.map((step) => ({ ...step, type: step.action }))
+const workerSteps = [
+  { title: '실행 대기열 등록', note: 'Redis Stream에서 Worker 할당을 기다립니다.', type: 'QUEUE' },
+  { title: '격리 브라우저 준비', note: 'Chromium 컨텍스트와 viewport를 생성합니다.', type: 'PROVISION' },
+  { title: '대상 페이지 접속', note: '허용 도메인을 검사하고 DOM 로드를 확인합니다.', type: 'NAVIGATE' },
+]
 const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true }
 
 function App() {
@@ -54,8 +57,8 @@ function App() {
     if (apiConfig.mock || !execution || !['QUEUED','PROVISIONING','RUNNING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(execution.status)) return
     const timer = window.setInterval(() => api.getExecution(execution.id).then(next => {
       setExecution(next)
-      if (next.status === 'PASS') { setActiveStep(4); setRunState('done') }
-      else if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(next.status)) { setActiveStep(4); setRunState('failed') }
+      if (next.status === 'PASS') { setActiveStep(3); setRunState('done') }
+      else if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(next.status)) { setActiveStep(3); setRunState('failed') }
       else {
         setRunState(next.status === 'WAITING_APPROVAL' ? 'paused' : 'running')
         setActiveStep(next.status === 'RUNNING' ? 2 : next.status === 'PROVISIONING' ? 1 : 0)
@@ -76,7 +79,7 @@ function App() {
       if (apiConfig.mock) {
         window.setTimeout(() => setActiveStep(2), 900)
         window.setTimeout(() => setActiveStep(3), 1800)
-        window.setTimeout(() => { setActiveStep(4); setRunState('done') }, 2800)
+        window.setTimeout(() => { setActiveStep(3); setRunState('done') }, 2800)
       }
     } catch (error) {
       toast(error instanceof ApiError ? error.body.message : '실행을 시작하지 못했습니다.')
@@ -137,7 +140,7 @@ function App() {
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
         {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
-        {view === 'run' && <RunMonitor state={runState} execution={execution} activeStep={activeStep} start={startRun} pause={() => setRunState(runState === 'paused' ? 'running' : 'paused')} stop={cancelRun} onResult={() => setView('result')}/>}
+        {view === 'run' && <RunMonitor state={runState} execution={execution} activeStep={activeStep} start={startRun} stop={cancelRun} onResult={() => setView('result')}/>}
         {view === 'result' && <ResultDetail execution={execution} onBack={() => setView('dashboard')} onRetry={retryRun}/>}
         {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
         {view === 'accounts' && <ManagementPage kind="account" onToast={toast}/>}
@@ -273,29 +276,22 @@ function ConfigCard({icon,title,caption,tone='',children}:{icon:React.ReactNode;
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="config-field"><span>{label}</span>{children}</label>}
 function Select({value,options,setValue}:{value:string;options:string[];setValue?:(v:string)=>void}){return <div className="select-wrap"><select value={value} onChange={e=>setValue?.(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select><ChevronDown/></div>}
 
-function RunMonitor({state,execution,activeStep,start,pause,stop,onResult}: {state:RunState; execution:Execution|null; activeStep:number; start:()=>void; pause:()=>void; stop:()=>void; onResult:()=>void}) {
+function RunMonitor({state,execution,activeStep,start,stop,onResult}: {state:RunState; execution:Execution|null; activeStep:number; start:()=>void; stop:()=>void; onResult:()=>void}) {
   const running = state === 'running' || state === 'paused'
   const terminal = state === 'done' || state === 'failed'
   const statusLabel = execution?.status ?? (state === 'idle' ? 'READY' : 'RUNNING')
-  return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">LIVE EXECUTION</p><h1>실행 모니터</h1><p>{running ? `${execution?.id ?? '실행 준비 중'} · ${statusLabel}` : state==='done' ? '실행이 성공적으로 완료되었습니다.' : state==='failed' ? `실행이 ${statusLabel} 상태로 종료되었습니다.` : '현재 실행 중인 테스트가 없습니다.'}</p></div><div className="run-controls">{!running && !terminal && <button className="primary" onClick={start}><Play size={16}/> 실행 시작</button>}{running && <><button className="secondary" onClick={pause}>{state==='paused'?<Play size={16}/>:<Pause size={16}/>} {state==='paused'?'재개':'일시정지'}</button><button className="danger" onClick={stop}><Square size={15}/> 중단</button></>}{terminal&&<><button className="secondary" onClick={start}><RefreshCw size={15}/> 다시 실행</button><button className="primary" onClick={onResult}>결과 상세 <ArrowRight size={15}/></button></>}</div></div>
+  return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">LIVE EXECUTION</p><h1>실행 모니터</h1><p>{running ? `${execution?.id ?? '실행 준비 중'} · ${statusLabel}` : state==='done' ? '실행이 성공적으로 완료되었습니다.' : state==='failed' ? `실행이 ${statusLabel} 상태로 종료되었습니다.` : '현재 실행 중인 테스트가 없습니다.'}</p></div><div className="run-controls">{!running && !terminal && <button className="primary" onClick={start}><Play size={16}/> 실행 시작</button>}{running && <button className="danger" onClick={stop}><Square size={15}/> 중단 요청</button>}{terminal&&<><button className="secondary" onClick={start}><RefreshCw size={15}/> 다시 실행</button><button className="primary" onClick={onResult}>결과 상세 <ArrowRight size={15}/></button></>}</div></div>
     <div className="monitor-grid"><article className="panel browser-panel"><div className="browser-top"><span/><span/><span/><div>Playwright Chromium smoke test</div><ShieldCheck size={15}/></div><div className="mock-site"><div className="mock-logo">storefront</div><div className="mock-login"><h2>다시 만나서 반가워요</h2><p>테스트 계정으로 안전하게 로그인합니다.</p><label>이메일</label><div className="mock-input">qa.runner@company.test</div><label>비밀번호</label><div className="mock-input">••••••••••••</div><div className={`mock-button ${activeStep===3?'targeted':''}`}>로그인</div></div>{state==='done'&&<div className="success-overlay"><CheckCircle2/><b>페이지 접속 성공</b><span>Chromium smoke test가 정상적으로 완료되었습니다.</span></div>}{state==='failed'&&<div className="success-overlay failed-overlay"><XCircle/><b>페이지 접속 실패</b><span>{statusLabel} · 실행 결과 상세를 확인해 주세요.</span></div>}</div></article>
-      <article className="panel timeline"><div className="panel-head"><div><h2>실행 타임라인</h2><p>Worker 상태 · {statusLabel}</p></div><span className={`live ${state}`}>{statusLabel}</span></div><div className="step-list">{steps.map((s,i)=>{const done=i<activeStep&&state!=='failed'; const active=i===activeStep&&running; return <div className={`step ${done?'done':''} ${active?'active':''}`} key={s.title}><span>{done?<Check/>:active?<Activity/>:i+1}</span><div><b>{s.title}</b><p>{s.note}</p><small>{s.type.toUpperCase()} {done&&'· 완료'}</small></div></div>})}</div><div className="budget"><div><span>AI 호출</span><b>{Math.min(activeStep*2,7)} / 20</b></div><div className="budget-bar"><i style={{width:`${Math.min(activeStep*10,35)}%`}}/></div><div><span>예상 비용</span><b>${(activeStep*0.031).toFixed(3)}</b></div></div></article></div>
+      <article className="panel timeline"><div className="panel-head"><div><h2>Worker 실행 단계</h2><p>실제 상태 · {statusLabel}</p></div><span className={`live ${state}`}>{statusLabel}</span></div><div className="step-list">{workerSteps.map((s,i)=>{const done=i<activeStep&&state!=='failed'; const active=i===activeStep&&running; return <div className={`step ${done?'done':''} ${active?'active':''}`} key={s.title}><span>{done?<Check/>:active?<Activity/>:i+1}</span><div><b>{s.title}</b><p>{s.note}</p><small>{s.type} {done&&'· 완료'}</small></div></div>})}</div><div className="budget"><div><span>실행 방식</span><b>Playwright Worker</b></div><div className="budget-bar"><i style={{width:`${Math.min(activeStep*33,100)}%`}}/></div><div><span>브라우저</span><b>Chromium · Headless</b></div></div></article></div>
   </section>
 }
 
 function ResultDetail({execution,onBack,onRetry}:{execution:Execution|null;onBack:()=>void;onRetry:()=>void}){
-  const [selected,setSelected]=useState(3)
   const passed=execution?.status==='PASS'||!execution
-  const evidence=[
-    {title:'로그인 페이지 진입',action:'NAVIGATE',time:'1.2s',detail:'허용 URL 이동 및 로그인 폼 확인'},
-    {title:'테스트 계정 입력',action:'FILL',time:'0.8s',detail:'마스킹된 secret_ref 입력'},
-    {title:'로그인 버튼 선택',action:'CLICK',time:'1.1s',detail:'접근성 후보 기반 요소 선택'},
-    {title:'대시보드 노출 검증',action:'ASSERT',time:'1.9s',detail:'URL과 환영 문구 규칙 검증'},
-  ]
   return <section className="page result-page"><div className="author-top"><button className="back-button" onClick={onBack}>← 대시보드</button><div className="author-actions"><button className="secondary"><Download/> 결과 내보내기</button><button className="primary" onClick={onRetry}><RefreshCw/> 다시 실행</button></div></div>
     <div className={`result-hero ${passed?'':'result-failed'}`}><div className="result-check">{passed?<Check/>:<XCircle/>}</div><div><p className="eyebrow">EXECUTION COMPLETED</p><h1>{passed?'페이지 접속 검증을 통과했습니다.':'페이지 접속 검증에 실패했습니다.'}</h1><p>Playwright Chromium smoke test · {execution?.id ?? 'EX-DEMO'}</p></div><div className="result-stats"><div><span>결과</span><b className={passed?'green-text':'red-text'}>{execution?.status ?? 'PASS'}</b></div><div><span>시작 시각</span><b>{execution?.startedAt ? new Date(execution.startedAt).toLocaleTimeString('ko-KR') : '-'}</b></div><div><span>브라우저</span><b>Chromium</b></div><div><span>완료 시각</span><b>{execution?.endedAt ? new Date(execution.endedAt).toLocaleTimeString('ko-KR') : '-'}</b></div></div></div>
-    <div className="result-grid"><article className="panel evidence-list"><div className="panel-head"><div><h2>단계별 증적</h2><p>4개 단계 · 2개 assertion</p></div><span className="pill pass">ALL PASS</span></div>{evidence.map((e,i)=><button className={`evidence-row ${selected===i?'selected':''}`} onClick={()=>setSelected(i)} key={e.title}><span className="evidence-check"><Check/></span><div><b>{e.title}</b><small><em>{e.action}</em> · {e.detail}</small></div><time>{e.time}</time><ChevronRight/></button>)}</article>
-      <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 화면 증적</button><button><TerminalSquare/> 실행 로그</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>staging.storefront.test/dashboard</span></div><div className="screen-content"><div className="mini-nav"><b>storefront</b><span/><span/><span/></div><div className="mini-welcome"><small>WELCOME BACK</small><h2>안녕하세요, QA Runner님.</h2><p>오늘의 테스트 환경이 정상적으로 준비되었습니다.</p><div><span/><span/><span/></div></div><div className="assert-highlight"><CheckCircle2/><b>Assertion matched</b><span>“안녕하세요” 텍스트가 화면에 표시됨</span></div></div></div><div className="evidence-meta"><div><span>선택한 단계</span><b>{selected+1}. {evidence[selected].title}</b></div><div><span>판정 방식</span><b>{selected===3?'URL + TEXT assertion':'DOM / Accessibility tree'}</b></div><div><span>AI 신뢰도</span><b>{selected===3?'규칙 기반':'96%'}</b></div></div></article>
+    <div className="result-grid"><article className="panel evidence-list"><div className="panel-head"><div><h2>Worker 실행 결과</h2><p>현재 PoC는 페이지 접속 smoke test 1단계를 지원합니다.</p></div><span className={`pill ${passed?'pass':'fail'}`}>{execution?.status ?? 'PASS'}</span></div><div className="evidence-row selected"><span className="evidence-check">{passed?<Check/>:<XCircle/>}</span><div><b>Chromium 페이지 접속</b><small><em>NAVIGATE</em> · 허용 도메인 검사 및 DOMContentLoaded 확인</small></div><time>{execution?.endedAt?'완료':'-'}</time><ChevronRight/></div></article>
+      <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 실행 요약</button><button><TerminalSquare/> 실행 로그</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>Worker가 설정된 테스트 환경 URL로 접속합니다.</span></div><div className="screen-content"><div className="mini-nav"><b>Playwright Worker</b><span/><span/><span/></div><div className="mini-welcome"><small>CHROMIUM SMOKE TEST</small><h2>{passed?'페이지가 정상적으로 로드되었습니다.':'페이지 로드에 실패했습니다.'}</h2><p>{passed?'HTTP 오류 없이 DOMContentLoaded 이벤트를 확인했습니다.':'상세 오류 코드는 백엔드 응답 연동 후 표시됩니다.'}</p><div><span/><span/><span/></div></div><div className="assert-highlight">{passed?<CheckCircle2/>:<XCircle/>}<b>{passed?'Page loaded':'Execution failed'}</b><span>{execution?.status ?? 'PASS'}</span></div></div></div><div className="evidence-meta"><div><span>검증 단계</span><b>1. 페이지 접속</b></div><div><span>판정 방식</span><b>HTTP + DOM 로드</b></div><div><span>브라우저</span><b>Chromium</b></div></div></article>
     </div>
   </section>
 }
