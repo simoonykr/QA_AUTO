@@ -34,7 +34,20 @@ HTTPS 배포에서는 반드시 다음 값을 유지한다.
 ```env
 DEMO_AUTH_ENABLED=true
 DEMO_COOKIE_SECURE=true
+DEMO_COOKIE_SAMESITE=lax
 ```
+
+권장 구성은 프론트와 API를 같은 사이트에서 제공하고 `/api/**`를 FastAPI로 전달하는 방식이다. 이때 `SameSite=lax`를 유지하고 `DEMO_COOKIE_DOMAIN`은 비워 둔다.
+
+Firebase 프론트와 별도 API 도메인을 직접 연결해야 하는 경우에만 다음을 함께 검토한다.
+
+```env
+CORS_ORIGINS=["https://tracepilot-demo.web.app","https://tracepilot-demo.firebaseapp.com"]
+DEMO_COOKIE_SECURE=true
+DEMO_COOKIE_SAMESITE=none
+```
+
+교차 사이트 쿠키 구성은 브라우저 정책의 영향을 받으므로 동일 사이트 `/api` 프록시가 우선이다. 운영 환경에서 `DEMO_COOKIE_SECURE=false`이거나 `SameSite=None`인데 Secure가 아니면 API 서버가 시작되지 않는다.
 
 ## 실행
 

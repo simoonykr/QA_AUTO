@@ -26,6 +26,10 @@ def validate_demo_auth_config(settings: Settings) -> None:
         raise RuntimeError("Demo authentication credentials are not configured")
     if len(settings.demo_session_secret) < 32:
         raise RuntimeError("DEMO_SESSION_SECRET must contain at least 32 characters")
+    if settings.demo_cookie_samesite == "none" and not settings.demo_cookie_secure:
+        raise RuntimeError("DEMO_COOKIE_SECURE must be true when DEMO_COOKIE_SAMESITE is none")
+    if settings.app_env not in {"local", "test"} and not settings.demo_cookie_secure:
+        raise RuntimeError("DEMO_COOKIE_SECURE must be true outside local and test environments")
 
 
 def credentials_match(username: str, password: str, settings: Settings) -> bool:

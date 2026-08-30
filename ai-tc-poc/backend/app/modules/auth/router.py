@@ -21,6 +21,7 @@ def _user(username: str) -> AuthenticatedUser:
 @router.post("/login", response_model=LoginResponse)
 async def login(body: DemoLoginRequest, response: Response) -> LoginResponse:
     settings = get_settings()
+    cookie_domain = settings.demo_cookie_domain or None
     if not settings.demo_auth_enabled:
         raise DomainError("AUTH_NOT_ENABLED", "데모 로그인이 활성화되지 않았습니다.", 404)
     if not credentials_match(body.username, body.password, settings):
@@ -32,7 +33,8 @@ async def login(body: DemoLoginRequest, response: Response) -> LoginResponse:
         max_age=ttl_seconds,
         httponly=True,
         secure=settings.demo_cookie_secure,
-        samesite="lax",
+        samesite=settings.demo_cookie_samesite,
+        domain=cookie_domain,
         path="/",
     )
     return LoginResponse(user=_user(body.username), expiresIn=ttl_seconds)
@@ -49,4 +51,13 @@ async def me(request: Request) -> AuthenticatedUser:
 
 @router.post("/logout", status_code=204)
 async def logout(response: Response) -> None:
-    response.delete_cookie(COOKIE_NAME, path="/")
+    settings = get_settings()
+    cookie_domain = settings.demo_cookie_domain or None
+    response.delete_cookie(
+        COOKIE_NAME,
+        path="/",
+        domain=cookie_domain,
+        secure=settings.demo_cookie_secure,
+        httponly=True,
+        samesite=settings.demo_cookie_samesite,
+    )

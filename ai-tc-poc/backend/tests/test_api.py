@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.db.models import Base
 from app.main import app
 from app.modules.executions.repository import SqlExecutionRepository
+from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 from app.schemas.resources import EnvironmentSummary, TestAccountSummary
@@ -159,6 +160,7 @@ def test_demo_auth_protects_api_and_uses_http_only_cookie() -> None:
         assert rejected.status_code == 401
         assert logged_in.status_code == 200
         assert "HttpOnly" in logged_in.headers["set-cookie"]
+        assert "SameSite=lax" in logged_in.headers["set-cookie"]
         assert me.json()["approvalStatus"] == "APPROVED"
         assert authorized.status_code == 200
         assert logged_out.status_code == 204
@@ -169,6 +171,32 @@ def test_demo_auth_protects_api_and_uses_http_only_cookie() -> None:
         settings.demo_auth_password = ""
         settings.demo_session_secret = ""
         client.cookies.clear()
+
+
+def test_demo_auth_rejects_insecure_cross_site_cookie() -> None:
+    settings = get_settings().model_copy(update={
+        "demo_auth_enabled": True,
+        "demo_auth_username": "demo-user",
+        "demo_auth_password": "demo-password",
+        "demo_session_secret": "test-session-secret-that-is-longer-than-32-characters",
+        "demo_cookie_secure": False,
+        "demo_cookie_samesite": "none",
+    })
+    with pytest.raises(RuntimeError, match="DEMO_COOKIE_SECURE"):
+        validate_demo_auth_config(settings)
+
+
+def test_demo_auth_requires_secure_cookie_outside_local_environment() -> None:
+    settings = get_settings().model_copy(update={
+        "app_env": "production",
+        "demo_auth_enabled": True,
+        "demo_auth_username": "demo-user",
+        "demo_auth_password": "demo-password",
+        "demo_session_secret": "test-session-secret-that-is-longer-than-32-characters",
+        "demo_cookie_secure": False,
+    })
+    with pytest.raises(RuntimeError, match="outside local"):
+        validate_demo_auth_config(settings)
 
 
 def test_list_test_cases_matches_frontend_contract() -> None:

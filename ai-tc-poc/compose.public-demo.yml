@@ -68,6 +68,8 @@ services:
       DEMO_AUTH_PASSWORD: ${DEMO_AUTH_PASSWORD:?DEMO_AUTH_PASSWORD is required}
       DEMO_SESSION_SECRET: ${DEMO_SESSION_SECRET:?DEMO_SESSION_SECRET is required}
       DEMO_COOKIE_SECURE: ${DEMO_COOKIE_SECURE:-true}
+      DEMO_COOKIE_SAMESITE: ${DEMO_COOKIE_SAMESITE:-lax}
+      DEMO_COOKIE_DOMAIN: ${DEMO_COOKIE_DOMAIN:-}
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

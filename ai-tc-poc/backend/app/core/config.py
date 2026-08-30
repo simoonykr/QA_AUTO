@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +27,8 @@ class Settings(BaseSettings):
     demo_session_secret: str = ""
     demo_session_ttl_hours: int = 8
     demo_cookie_secure: bool = False
+    demo_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
+    demo_cookie_domain: str | None = None
     outbox_poll_interval_seconds: float = 1.0
     outbox_batch_size: int = 50
     outbox_max_attempts: int = 10
