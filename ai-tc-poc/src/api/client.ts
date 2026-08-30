@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, Execution, ExecutionActionResponse, ExecutionDetails, LoginResponse, StructuredTestCase, TestCaseSummary } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseSummary } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -61,6 +61,21 @@ export const api = {
     if (!USE_MOCK_API) return request('/test-cases')
     await wait(180)
     return structuredClone(mockTestCases)
+  },
+
+  async listEnvironments(): Promise<EnvironmentSummary[]> {
+    if (!USE_MOCK_API) return request('/environments')
+    return [{ id: 'env-staging', name: 'Staging', baseUrl: 'https://staging.storefront.test', allowedDomains: ['staging.storefront.test'], defaultViewport: '1440x900' }]
+  },
+
+  async listTestAccounts(): Promise<TestAccountSummary[]> {
+    if (!USE_MOCK_API) return request('/test-accounts')
+    return [{ id: 'qa-runner-01', name: 'QA Runner 01', status: 'AVAILABLE' }]
+  },
+
+  async getExecutionPolicy(): Promise<ExecutionPolicy> {
+    if (!USE_MOCK_API) return request('/execution-policies/current')
+    return { allowedActions: ['navigate','click','fill','assert'], supportedBrowsers: ['Chromium'], maxTimeoutMinutes: 30, maxAiCalls: 50, maxRetries: 2, requireRiskApproval: true }
   },
 
   async structureTestCase(title: string, rawText: string): Promise<StructuredTestCase> {

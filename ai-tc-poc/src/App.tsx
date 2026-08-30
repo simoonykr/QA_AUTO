@@ -8,7 +8,7 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { AuthenticatedUser, CreateExecutionRequest, Execution, ExecutionDetails, ExecutionStepRun, StructuredTestCase, TestCaseSummary } from './api/types'
+import type { AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionDetails, ExecutionPolicy, ExecutionStepRun, StructuredTestCase, TestAccountSummary, TestCaseSummary } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
@@ -22,7 +22,7 @@ const workerSteps = [
   { title: '격리 브라우저 준비', note: 'Chromium 컨텍스트와 viewport를 생성합니다.', type: 'PROVISION' },
   { title: '대상 페이지 접속', note: '허용 도메인을 검사하고 DOM 로드를 확인합니다.', type: 'NAVIGATE' },
 ]
-const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:20,retryCount:2}, requireRiskApproval:true }
+const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:0,retryCount:2}, requireRiskApproval:true }
 
 function executionPresentation(status: Execution['status']): { runState: RunState; activeStep: number } {
   if (status === 'PASS') return { runState: 'done', activeStep: 3 }
@@ -329,30 +329,49 @@ function RunConfigure({onBack,onStart,starting}: {onBack:()=>void; onStart:(inpu
   const [viewport,setViewport]=useState('1440x900')
   const [locale,setLocale]=useState('ko-KR')
   const [duration,setDuration]=useState('15')
-  const [maxAiCalls,setMaxAiCalls]=useState('20')
+  const [maxAiCalls,setMaxAiCalls]=useState('0')
   const [retryCount,setRetryCount]=useState('2')
   const [approval,setApproval]=useState(true)
+  const [environments,setEnvironments]=useState<EnvironmentSummary[]>([])
+  const [accounts,setAccounts]=useState<TestAccountSummary[]>([])
+  const [policy,setPolicy]=useState<ExecutionPolicy|null>(null)
+  const [loadingResources,setLoadingResources]=useState(true)
+  const [resourceError,setResourceError]=useState('')
+  useEffect(()=>{Promise.all([api.listEnvironments(),api.listTestAccounts(),api.getExecutionPolicy()]).then(([nextEnvironments,nextAccounts,nextPolicy])=>{
+    setEnvironments(nextEnvironments);setAccounts(nextAccounts);setPolicy(nextPolicy)
+    if(nextEnvironments[0]){setEnvironment(nextEnvironments[0].id);setViewport(nextEnvironments[0].defaultViewport)}
+    if(nextAccounts[0])setAccount(nextAccounts[0].id)
+    if(nextPolicy.supportedBrowsers[0])setBrowser(nextPolicy.supportedBrowsers[0])
+    setApproval(nextPolicy.requireRiskApproval)
+  }).catch(error=>setResourceError(error instanceof ApiError?error.body.message:'실행 설정을 불러오지 못했습니다.')).finally(()=>setLoadingResources(false))},[])
+  const selectedEnvironment=environments.find(item=>item.id===environment)
+  const selectedAccount=accounts.find(item=>item.id===account)
+  const durationOptions=['10','15','30'].filter(value=>Number(value)<=(policy?.maxTimeoutMinutes??30))
+  const aiCallOptions=['0','10','20','30','50'].filter(value=>Number(value)<=(policy?.maxAiCalls??50))
+  const retryOptions=['0','1','2'].filter(value=>Number(value)<=(policy?.maxRetries??2))
   const submit = () => onStart({ testCaseVersionId:'tcv-new-v1', environmentId:environment, browser, accountId:account, viewport, locale, limits:{timeoutMinutes:Number(duration),maxAiCalls:Number(maxAiCalls),retryCount:Number(retryCount)}, requireRiskApproval:approval })
   return <section className="page config-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 구조화 검토</button><span className="config-id">TC-NEW · Version 1 · READY</span></div>
     <div className="page-heading compact"><div><p className="eyebrow">EXECUTION SETUP</p><h1>실행 설정</h1><p>격리된 브라우저에서 사용할 환경, 계정과 안전 한도를 확인하세요.</p></div></div>
+    {resourceError&&<div className="config-error"><AlertTriangle size={15}/>{resourceError}</div>}
     <div className="config-grid"><div className="config-main">
       <ConfigCard icon={<MonitorCheck/>} title="실행 환경" caption="테스트 대상과 브라우저 조건">
-        <div className="form-grid"><Field label="환경"><Select value={environment} setValue={setEnvironment} options={['env-staging','env-development']}/></Field><Field label="브라우저"><Select value={browser} setValue={value=>setBrowser(value as CreateExecutionRequest['browser'])} options={['Chromium','Firefox','WebKit']}/></Field><Field label="화면 크기"><Select value={viewport} setValue={setViewport} options={['1440x900','1920x1080','1280x720']}/></Field><Field label="언어"><Select value={locale} setValue={setLocale} options={['ko-KR','en-US']}/></Field></div><div className="safe-domain"><ShieldCheck/><div><b>허용 도메인</b><span>staging.storefront.test 및 하위 경로만 접근할 수 있습니다.</span></div></div>
+        <div className="form-grid"><Field label="환경"><Select value={environment} setValue={value=>{setEnvironment(value);const target=environments.find(item=>item.id===value);if(target)setViewport(target.defaultViewport)}} options={environments.map(item=>({value:item.id,label:item.name}))}/></Field><Field label="브라우저"><Select value={browser} setValue={value=>setBrowser(value as CreateExecutionRequest['browser'])} options={policy?.supportedBrowsers??['Chromium']}/></Field><Field label="화면 크기"><Select value={viewport} setValue={setViewport} options={[...new Set([selectedEnvironment?.defaultViewport??'1440x900','1920x1080','1280x720'])]}/></Field><Field label="언어"><Select value={locale} setValue={setLocale} options={['ko-KR','en-US']}/></Field></div><div className="safe-domain"><ShieldCheck/><div><b>허용 도메인</b><span>{selectedEnvironment?.allowedDomains.join(', ')||'환경을 불러오는 중입니다.'}</span></div></div>
       </ConfigCard>
       <ConfigCard icon={<KeyRound/>} title="테스트 계정과 데이터" caption="비밀값은 실행 시에만 Worker 메모리에 주입됩니다." tone="violet">
-        <div className="form-grid"><Field label="테스트 계정"><Select value={account} setValue={setAccount} options={['qa-runner-01','qa-runner-02','신규 계정 자동 생성']}/></Field><Field label="데이터 세트"><Select value="signup-default-v2" options={['signup-default-v2','empty-account-pool']}/></Field></div><div className="account-status"><span/><div><b>{account}</b><small>사용 가능 · 마지막 초기화 8분 전</small></div><button>계정 상세 <ExternalLink/></button></div>
+        <div className="form-grid"><Field label="테스트 계정"><Select value={account} setValue={setAccount} options={accounts.map(item=>({value:item.id,label:item.name}))}/></Field><Field label="데이터 세트"><Select value="signup-default-v2" options={['signup-default-v2']}/></Field></div><div className="account-status"><span/><div><b>{selectedAccount?.name??'계정 로딩 중'}</b><small>{selectedAccount?.status??'-'}</small></div><button>계정 상세 <ExternalLink/></button></div>
       </ConfigCard>
       <ConfigCard icon={<Gauge/>} title="실행 한도" caption="무한 반복과 예상치 못한 비용을 방지합니다." tone="amber">
-        <div className="form-grid triple"><Field label="최대 실행 시간"><Select value={duration} setValue={setDuration} options={['10','15','30']}/></Field><Field label="최대 AI 호출"><Select value={maxAiCalls} setValue={setMaxAiCalls} options={['10','20','30']}/></Field><Field label="오류 재시도"><Select value={retryCount} setValue={setRetryCount} options={['0','1','2']}/></Field></div><div className="toggle-row"><div><b>위험 행동 시 사람 승인</b><span>삭제·결제·계정 변경을 감지하면 실행을 일시정지합니다.</span></div><button className={`toggle ${approval?'on':''}`} onClick={()=>setApproval(!approval)} aria-pressed={approval}><i/></button></div>
+        <div className="form-grid triple"><Field label="최대 실행 시간"><Select value={duration} setValue={setDuration} options={durationOptions}/></Field><Field label="최대 AI 호출"><Select value={maxAiCalls} setValue={setMaxAiCalls} options={aiCallOptions}/></Field><Field label="오류 재시도"><Select value={retryCount} setValue={setRetryCount} options={retryOptions}/></Field></div><div className="toggle-row"><div><b>위험 행동 시 사람 승인</b><span>서버 정책에 따라 위험 행동에서 실행을 일시정지합니다.</span></div><button className={`toggle ${approval?'on':''}`} onClick={()=>setApproval(!approval)} aria-pressed={approval}><i/></button></div>
       </ConfigCard>
-    </div><aside className="panel launch-summary"><p className="eyebrow">EXECUTION SUMMARY</p><h2>신규 사용자 이메일 회원가입</h2><span className="summary-ready"><CheckCircle2/> 실행 준비 완료</span><dl><div><dt>환경</dt><dd>{environment}</dd></div><div><dt>브라우저</dt><dd>{browser}</dd></div><div><dt>계정</dt><dd>{account}</dd></div><div><dt>화면</dt><dd>{viewport}</dd></div><div><dt>AI 호출</dt><dd>{maxAiCalls}회</dd></div><div><dt>시간 제한</dt><dd>{duration}분</dd></div></dl><div className="cost-estimate"><Sparkles/><div><span>예상 AI 비용</span><b>$0.08 – $0.14</b></div></div><button className="primary wide launch" onClick={submit} disabled={starting}>{starting?<Activity className="spin"/>:<Play fill="currentColor"/>} {starting?'실행 생성 중':'격리 세션에서 실행'}</button><p className="launch-note"><ShieldCheck/> 허용된 action만 정책 검사 후 수행됩니다.</p></aside></div>
+    </div><aside className="panel launch-summary"><p className="eyebrow">EXECUTION SUMMARY</p><h2>신규 사용자 이메일 회원가입</h2><span className="summary-ready"><CheckCircle2/> {loadingResources?'설정 확인 중':'실행 준비 완료'}</span><dl><div><dt>환경</dt><dd>{selectedEnvironment?.name??environment}</dd></div><div><dt>브라우저</dt><dd>{browser}</dd></div><div><dt>계정</dt><dd>{selectedAccount?.name??account}</dd></div><div><dt>화면</dt><dd>{viewport}</dd></div><div><dt>AI 호출</dt><dd>{maxAiCalls}회</dd></div><div><dt>시간 제한</dt><dd>{duration}분</dd></div></dl><div className="cost-estimate"><Sparkles/><div><span>AI API 상태</span><b>{Number(maxAiCalls)===0?'비활성 · 토큰 사용 없음':`최대 ${maxAiCalls}회`}</b></div></div><button className="primary wide launch" onClick={submit} disabled={starting||loadingResources||Boolean(resourceError)||!environment||!account}>{starting?<Activity className="spin"/>:<Play fill="currentColor"/>} {starting?'실행 생성 중':'격리 세션에서 실행'}</button><p className="launch-note"><ShieldCheck/> 허용된 action만 정책 검사 후 수행됩니다.</p></aside></div>
   </section>
 }
 
 function ConfigCard({icon,title,caption,tone='',children}:{icon:React.ReactNode;title:string;caption:string;tone?:string;children:React.ReactNode}){return <article className="panel config-card"><div className="config-card-title"><span className={tone}>{icon}</span><div><h2>{title}</h2><p>{caption}</p></div></div>{children}</article>}
 function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="config-field"><span>{label}</span>{children}</label>}
-function Select({value,options,setValue}:{value:string;options:string[];setValue?:(v:string)=>void}){return <div className="select-wrap"><select value={value} onChange={e=>setValue?.(e.target.value)}>{options.map(o=><option key={o}>{o}</option>)}</select><ChevronDown/></div>}
+type SelectOption=string|{value:string;label:string}
+function Select({value,options,setValue}:{value:string;options:SelectOption[];setValue?:(v:string)=>void}){return <div className="select-wrap"><select value={value} onChange={e=>setValue?.(e.target.value)}>{options.map(option=>{const item=typeof option==='string'?{value:option,label:option}:option;return <option value={item.value} key={item.value}>{item.label}</option>})}</select><ChevronDown/></div>}
 
 function stepAction(step: ExecutionStepRun) {
   return typeof step.action?.type === 'string' ? step.action.type.toUpperCase() : 'ACTION'

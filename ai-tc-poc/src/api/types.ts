@@ -14,6 +14,25 @@ export interface AuthenticatedUser {
 
 export interface LoginResponse { user: AuthenticatedUser; expiresIn: number }
 
+export interface EnvironmentSummary {
+  id: string
+  name: string
+  baseUrl: string
+  allowedDomains: string[]
+  defaultViewport: string
+}
+
+export interface TestAccountSummary { id: string; name: string; status: string }
+
+export interface ExecutionPolicy {
+  allowedActions: Array<'navigate' | 'click' | 'fill' | 'assert'>
+  supportedBrowsers: Array<'Chromium'>
+  maxTimeoutMinutes: number
+  maxAiCalls: number
+  maxRetries: number
+  requireRiskApproval: boolean
+}
+
 export interface TestCaseSummary {
   id: string
   title: string
