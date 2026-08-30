@@ -246,7 +246,7 @@ function Dashboard({onRun, onCases}: {onRun: () => void; onCases: () => void}) {
       <Metric icon={<TestTube2/>} label="전체 실행" value="184" delta="+12.5%" tone="blue"/>
       <Metric icon={<CheckCircle2/>} label="통과율" value="92.4%" delta="+3.2%" tone="green"/>
       <Metric icon={<Clock3/>} label="평균 실행 시간" value="2m 18s" delta="-18s" tone="violet"/>
-      <Metric icon={<Gauge/>} label="AI 비용" value="$18.42" delta="예산의 37%" tone="amber"/>
+      <Metric icon={<Gauge/>} label="AI API" value="OFF" delta="토큰 사용 없음" tone="amber"/>
     </div>
     <div className="dashboard-grid">
       <article className="panel runs-panel">
@@ -257,8 +257,8 @@ function Dashboard({onRun, onCases}: {onRun: () => void; onCases: () => void}) {
         <div className="run-row"><StatusIcon type="pass"/><div><b>만료 세션 리다이렉트</b><small>TC-127 · Chrome · 어제</small></div><span className="pill pass">PASS</span><time>0m 56s</time><MoreHorizontal/></div>
       </article>
       <article className="panel quick-run">
-        <div className="orb"><Bot size={27}/></div><p className="eyebrow">QUICK RUN</p><h2>검증할 흐름을<br/>바로 실행하세요.</h2><p>AI가 자연어 TC를 분석하고 화면 요소를 찾아 단계별 증적을 남깁니다.</p><button className="primary wide" onClick={onRun}><Play size={16} fill="currentColor"/> 테스트 실행</button>
-        <div className="limits"><span><b>20</b> 최대 AI 호출</span><span><b>15m</b> 실행 제한</span></div>
+        <div className="orb"><Bot size={27}/></div><p className="eyebrow">QUICK RUN</p><h2>검증할 흐름을<br/>바로 실행하세요.</h2><p>현재는 AI API 없이 승인된 구조와 Playwright Worker로 테스트 흐름을 검증합니다.</p><button className="primary wide" onClick={onRun}><Play size={16} fill="currentColor"/> 테스트 실행</button>
+        <div className="limits"><span><b>0</b> AI 호출</span><span><b>15m</b> 실행 제한</span></div>
       </article>
     </div>
     <div className="dashboard-grid lower">
