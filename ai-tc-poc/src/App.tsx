@@ -48,10 +48,11 @@ function App() {
   const [backendEnvironment, setBackendEnvironment] = useState(apiConfig.mock ? 'mock' : '')
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [currentUser, setCurrentUser] = useState<AuthenticatedUser | null>(null)
+  const [authNotice, setAuthNotice] = useState('')
 
   useEffect(() => {
     api.me().then(user => { setCurrentUser(user); setAuthStatus('authenticated') }).catch(() => setAuthStatus('unauthenticated'))
-    const requireLogin = () => { setCurrentUser(null); setAuthStatus('unauthenticated') }
+    const requireLogin = () => { setAuthNotice('세션이 만료되었습니다. 다시 로그인해 주세요.'); setCurrentUser(null); setAuthStatus('unauthenticated') }
     window.addEventListener('tracepilot:auth-required', requireLogin)
     return () => window.removeEventListener('tracepilot:auth-required', requireLogin)
   }, [])
@@ -75,10 +76,10 @@ function App() {
     }
   }
 
-  useEffect(() => { void checkBackend() }, [])
+  useEffect(() => { void checkBackend() }, [authStatus])
 
   useEffect(() => {
-    if (apiConfig.mock) return
+    if (apiConfig.mock || authStatus !== 'authenticated') return
     const executionId = window.sessionStorage.getItem(ACTIVE_EXECUTION_KEY)
     if (!executionId) return
     api.getExecution(executionId).then(restored => {
@@ -143,6 +144,7 @@ function App() {
 
   const login = async (username: string, password: string) => {
     const response = await api.login(username, password)
+    setAuthNotice('')
     setCurrentUser(response.user)
     setAuthStatus('authenticated')
   }
@@ -150,13 +152,13 @@ function App() {
   const logout = async () => {
     try { await api.logout() } finally {
       window.sessionStorage.removeItem(ACTIVE_EXECUTION_KEY)
-      setExecution(null); setExecutionDetails(null); setCurrentUser(null); setAuthStatus('unauthenticated')
+      setExecution(null); setExecutionDetails(null); setAuthNotice(''); setCurrentUser(null); setAuthStatus('unauthenticated')
     }
   }
 
   if (authStatus === 'checking') return <AuthLoading/>
-  if (authStatus === 'unauthenticated') return <LoginPage onLogin={login}/>
-  if (!currentUser) return <LoginPage onLogin={login}/>
+  if (authStatus === 'unauthenticated') return <LoginPage notice={authNotice} onLogin={login}/>
+  if (!currentUser) return <LoginPage notice={authNotice} onLogin={login}/>
   if (currentUser.approvalStatus !== 'APPROVED') return <ApprovalGate user={currentUser} onLogout={logout}/>
 
   return (
@@ -211,13 +213,15 @@ function AuthLoading() {
   return <main className="auth-shell"><section className="auth-card auth-loading"><span className="brand-mark"><Sparkles size={19}/></span><Activity className="spin"/><p>로그인 상태를 확인하고 있습니다.</p></section></main>
 }
 
-function LoginPage({onLogin}:{onLogin:(username:string,password:string)=>Promise<void>}) {
+function LoginPage({notice,onLogin}:{notice:string;onLogin:(username:string,password:string)=>Promise<void>}) {
+  const [mode,setMode]=useState<'login'|'signup'>('login')
   const [username,setUsername]=useState('')
   const [password,setPassword]=useState('')
   const [submitting,setSubmitting]=useState(false)
   const [error,setError]=useState('')
   const submit=async(e:React.FormEvent)=>{e.preventDefault();if(submitting)return;setSubmitting(true);setError('');try{await onLogin(username,password)}catch(err){setError(err instanceof ApiError?err.body.message:'로그인 요청에 실패했습니다.')}finally{setSubmitting(false)}}
-  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={19}/></span><div><strong>TracePilot</strong><small>AI Test Operations</small></div></div><p className="eyebrow">SECURE DEMO ACCESS</p><h1>테스트 워크스페이스 로그인</h1><p className="auth-copy">관리자에게 전달받은 데모 계정으로 로그인해 주세요. 세션은 안전한 HttpOnly 쿠키로 유지됩니다.</p><form onSubmit={submit}><label>아이디<input autoFocus autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required/></label><label>비밀번호<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="auth-error"><AlertTriangle size={15}/>{error}</div>}<button className="primary wide" disabled={submitting}>{submitting?<Activity className="spin" size={16}/>:<KeyRound size={16}/>} {submitting?'로그인 중':'로그인'}</button></form><small className="auth-help"><ShieldCheck size={13}/> 계정 정보는 브라우저 저장소에 저장하지 않습니다.</small></section></main>
+  if(mode==='signup')return <main className="auth-shell"><section className="auth-card approval-card"><span className="approval-icon"><Users/></span><p className="eyebrow">ACCESS REQUEST</p><h1>가입 신청 기능을 준비하고 있습니다.</h1><p className="auth-copy">향후 가입 신청 후 관리자 승인을 받은 사용자만 로그인할 수 있습니다. 현재 데모는 관리자에게 공용 계정을 요청해 주세요.</p><button className="secondary wide" onClick={()=>setMode('login')}>로그인으로 돌아가기</button></section></main>
+  return <main className="auth-shell"><section className="auth-card"><div className="auth-brand"><span className="brand-mark"><Sparkles size={19}/></span><div><strong>TracePilot</strong><small>AI Test Operations</small></div></div><p className="eyebrow">SECURE DEMO ACCESS</p><h1>테스트 워크스페이스 로그인</h1><p className="auth-copy">관리자에게 전달받은 데모 계정으로 로그인해 주세요. 세션은 안전한 HttpOnly 쿠키로 유지됩니다.</p>{notice&&<div className="auth-notice"><Clock3 size={15}/>{notice}</div>}<form onSubmit={submit}><label>아이디<input autoFocus autoComplete="username" value={username} onChange={e=>setUsername(e.target.value)} required/></label><label>비밀번호<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label>{error&&<div className="auth-error"><AlertTriangle size={15}/>{error}</div>}<button className="primary wide" disabled={submitting}>{submitting?<Activity className="spin" size={16}/>:<KeyRound size={16}/>} {submitting?'로그인 중':'로그인'}</button></form><button className="auth-link" onClick={()=>setMode('signup')}>계정이 없으신가요? 가입 신청 안내</button><small className="auth-help"><ShieldCheck size={13}/> 계정 정보는 브라우저 저장소에 저장하지 않습니다.</small></section></main>
 }
 
 function ApprovalGate({user,onLogout}:{user:AuthenticatedUser;onLogout:()=>void}) {
