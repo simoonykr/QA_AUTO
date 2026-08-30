@@ -124,7 +124,7 @@ function App() {
       if (apiConfig.mock) {
         window.setTimeout(() => setActiveStep(2), 900)
         window.setTimeout(() => setActiveStep(3), 1800)
-        window.setTimeout(() => { setActiveStep(3); setRunState('done') }, 2800)
+        window.setTimeout(() => { setExecution(current=>current?{...current,status:'PASS',endedAt:new Date().toISOString()}:current); setActiveStep(3); setRunState('done') }, 2800)
       }
     } catch (error) {
       toast(error instanceof ApiError ? error.body.message : '실행을 시작하지 못했습니다.')
