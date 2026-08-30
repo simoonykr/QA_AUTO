@@ -43,6 +43,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Type check and build
         run: pnpm build
+      - name: Build Firebase demo
+        run: pnpm build:firebase-demo
 
   compose-config:
     runs-on: ubuntu-latest
