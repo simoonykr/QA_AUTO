@@ -35,6 +35,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 export const api = {
+  subscribeExecution(id: string, onDetails: (details: ExecutionDetails) => void, onError: () => void): () => void {
+    if (USE_MOCK_API) return () => undefined
+    const source = new EventSource(`${API_BASE_URL}/executions/${id}/events`, { withCredentials: true })
+    const receive = (event: MessageEvent<string>) => {
+      try { onDetails(JSON.parse(event.data) as ExecutionDetails) } catch { onError() }
+    }
+    source.addEventListener('execution.updated', receive as EventListener)
+    source.addEventListener('execution.completed', receive as EventListener)
+    source.onerror = onError
+    return () => source.close()
+  },
+
+  artifactUrl(executionId: string, artifactId: string): string {
+    return `${API_BASE_URL}/executions/${executionId}/artifacts/${artifactId}`
+  },
+
   async login(username: string, password: string): Promise<LoginResponse> {
     if (USE_MOCK_API) return { user: { id: 'demo:qa', displayName: username || 'qa', role: 'OWNER', approvalStatus: 'APPROVED' }, expiresIn: 28800 }
     return request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })

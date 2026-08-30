@@ -94,14 +94,20 @@ function App() {
 
   useEffect(() => {
     if (apiConfig.mock || !execution || !['QUEUED','PROVISIONING','RUNNING','WAITING_APPROVAL','CANCEL_REQUESTED'].includes(execution.status)) return
-    const timer = window.setInterval(() => api.getExecution(execution.id).then(next => {
-      setExecution(next)
-      const presentation = executionPresentation(next.status)
+    let pollingTimer:number|undefined
+    let terminalReceived=false
+    const applyDetails=(details:ExecutionDetails)=>{
+      setExecutionDetails(details)
+      setExecution(details.execution)
+      const presentation = executionPresentation(details.execution.status)
       setRunState(presentation.runState)
       setActiveStep(presentation.activeStep)
-      void api.getExecutionDetails(next.id).then(setExecutionDetails).catch(() => undefined)
-    }).catch(error => toast(error instanceof ApiError ? error.body.message : '실행 상태를 확인하지 못했습니다.')), 2000)
-    return () => window.clearInterval(timer)
+      terminalReceived=['PASS','FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(details.execution.status)
+    }
+    const poll=()=>api.getExecutionDetails(execution.id).then(applyDetails).catch(error=>toast(error instanceof ApiError?error.body.message:'실행 상태를 확인하지 못했습니다.'))
+    const startPolling=()=>{if(pollingTimer||terminalReceived)return;void poll();pollingTimer=window.setInterval(poll,2000)}
+    const unsubscribe=api.subscribeExecution(execution.id,applyDetails,startPolling)
+    return () => { unsubscribe(); if(pollingTimer)window.clearInterval(pollingTimer) }
   }, [execution?.id, execution?.status])
 
   const filtered = useMemo(() => testCases.filter((t) => `${t.id} ${t.title} ${t.group}`.toLowerCase().includes(query.toLowerCase())), [query, testCases])
@@ -400,7 +406,7 @@ function ResultDetail({execution,details,onBack,onRetry}:{execution:Execution|nu
   return <section className="page result-page"><div className="author-top"><button className="back-button" onClick={onBack}>← 대시보드</button><div className="author-actions"><button className="secondary" disabled><Download/> 내보내기 준비 중</button><button className="primary" onClick={onRetry}><RefreshCw/> 다시 실행</button></div></div>
     <div className={`result-hero ${passed?'':'result-failed'}`}><div className="result-check">{passed?<Check/>:<XCircle/>}</div><div><p className="eyebrow">EXECUTION COMPLETED</p><h1>{passed?'구조화 테스트를 통과했습니다.':'구조화 테스트 실행에 실패했습니다.'}</h1><p>{details?.steps.length ?? 0}개 단계 실행 · {execution?.id ?? 'EX-DEMO'}</p></div><div className="result-stats"><div><span>결과</span><b className={passed?'green-text':'red-text'}>{execution?.status ?? 'PASS'}</b></div><div><span>오류 코드</span><b>{details?.errorCode ?? '-'}</b></div><div><span>증적</span><b>{details?.artifacts.length ?? 0}개</b></div><div><span>완료 시각</span><b>{execution?.endedAt ? new Date(execution.endedAt).toLocaleTimeString('ko-KR') : '-'}</b></div></div></div>
     <div className="result-grid"><article className="panel evidence-list"><div className="panel-head"><div><h2>단계별 실행 결과</h2><p>{details?.steps.length ?? 0}개 단계 · {details?.artifacts.length ?? 0}개 증적</p></div><span className={`pill ${passed?'pass':'fail'}`}>{execution?.status ?? 'PASS'}</span></div>{details?.steps.length ? details.steps.map((step,i)=><button className={`evidence-row ${selected===i?'selected':''}`} onClick={()=>setSelected(i)} key={step.id}><span className="evidence-check">{step.status==='PASS'?<Check/>:<XCircle/>}</span><div><b>{step.stepNo}. {stepTitle(step)}</b><small><em>{stepAction(step)}</em> · {step.errorCode ?? step.status}</small></div><time>{step.endedAt?'완료':'-'}</time><ChevronRight/></button>) : <div className="empty-table">저장된 단계 결과가 없습니다.</div>}</article>
-      <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 단계 상세</button><button><TerminalSquare/> 증적 정보</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>{selectedArtifact?.objectKey ?? '저장된 화면 증적이 없습니다.'}</span></div><div className="screen-content"><div className="mini-nav"><b>Playwright Worker</b><span/><span/><span/></div><div className="mini-welcome"><small>{selectedStep ? stepAction(selectedStep) : 'NO STEP'}</small><h2>{selectedStep ? stepTitle(selectedStep) : '단계를 선택해 주세요.'}</h2><p>{selectedStep?.errorCode ? `오류 코드: ${selectedStep.errorCode}` : selectedStep?.assertion ? `Assertion: ${String(selectedStep.assertion.operator ?? '검증 완료')}` : `상태: ${selectedStep?.status ?? '-'}`}</p><div><span/><span/><span/></div></div><div className="assert-highlight">{selectedStep?.status==='PASS'?<CheckCircle2/>:<XCircle/>}<b>{selectedStep?.status ?? '대기'}</b><span>{selectedArtifact ? `${selectedArtifact.type} · ${Math.ceil(selectedArtifact.sizeBytes/1024)} KB` : '증적 없음'}</span></div></div></div><div className="evidence-meta"><div><span>선택 단계</span><b>{selectedStep?.stepNo ?? '-'}. {selectedStep ? stepTitle(selectedStep) : '-'}</b></div><div><span>Selector</span><b>{typeof selectedStep?.action?.selector==='string'?selectedStep.action.selector:'-'}</b></div><div><span>오류 코드</span><b>{selectedStep?.errorCode ?? details?.errorCode ?? '-'}</b></div></div></article>
+      <article className="panel evidence-detail"><div className="detail-tabs"><button className="active"><Eye/> 단계 상세</button><button><TerminalSquare/> 증적 정보</button></div><div className="evidence-screen"><div className="screen-toolbar"><i/><i/><i/><span>{selectedArtifact?.objectKey ?? '저장된 화면 증적이 없습니다.'}</span></div>{selectedArtifact&&execution?<img className="artifact-preview" src={api.artifactUrl(execution.id,selectedArtifact.id)} alt={`${selectedArtifact.type} 실행 증적`}/>:<div className="screen-content"><div className="mini-nav"><b>Playwright Worker</b><span/><span/><span/></div><div className="mini-welcome"><small>{selectedStep ? stepAction(selectedStep) : 'NO STEP'}</small><h2>{selectedStep ? stepTitle(selectedStep) : '단계를 선택해 주세요.'}</h2><p>{selectedStep?.errorCode ? `오류 코드: ${selectedStep.errorCode}` : selectedStep?.assertion ? `Assertion: ${String(selectedStep.assertion.operator ?? '검증 완료')}` : `상태: ${selectedStep?.status ?? '-'}`}</p><div><span/><span/><span/></div></div><div className="assert-highlight">{selectedStep?.status==='PASS'?<CheckCircle2/>:<XCircle/>}<b>{selectedStep?.status ?? '대기'}</b><span>{selectedArtifact ? `${selectedArtifact.type} · ${Math.ceil(selectedArtifact.sizeBytes/1024)} KB` : '증적 없음'}</span></div></div>}</div><div className="evidence-meta"><div><span>선택 단계</span><b>{selectedStep?.stepNo ?? '-'}. {selectedStep ? stepTitle(selectedStep) : '-'}</b></div><div><span>Selector</span><b>{typeof selectedStep?.action?.selector==='string'?selectedStep.action.selector:'-'}</b></div><div><span>오류 코드</span><b>{selectedStep?.errorCode ?? details?.errorCode ?? '-'}</b></div></div></article>
     </div>
   </section>
 }
