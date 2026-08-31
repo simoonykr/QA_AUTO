@@ -5,6 +5,7 @@ Firebase 프로젝트: `tracepilot-demo`
 ## 현재 배포 상태
 
 - 최초 배포 완료: 2026-08-30
+- 최신 `main` 재배포: 2026-08-31
 - 배포 소스: GitHub `main` 브랜치
 - 공개 주소: `https://tracepilot-demo.web.app`
 - 검증 결과: `TracePilot — AI Test Operations` 대시보드 정상 로딩

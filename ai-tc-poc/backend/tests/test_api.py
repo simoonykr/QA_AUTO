@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
+from io import BytesIO
 from types import SimpleNamespace
+from zipfile import ZipFile
 from fastapi.testclient import TestClient
 import pytest
 
@@ -215,6 +217,76 @@ def test_structure_test_case() -> None:
     assert body["confidence"] == 0.94
     assert len(body["steps"]) == 4
     assert len(body["assertions"]) == 2
+
+
+def test_import_txt_test_case() -> None:
+    response = client.post(
+        "/api/v1/test-cases/import",
+        files={"file": ("login.txt", "로그인 페이지 접속\n아이디와 비밀번호 입력\n대시보드 확인".encode(), "text/plain")},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "fileName": "login.txt",
+        "format": "txt",
+        "title": "login",
+        "rawText": "로그인 페이지 접속\n아이디와 비밀번호 입력\n대시보드 확인",
+        "warnings": [],
+    }
+
+
+def test_import_docx_test_case() -> None:
+    document = BytesIO()
+    with ZipFile(document, "w") as archive:
+        archive.writestr(
+            "word/document.xml",
+            '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body><w:p><w:r><w:t>상품을 장바구니에 담는다.</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t>결제 버튼을 확인한다.</w:t></w:r></w:p></w:body></w:document>",
+        )
+    response = client.post(
+        "/api/v1/test-cases/import",
+        files={"file": ("checkout.docx", document.getvalue(), "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+    assert response.status_code == 200
+    assert response.json()["rawText"] == "상품을 장바구니에 담는다.\n결제 버튼을 확인한다."
+
+
+def test_import_xlsx_test_case() -> None:
+    workbook = BytesIO()
+    with ZipFile(workbook, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="TC" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+            '<row><c t="inlineStr"><is><t>단계</t></is></c><c t="inlineStr"><is><t>기대결과</t></is></c></row>'
+            '<row><c t="inlineStr"><is><t>로그인</t></is></c><c t="inlineStr"><is><t>대시보드 노출</t></is></c></row>'
+            '</sheetData></worksheet>',
+        )
+    response = client.post(
+        "/api/v1/test-cases/import",
+        files={"file": ("login.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 200
+    assert response.json()["rawText"] == "단계 | 기대결과\n로그인 | 대시보드 노출"
+
+
+def test_import_rejects_unsupported_or_large_file() -> None:
+    unsupported = client.post("/api/v1/test-cases/import", files={"file": ("case.pdf", b"pdf", "application/pdf")})
+    too_large = client.post("/api/v1/test-cases/import", files={"file": ("case.txt", b"x" * (10 * 1024 * 1024 + 1), "text/plain")})
+    assert unsupported.status_code == 415
+    assert unsupported.json()["code"] == "UNSUPPORTED_FILE_TYPE"
+    assert too_large.status_code == 413
+    assert too_large.json()["code"] == "FILE_TOO_LARGE"
 
 
 def test_execution_resources_hide_secrets_and_expose_policy() -> None:

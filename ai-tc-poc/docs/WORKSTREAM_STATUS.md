@@ -25,7 +25,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 
 - 외부 FastAPI HTTPS 주소와 `/api/**` 연결 방식
 - 운영 쿠키·CORS·SSE 인증 확인
-- 가입·승인 및 XLSX/DOCX API 계약
+- 가입·승인 API 계약
 
 다음 작업:
 
@@ -44,6 +44,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 공용 데모 세션 인증
 - 운영 Cookie Secure·SameSite·Domain 설정 및 안전성 검증
 - health endpoint와 표준 오류 envelope
+- TXT·CSV·XLSX·DOCX 테스트 케이스 업로드·텍스트 추출 API
 
 프론트엔드에 요청:
 
@@ -59,11 +60,12 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - PostgreSQL·Redis·MinIO·Worker 외부 통합 배포
 - Firebase와 실제 API 연결 후 인증·SSE·증적 통합 검증
 - 가입·승인·사용자 역할 API
-- XLSX/DOCX 업로드·파싱 API
+- 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
+- 추출된 원문을 구조화·실행 생성 흐름으로 연결
 
 ## 최근 검증
 
-- 백엔드: `22 passed`
+- 백엔드: `26 passed`
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
@@ -71,4 +73,5 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 ## 차단 사항
 
 - 실제 백엔드 공개에는 서버 제공 방식과 비용 정책 결정이 필요하다.
+- 현재 PC에는 Docker CLI/Desktop이 설치되어 있지 않아 로컬 통합 컨테이너 실행이 불가능하다.
 - 실제 AI API 연결은 의도적으로 보류한다.

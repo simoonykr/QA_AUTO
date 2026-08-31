@@ -1,10 +1,11 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.modules.test_cases.repository import SqlTestCaseRepository
-from app.schemas.test_cases import StructureRequest, StructuredStep, StructuredTestCase, TestCaseSummary
+from app.schemas.test_cases import ImportedTestCase, StructureRequest, StructuredStep, StructuredTestCase, TestCaseSummary
+from app.modules.test_cases.importer import MAX_UPLOAD_BYTES, import_test_case
 
 
 router = APIRouter(prefix="/test-cases", tags=["test-cases"])
@@ -15,6 +16,12 @@ version_router = APIRouter(prefix="/test-case-versions", tags=["test-cases"])
 async def list_test_cases(session: AsyncSession = Depends(get_session)) -> list[TestCaseSummary]:
     repository = SqlTestCaseRepository(session, UUID(get_settings().default_organization_id))
     return await repository.list()
+
+
+@router.post("/import", response_model=ImportedTestCase)
+async def import_test_case_file(file: UploadFile = File(...)) -> ImportedTestCase:
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    return import_test_case(file.filename or "upload", data)
 
 
 @version_router.post("/current/structure", response_model=StructuredTestCase)

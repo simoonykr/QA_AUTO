@@ -20,6 +20,14 @@ class StructureRequest(BaseModel):
     rawText: str = Field(min_length=10, max_length=50_000)
 
 
+class ImportedTestCase(BaseModel):
+    fileName: str
+    format: Literal["txt", "csv", "xlsx", "docx"]
+    title: str
+    rawText: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class StructuredStep(BaseModel):
     id: str
     title: str

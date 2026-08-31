@@ -52,7 +52,18 @@
 
 남은 확인 요청:
 
-1. XLSX/DOCX 업로드·파싱 endpoint 및 파일 크기·확장자 제한
+- 없음. XLSX/DOCX 업로드·파싱 계약은 아래와 같이 확정됨.
+
+파일 가져오기 계약:
+
+- `POST /api/v1/test-cases/import`
+- 요청: `multipart/form-data`의 `file` 필드
+- 확장자: `.txt`, `.csv`, `.xlsx`, `.docx`
+- 파일 크기: 최대 10MB
+- 응답: `{ fileName, format, title, rawText, warnings }`
+- 프론트는 응답의 `title`, `rawText`를 편집기에 반영한 뒤 기존 구조화 API를 호출
+- 오류 코드: `UNSUPPORTED_FILE_TYPE`(415), `FILE_TOO_LARGE`(413), `EMPTY_TEST_CASE_FILE`(422), `UNSUPPORTED_TEXT_ENCODING`(422), `INVALID_DOCUMENT`(422), `EXTRACTED_TEXT_TOO_LARGE`(413)
+- 파싱은 서버에서 결정적으로 수행하며 AI API를 호출하지 않음
 
 새 상세 조회 계약:
 
