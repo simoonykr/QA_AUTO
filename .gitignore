@@ -12,6 +12,7 @@ settings.json
 config.json
 jira_config.json
 *.env
+**/.env.public
 *.local.json
 session_cookies.json
 

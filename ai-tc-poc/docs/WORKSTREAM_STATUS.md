@@ -45,6 +45,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 운영 Cookie Secure·SameSite·Domain 설정 및 안전성 검증
 - health endpoint와 표준 오류 envelope
 - TXT·CSV·XLSX·DOCX 테스트 케이스 업로드·텍스트 추출 API
+- Windows Docker Desktop 로컬 통합 환경 실행
+- 로그인 → 실행 생성 → Redis → Playwright Worker → `PASS` 전체 흐름 검증 (`maxAiCalls=0`)
 
 프론트엔드에 요청:
 
@@ -66,6 +68,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 ## 최근 검증
 
 - 백엔드: `26 passed`
+- Docker 통합: PostgreSQL·Redis·MinIO·API·Outbox·Playwright Worker·Frontend 정상 실행
+- 실제 Worker smoke execution: `PASS`, AI 호출 `0`
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
@@ -73,5 +77,4 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 ## 차단 사항
 
 - 실제 백엔드 공개에는 서버 제공 방식과 비용 정책 결정이 필요하다.
-- 현재 PC에는 Docker CLI/Desktop이 설치되어 있지 않아 로컬 통합 컨테이너 실행이 불가능하다.
 - 실제 AI API 연결은 의도적으로 보류한다.

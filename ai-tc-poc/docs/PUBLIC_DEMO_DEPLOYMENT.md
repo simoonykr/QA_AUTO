@@ -56,6 +56,10 @@ docker compose --env-file .env.public -f compose.public-demo.yml up -d --build
 docker compose --env-file .env.public -f compose.public-demo.yml ps
 ```
 
+Windows per-user Docker Desktop 설치에서는 새 터미널이 열리기 전까지 `docker`가 PATH에 없을 수 있다. 이 경우 Docker Desktop의 `resources/bin/docker.exe`를 직접 실행하거나 터미널을 다시 연다.
+
+초기 스키마 적용은 JSON 안의 콜론이 SQLAlchemy bind parameter로 해석되지 않도록 이스케이프되어야 한다. `0004_seed_worker_steps` 마이그레이션은 실제 PostgreSQL 컨테이너에서 검증되었다.
+
 서버 내부 확인 주소는 기본적으로 `http://127.0.0.1:8080`이다. 실제 인터넷 공개는 이 포트 앞에 HTTPS reverse proxy 또는 클라우드 load balancer를 둔다.
 
 ## 업데이트

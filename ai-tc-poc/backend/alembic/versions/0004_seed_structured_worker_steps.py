@@ -8,7 +8,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(r"""
+    statement = r"""
         UPDATE test_case_versions
         SET structured_spec = '{
           "schemaVersion": 1,
@@ -21,7 +21,10 @@ def upgrade() -> None:
         }'::jsonb
         WHERE id = '00000000-0000-0000-0000-000000000501'
           AND structured_spec IS NULL
-    """)
+    """
+    # SQLAlchemy treats JSON's ``:10000`` fragments as bind parameters unless
+    # literal colons are escaped before passing textual SQL to Alembic.
+    op.execute(statement.replace(":", r"\:"))
 
 
 def downgrade() -> None:
