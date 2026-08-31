@@ -1,6 +1,6 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-08-30
+마지막 갱신: 2026-08-31
 
 이 문서는 두 담당 에이전트의 공용 전달판이다. 각 담당자는 작업 시작 전에 읽고, 작업 완료 커밋에서 자기 영역을 직접 갱신한다.
 
@@ -18,6 +18,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 실행 SSE, polling fallback 및 증적 표시
 - AI 호출 기본값 `0`
 - Firebase Mock 데모 빌드
+- Firebase 최신 main 재배포 및 공개 화면 회귀 테스트
+- AI 토큰 없이 규칙 기반 TC 구조화·검토·실행 흐름 명시
 
 백엔드에 요청:
 
@@ -64,6 +66,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 백엔드: `22 passed`
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - Firebase UI: `https://tracepilot-demo.web.app`
+- Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
 
 ## 차단 사항
 

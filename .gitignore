@@ -18,6 +18,7 @@ session_cookies.json
 # Build outputs
 build/
 dist/
+ai-tc-poc/.firebase/
 outputs/
 *.spec
 node_modules/
