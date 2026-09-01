@@ -91,7 +91,7 @@ export const api = {
 
   async getExecutionPolicy(): Promise<ExecutionPolicy> {
     if (!USE_MOCK_API) return request('/execution-policies/current')
-    return { allowedActions: ['navigate','click','fill','assert'], supportedBrowsers: ['Chromium'], maxTimeoutMinutes: 30, maxAiCalls: 50, maxRetries: 2, requireRiskApproval: true }
+    return { allowedActions: ['navigate','click','fill','assert'], supportedBrowsers: ['Chromium'], maxTimeoutMinutes: 30, maxAiCalls: 0, maxRetries: 2, requireRiskApproval: true }
   },
 
   async structureTestCase(title: string, rawText: string): Promise<StructuredTestCase> {

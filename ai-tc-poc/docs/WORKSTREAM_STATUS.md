@@ -32,6 +32,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - Firebase Mock 데모 빌드
 - Firebase 최신 main 재배포 및 공개 화면 회귀 테스트
 - AI 토큰 없이 규칙 기반 TC 구조화·검토·실행 흐름 명시
+- 실행 정책의 `maxAiCalls`에 따라 AI 호출 선택지를 `0회` 또는 `0회/1회`로 제한하고, 기본 실행 요청과 Mock 정책을 `0`으로 유지
 
 백엔드에 요청:
 
@@ -90,6 +91,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - Docker 통합: PostgreSQL·Redis·MinIO·API·Outbox·Playwright Worker·Frontend 정상 실행
 - 실제 Worker smoke execution: `PASS`, AI 호출 `0`
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
+- 프론트 AI 정책 UI: 서버 정책 `0/1`에 따른 선택 제한 및 요청값 상한 적용 검증
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
 - OpenAI 설정 변경: 정적 diff 검사 통과. Docker Desktop 엔진 미실행으로 백엔드 테스트는 다음 작업에서 재검증 필요

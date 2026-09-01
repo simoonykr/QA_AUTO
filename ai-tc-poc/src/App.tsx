@@ -353,9 +353,10 @@ function RunConfigure({onBack,onStart,starting}: {onBack:()=>void; onStart:(inpu
   const selectedEnvironment=environments.find(item=>item.id===environment)
   const selectedAccount=accounts.find(item=>item.id===account)
   const durationOptions=['10','15','30'].filter(value=>Number(value)<=(policy?.maxTimeoutMinutes??30))
-  const aiCallOptions=['0','10','20','30','50'].filter(value=>Number(value)<=(policy?.maxAiCalls??50))
+  const allowedMaxAiCalls=Math.min(Math.max(policy?.maxAiCalls??0,0),1)
+  const aiCallOptions=Array.from({length:allowedMaxAiCalls+1},(_,index)=>({value:String(index),label:`${index}회`}))
   const retryOptions=['0','1','2'].filter(value=>Number(value)<=(policy?.maxRetries??2))
-  const submit = () => onStart({ testCaseVersionId:'tcv-new-v1', environmentId:environment, browser, accountId:account, viewport, locale, limits:{timeoutMinutes:Number(duration),maxAiCalls:Number(maxAiCalls),retryCount:Number(retryCount)}, requireRiskApproval:approval })
+  const submit = () => onStart({ testCaseVersionId:'tcv-new-v1', environmentId:environment, browser, accountId:account, viewport, locale, limits:{timeoutMinutes:Number(duration),maxAiCalls:Math.min(Number(maxAiCalls),allowedMaxAiCalls),retryCount:Number(retryCount)}, requireRiskApproval:approval })
   return <section className="page config-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 구조화 검토</button><span className="config-id">TC-NEW · Version 1 · READY</span></div>
     <div className="page-heading compact"><div><p className="eyebrow">EXECUTION SETUP</p><h1>실행 설정</h1><p>격리된 브라우저에서 사용할 환경, 계정과 안전 한도를 확인하세요.</p></div></div>
