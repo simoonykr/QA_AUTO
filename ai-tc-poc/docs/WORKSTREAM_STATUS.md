@@ -18,7 +18,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 
 현재 UI Staging은 이미 운영 중이다. 백엔드의 다음 단계는 Temporary Staging 주소를 열어 Firebase Mock 화면과 별도로 실제 API·Worker가 연결된 통합 데모를 회사에서 확인하는 것이다. 회사 외부 접속 공인 IP 후보는 `59.13.192.250`, `59.12.234.2`이며, 고정 Staging에서는 이 주소를 접근 허용 정책에 사용할 수 있다. 임시 터널 단계는 데모 로그인으로 보호하고, IP 제한은 고정 터널·도메인 구성 시 적용한다.
 
-환경별 DB, 세션 서명 키, 계정, API 키는 공유하지 않는다. 실제 AI API는 모든 환경에서 계속 비활성화하고 `maxAiCalls=0`을 유지한다.
+환경별 DB, 세션 서명 키, 계정, API 키는 공유하지 않는다. 실제 AI는 로컬 TC 구조화 검증에만 예산·캐시·1회 제한을 적용해 활성화했으며 Playwright 실행은 `maxAiCalls=0`을 유지한다.
 
 ## 프론트엔드 현황
 
@@ -65,6 +65,12 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - OpenAI 키는 로컬 비밀파일에 입력 완료했으나 실제 Gateway·비용 원장·예산 차단은 아직 미구현이므로 API 호출은 시작하지 않음
 - 최신 main 로컬 Compose에서 실제 Chromium 성공·실패 TC 통합 검증 완료
 - 실패 assertion용 재현 가능한 migration `0005_seed_worker_failure` 추가
+- `.env.public`의 DB·MinIO·데모 인증·세션 비밀값을 실행 중 컨테이너에서 노출 없이 복구
+- 필수 비밀값 누락 시 Compose 실행 전 중단하는 PowerShell 시작 검증 추가
+- TC 구조화 전용 OpenAI Gateway와 요청당 최대 1회 제한 구현
+- 토큰·비용 원장, UTC 일일 `$1` 예산 선차단, 조직·모델·동일 입력 캐시 구현
+- 구조화 응답 `aiUsage` 및 표준 AI 오류 계약 문서화
+- API 컨테이너 재생성 후에도 Nginx가 Docker DNS를 갱신하도록 reverse proxy `502` 복구 보완
 
 프론트엔드에 요청:
 
@@ -80,7 +86,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 다음 작업:
 
 - Cloudflare 임시 HTTPS 터널로 Temporary Staging 구성 및 회사 네트워크 접속 확인
-- OpenAI 호출 Gateway·사용량 원장·일일 예산 차단 구현 후 최초 1회 호출 검증
+- 프론트에서 구조화 결과의 `aiUsage.source`, 호출 수, 토큰·비용 표시 여부 결정
 - 확인 후 고정 Staging 서버·도메인·회사 IP 접근 제한 결정
 - PostgreSQL·Redis·MinIO·Worker 외부 통합 배포
 - Firebase와 실제 API 연결 후 인증·SSE·증적 통합 검증
@@ -91,13 +97,16 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 
 ## 최근 검증
 
-- 백엔드: `27 passed` (`3 warnings`)
+- 백엔드: `31 passed` (`3 warnings`)
 - Docker 통합: PostgreSQL·Redis·MinIO·API·Outbox·Playwright Worker·Frontend 정상 실행
 - 실제 Worker smoke execution: `PASS`, AI 호출 `0`
 - 성공 Execution `201c45fc-c846-4cce-b847-1a9fd01c3202`: navigate/fill/click/assert 전체 `PASS`
 - 실패 Execution `0a5c5cf4-2179-464e-8504-7df5cb78084c`: 최종 `FAIL`, `ASSERTION_FAILED`, 4단계 `STEP_FAILED`
 - 실패 Artifact `8c980f7a-d1e9-4b83-a569-40ba6f6e4ad6`: MinIO PNG 및 API 다운로드 확인
 - API·Outbox·Worker 로그 비밀값 미검출, AI 호출 `0회`, 관찰 비용 `$0`
+- OpenAI 최초 구조화: 실제 호출 `1회`, 입력 `275`, 출력 `173` 토큰, 비용 `$0.00014505`
+- 동일 구조화 재요청: `CACHE`, OpenAI 호출 `0회`, 추가 비용 `$0`
+- AI 독립 Playwright Execution `fbc2e998-9600-41ff-8364-bd4a8ac4d3a4`: 4단계 전체 `PASS`, 원장·비용 변화 없음
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - 프론트 AI 정책 UI: 서버 정책 `0/1`에 따른 선택 제한 및 요청값 상한 적용 검증
 - Firebase UI: `https://tracepilot-demo.web.app`
@@ -107,7 +116,6 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 ## 차단 사항
 
 - 실제 백엔드 공개에는 서버 제공 방식과 비용 정책 결정이 필요하다.
-- 실제 AI API 연결은 의도적으로 보류한다.
-- 다음 Compose 재생성 전 OneDrive 이동 중 비워진 `.env.public`의 DB·MinIO·데모 인증·세션 비밀값을 로컬에서 다시 입력해야 한다.
+- 외부 공개 전 Gateway 서버의 고정 배포 방식과 Secret Manager 적용이 필요하다.
 
 상세 통합 검증 기록은 `docs/LOCAL_PLAYWRIGHT_VALIDATION.md`를 기준으로 한다.

@@ -58,6 +58,15 @@ export interface StructuredTestCase {
   assertions: Array<{ type: AssertionType; operator: string; expected: string; timeoutMs: number }>
   assumptions: string[]
   confidence: number
+  aiUsage: {
+    source: 'AI' | 'CACHE' | 'RULE_BASED'
+    callCount: 0 | 1
+    inputTokens: number
+    outputTokens: number
+    costUsd: string
+    dailySpentUsd: string
+    dailyBudgetUsd: string
+  }
 }
 
 export interface CreateExecutionRequest {

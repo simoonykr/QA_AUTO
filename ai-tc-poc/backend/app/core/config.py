@@ -35,9 +35,14 @@ class Settings(BaseSettings):
     outbox_batch_size: int = 50
     outbox_max_attempts: int = 10
     openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_timeout_seconds: float = Field(default=30, gt=0, le=120)
     ai_enabled: bool = False
-    ai_max_calls_per_run: int = Field(default=0, ge=0, le=50)
+    ai_max_calls_per_run: int = Field(default=0, ge=0, le=1)
     ai_daily_budget_usd: Decimal = Field(default=Decimal("0"), ge=0)
+    ai_input_cost_per_1m_usd: Decimal = Field(default=Decimal("0.15"), gt=0)
+    ai_output_cost_per_1m_usd: Decimal = Field(default=Decimal("0.60"), gt=0)
+    ai_max_output_tokens: int = Field(default=1200, ge=256, le=4096)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

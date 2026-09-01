@@ -217,6 +217,8 @@ def test_structure_test_case() -> None:
     assert body["confidence"] == 0.94
     assert len(body["steps"]) == 4
     assert len(body["assertions"]) == 2
+    assert body["aiUsage"]["source"] == "RULE_BASED"
+    assert body["aiUsage"]["callCount"] == 0
 
 
 def test_import_txt_test_case() -> None:
@@ -448,7 +450,7 @@ def test_execution_request_digest_is_stable() -> None:
 
 
 def test_required_database_models_are_registered() -> None:
-    assert len(Base.metadata.tables) == 13
+    assert len(Base.metadata.tables) == 15
 
 
 def test_frontend_poc_aliases_resolve_to_seed_uuids() -> None:

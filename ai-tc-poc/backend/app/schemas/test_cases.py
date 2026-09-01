@@ -43,6 +43,16 @@ class AssertionSpec(BaseModel):
     timeoutMs: int = Field(ge=100, le=60_000)
 
 
+class AiUsageSummary(BaseModel):
+    source: Literal["AI", "CACHE", "RULE_BASED"]
+    callCount: int = Field(ge=0, le=1)
+    inputTokens: int = Field(ge=0)
+    outputTokens: int = Field(ge=0)
+    costUsd: str
+    dailySpentUsd: str
+    dailyBudgetUsd: str
+
+
 class StructuredTestCase(BaseModel):
     versionId: str
     title: str
@@ -51,3 +61,4 @@ class StructuredTestCase(BaseModel):
     assertions: list[AssertionSpec]
     assumptions: list[str]
     confidence: float = Field(ge=0, le=1)
+    aiUsage: AiUsageSummary

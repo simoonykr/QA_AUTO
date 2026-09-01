@@ -15,16 +15,18 @@
 7. 실행 상태는 SSE를 우선 사용하되 연결 실패 시 기존 2초 polling으로 전환하고, 종료 상태에서는 SSE와 polling을 모두 중지한다.
 8. Firebase Mock 배포는 화면 시연 전용으로 유지한다. 실제 데이터 입력이 가능한 것처럼 보이지 않도록 상단의 `Mock API 사용 중` 표시를 제거하지 않는다.
 
-## OpenAI 연동 준비 상태 (2026-09-01)
+## OpenAI 연동 상태 (2026-09-01)
 
 백엔드에 서버 전용 OpenAI 설정과 fail-closed 정책을 추가했다. API 키는 로컬 `.env.public`에만 저장하며 Git, 프론트 코드, 브라우저 저장소, 응답 payload에 포함하지 않는다.
 
 - `AI_ENABLED`, `AI_MAX_CALLS_PER_RUN`, `AI_DAILY_BUDGET_USD`는 백엔드 전용 환경변수다.
 - API 키가 없거나 AI가 비활성화된 경우 `GET /api/v1/execution-policies/current`의 `maxAiCalls`는 `0`이다.
 - 키와 한도·예산 설정이 모두 유효한 경우에만 서버 정책의 `maxAiCalls`가 설정값을 반환한다. 현재 로컬 목표값은 실행당 `1`이다.
-- 실제 OpenAI Gateway, 토큰·비용 사용량 원장, 일일 예산 초과 차단은 아직 구현 전이다. 따라서 이번 커밋만으로 OpenAI API 호출은 발생하지 않는다.
+- OpenAI Gateway, 토큰·비용 원장, 일일 예산 선차단, 동일 입력 캐시를 구현했다.
+- 실제 호출은 TC 구조화 endpoint에서만 최대 1회 발생한다. 실행 API와 Playwright Worker는 AI와 독립적이다.
+- 구조화 응답에 `aiUsage`가 추가된다. 기존 필드는 변경되지 않았다. 상세 계약은 `AI_GATEWAY_CONTRACT.md`를 기준으로 한다.
 - 프론트는 AI 키나 달러 예산을 입력·표시·저장하지 않고, 기존처럼 서버가 반환한 `maxAiCalls` 범위 안에서만 선택지를 제공한다.
-- 최초 실제 호출 검증 전까지 프론트 기본 요청값은 계속 `maxAiCalls: 0`을 유지한다. 사용자가 명시적으로 선택하고 서버 정책이 허용할 때만 향후 `1`을 전송한다.
+- 프론트 기본 실행 요청값은 계속 `maxAiCalls: 0`을 유지한다. 현재 AI 호출은 구조화 요청에만 서버 정책으로 적용되며 실행 설정값과 분리되어 있다.
 
 프론트 확인 요청:
 
@@ -54,7 +56,7 @@
 
 - TC 목록: `TestCaseSummary[]`
 - 구조화 요청: `{ title, rawText }`
-- 구조화 응답: `versionId`, `preconditions`, `steps`, `assertions`, `assumptions`, `confidence`
+- 구조화 응답: `versionId`, `preconditions`, `steps`, `assertions`, `assumptions`, `confidence`, `aiUsage`
 - 실행 생성: `Idempotency-Key` 필수, 성공 시 HTTP 202와 `ExecutionResponse`
 
 ## 백엔드 담당자 확인 요청

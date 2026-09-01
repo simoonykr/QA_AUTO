@@ -1,0 +1,1 @@
+"""Server-only AI integration."""

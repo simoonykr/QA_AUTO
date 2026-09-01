@@ -71,9 +71,14 @@ services:
       DEMO_COOKIE_SAMESITE: ${DEMO_COOKIE_SAMESITE:-lax}
       DEMO_COOKIE_DOMAIN: ${DEMO_COOKIE_DOMAIN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_TIMEOUT_SECONDS: ${OPENAI_TIMEOUT_SECONDS:-30}
       AI_ENABLED: ${AI_ENABLED:-false}
       AI_MAX_CALLS_PER_RUN: ${AI_MAX_CALLS_PER_RUN:-0}
       AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-0}
+      AI_INPUT_COST_PER_1M_USD: ${AI_INPUT_COST_PER_1M_USD:-0.15}
+      AI_OUTPUT_COST_PER_1M_USD: ${AI_OUTPUT_COST_PER_1M_USD:-0.60}
+      AI_MAX_OUTPUT_TOKENS: ${AI_MAX_OUTPUT_TOKENS:-1200}
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
