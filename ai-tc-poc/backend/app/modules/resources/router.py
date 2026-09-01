@@ -33,11 +33,12 @@ async def list_test_accounts(session: AsyncSession = Depends(get_session)) -> li
 
 @router.get("/execution-policies/current", response_model=ExecutionPolicyResponse)
 async def get_execution_policy() -> ExecutionPolicyResponse:
+    settings = get_settings()
     return ExecutionPolicyResponse(
         allowedActions=["navigate", "click", "fill", "assert"],
         supportedBrowsers=["Chromium"],
         maxTimeoutMinutes=30,
-        maxAiCalls=50,
+        maxAiCalls=settings.ai_max_calls_per_run if settings.ai_ready else 0,
         maxRetries=2,
         requireRiskApproval=True,
     )

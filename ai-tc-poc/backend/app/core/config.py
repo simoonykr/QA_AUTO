@@ -1,5 +1,7 @@
 from functools import lru_cache
+from decimal import Decimal
 from typing import Literal
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,7 +34,21 @@ class Settings(BaseSettings):
     outbox_poll_interval_seconds: float = 1.0
     outbox_batch_size: int = 50
     outbox_max_attempts: int = 10
+    openai_api_key: SecretStr | None = None
+    ai_enabled: bool = False
+    ai_max_calls_per_run: int = Field(default=0, ge=0, le=50)
+    ai_daily_budget_usd: Decimal = Field(default=Decimal("0"), ge=0)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @property
+    def ai_ready(self) -> bool:
+        key = self.openai_api_key.get_secret_value().strip() if self.openai_api_key else ""
+        return bool(
+            self.ai_enabled
+            and key
+            and self.ai_max_calls_per_run > 0
+            and self.ai_daily_budget_usd > 0
+        )
 
 
 @lru_cache

@@ -59,6 +59,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - TXT·CSV·XLSX·DOCX 테스트 케이스 업로드·텍스트 추출 API
 - Windows Docker Desktop 로컬 통합 환경 실행
 - 로그인 → 실행 생성 → Redis → Playwright Worker → `PASS` 전체 흐름 검증 (`maxAiCalls=0`)
+- OpenAI 서버 환경변수와 실행당·일일 예산 설정 추가; 키가 없으면 정책을 `maxAiCalls=0`으로 강제하는 fail-closed 보호 적용
+- OpenAI 키는 로컬 비밀파일에 입력 완료했으나 실제 Gateway·비용 원장·예산 차단은 아직 미구현이므로 API 호출은 시작하지 않음
 
 프론트엔드에 요청:
 
@@ -69,10 +71,12 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 실제 AI 연동 전 `maxAiCalls=0` 유지
 - 배포 빌드는 동일 출처 `/api/v1`을 사용하고 임시·고정 Staging 주소를 소스 코드에 하드코딩하지 않음
 - Local·Staging·Production 표시가 필요한 경우 비밀정보가 아닌 빌드 환경명만 사용
+- AI 정책이 `1`일 때 선택지를 `0회`, `1회`로 제한하고 키·달러 예산 환경변수는 프론트에서 참조하지 않음
 
 다음 작업:
 
 - Cloudflare 임시 HTTPS 터널로 Temporary Staging 구성 및 회사 네트워크 접속 확인
+- OpenAI 호출 Gateway·사용량 원장·일일 예산 차단 구현 후 최초 1회 호출 검증
 - 확인 후 고정 Staging 서버·도메인·회사 IP 접근 제한 결정
 - PostgreSQL·Redis·MinIO·Worker 외부 통합 배포
 - Firebase와 실제 API 연결 후 인증·SSE·증적 통합 검증
@@ -88,6 +92,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
+- OpenAI 설정 변경: 정적 diff 검사 통과. Docker Desktop 엔진 미실행으로 백엔드 테스트는 다음 작업에서 재검증 필요
 
 ## 차단 사항
 

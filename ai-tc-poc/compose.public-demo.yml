@@ -70,6 +70,10 @@ services:
       DEMO_COOKIE_SECURE: ${DEMO_COOKIE_SECURE:-true}
       DEMO_COOKIE_SAMESITE: ${DEMO_COOKIE_SAMESITE:-lax}
       DEMO_COOKIE_DOMAIN: ${DEMO_COOKIE_DOMAIN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AI_ENABLED: ${AI_ENABLED:-false}
+      AI_MAX_CALLS_PER_RUN: ${AI_MAX_CALLS_PER_RUN:-0}
+      AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-0}
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }

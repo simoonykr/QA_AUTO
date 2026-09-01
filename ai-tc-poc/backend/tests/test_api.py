@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.core.database import get_session
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.db.models import Base
 from app.main import app
 from app.modules.executions.repository import SqlExecutionRepository
@@ -302,6 +302,25 @@ def test_execution_resources_hide_secrets_and_expose_policy() -> None:
     }
     assert "secretRef" not in accounts.json()[0]
     assert policy.json()["supportedBrowsers"] == ["Chromium"]
+    assert policy.json()["maxAiCalls"] == 0
+
+
+def test_ai_settings_fail_closed_without_api_key() -> None:
+    missing_key = Settings(
+        ai_enabled=True,
+        ai_max_calls_per_run=1,
+        ai_daily_budget_usd="1",
+        openai_api_key="",
+    )
+    configured = Settings(
+        ai_enabled=True,
+        ai_max_calls_per_run=1,
+        ai_daily_budget_usd="1",
+        openai_api_key="test-key-not-used",
+    )
+    assert missing_key.ai_ready is False
+    assert configured.ai_ready is True
+    assert "test-key-not-used" not in repr(configured)
 
 
 def test_execution_requires_idempotency_key() -> None:
