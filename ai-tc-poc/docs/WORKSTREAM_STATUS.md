@@ -62,6 +62,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 로그인 → 실행 생성 → Redis → Playwright Worker → `PASS` 전체 흐름 검증 (`maxAiCalls=0`)
 - OpenAI 서버 환경변수와 실행당·일일 예산 설정 추가; 키가 없으면 정책을 `maxAiCalls=0`으로 강제하는 fail-closed 보호 적용
 - OpenAI 키는 로컬 비밀파일에 입력 완료했으나 실제 Gateway·비용 원장·예산 차단은 아직 미구현이므로 API 호출은 시작하지 않음
+- 최신 main 로컬 Compose에서 실제 Chromium 성공·실패 TC 통합 검증 완료
+- 실패 assertion용 재현 가능한 migration `0005_seed_worker_failure` 추가
 
 프론트엔드에 요청:
 
@@ -84,12 +86,17 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 가입·승인·사용자 역할 API
 - 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
 - 추출된 원문을 구조화·실행 생성 흐름으로 연결
+- 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
 
 ## 최근 검증
 
-- 백엔드: `26 passed`
+- 백엔드: `27 passed` (`3 warnings`)
 - Docker 통합: PostgreSQL·Redis·MinIO·API·Outbox·Playwright Worker·Frontend 정상 실행
 - 실제 Worker smoke execution: `PASS`, AI 호출 `0`
+- 성공 Execution `201c45fc-c846-4cce-b847-1a9fd01c3202`: navigate/fill/click/assert 전체 `PASS`
+- 실패 Execution `0a5c5cf4-2179-464e-8504-7df5cb78084c`: 최종 `FAIL`, `ASSERTION_FAILED`, 4단계 `STEP_FAILED`
+- 실패 Artifact `8c980f7a-d1e9-4b83-a569-40ba6f6e4ad6`: MinIO PNG 및 API 다운로드 확인
+- API·Outbox·Worker 로그 비밀값 미검출, AI 호출 `0회`, 관찰 비용 `$0`
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - 프론트 AI 정책 UI: 서버 정책 `0/1`에 따른 선택 제한 및 요청값 상한 적용 검증
 - Firebase UI: `https://tracepilot-demo.web.app`
@@ -100,3 +107,6 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 
 - 실제 백엔드 공개에는 서버 제공 방식과 비용 정책 결정이 필요하다.
 - 실제 AI API 연결은 의도적으로 보류한다.
+- 다음 Compose 재생성 전 OneDrive 이동 중 비워진 `.env.public`의 DB·MinIO·데모 인증·세션 비밀값을 로컬에서 다시 입력해야 한다.
+
+상세 통합 검증 기록은 `docs/LOCAL_PLAYWRIGHT_VALIDATION.md`를 기준으로 한다.
