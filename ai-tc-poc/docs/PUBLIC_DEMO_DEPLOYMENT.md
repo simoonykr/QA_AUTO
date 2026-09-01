@@ -5,13 +5,16 @@
 | 환경 | 목적 | 주소와 실행 위치 | 데이터 원칙 |
 |---|---|---|---|
 | Local | 개발·빠른 확인 | 개발 PC `http://localhost:8080` | 로컬 전용 |
+| UI Staging (Mock) | 프론트 화면 검수·시연 | `https://tracepilot-demo.web.app` | Mock 데이터만 사용 |
 | Temporary Staging | 회사·관계자 검수 | 임시 HTTPS 주소 → 개발 PC Docker | 데모 데이터만 사용 |
 | Staging | 배포 전 통합 검증 | 별도 서버·고정 HTTPS 주소 | Production과 분리 |
 | Production | 실제 사용자 서비스 | 정식 도메인·운영 서버 | 운영 데이터·비밀정보 별도 관리 |
 
 `localhost`는 접속한 컴퓨터 자신을 의미하므로 회사 PC에서 개발 PC의 `localhost:8080`에 직접 접근할 수 없다. 외부 검수에는 HTTPS 터널이나 별도 Staging 서버가 필요하다.
 
-현재는 빠른 자동화 검증을 위해 Temporary Staging을 먼저 사용하고, 가입·승인 및 운영 준비가 끝나면 고정 Staging과 Production을 분리한다.
+Firebase의 `tracepilot-demo.web.app`은 이미 배포된 UI Staging이다. 이 주소는 현재 Mock API 기반으로 프론트 화면과 사용자 흐름을 보여주며 FastAPI, PostgreSQL, Redis, MinIO, Playwright Worker의 실제 실행 결과를 제공하지 않는다.
+
+현재는 빠른 자동화 검증을 위해 기존 UI Staging을 유지하면서 Temporary Staging에서 실제 통합 실행을 확인한다. 가입·승인 및 운영 준비가 끝나면 고정 Staging과 Production을 분리한다.
 
 ## Temporary Staging 운영
 
