@@ -33,6 +33,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - Firebase 최신 main 재배포 및 공개 화면 회귀 테스트
 - AI 토큰 없이 규칙 기반 TC 구조화·검토·실행 흐름 명시
 - 실행 정책의 `maxAiCalls`에 따라 AI 호출 선택지를 `0회` 또는 `0회/1회`로 제한하고, 기본 실행 요청과 Mock 정책을 `0`으로 유지
+- Firebase Mock 실행 완료 시 `navigate/fill/click/assert` 4단계 상세가 결과 화면에 표시되도록 공개 데모 회귀 보완
 
 백엔드에 요청:
 

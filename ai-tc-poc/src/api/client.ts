@@ -126,12 +126,13 @@ export const api = {
     const execution = await this.getExecution(id)
     return {
       execution: { ...execution, status: 'PASS', endedAt: new Date().toISOString() },
-      result: { status: 'PASS', stepCount: 3, errorCode: null },
+      result: { status: 'PASS', stepCount: 4, errorCode: null },
       errorCode: null,
       steps: [
         { id: 'step-1', stepNo: 1, status: 'PASS', action: { type: 'navigate', url: 'https://staging.storefront.test' } },
         { id: 'step-2', stepNo: 2, status: 'PASS', action: { type: 'fill', selector: '#email', value: '***' } },
-        { id: 'step-3', stepNo: 3, status: 'PASS', action: { type: 'assert', selector: 'h1' }, assertion: { type: 'text', operator: 'contains', expected: '환영' } },
+        { id: 'step-3', stepNo: 3, status: 'PASS', action: { type: 'click', selector: '[data-testid=login]' } },
+        { id: 'step-4', stepNo: 4, status: 'PASS', action: { type: 'assert', selector: '[data-testid=welcome]' }, assertion: { type: 'text', operator: 'contains', expected: '환영합니다' } },
       ],
       artifacts: [],
     }
