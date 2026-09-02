@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseSummary } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -16,7 +16,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(url, {
       ...init,
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...init?.headers },
+      headers: init?.body instanceof FormData ? init?.headers : { 'Content-Type': 'application/json', ...init?.headers },
     })
     if (!response.ok) {
       const fallback: ApiErrorBody = { code: 'HTTP_ERROR', message: `요청에 실패했습니다. (${response.status})`, requestId: response.headers.get('x-request-id') ?? 'unknown', retryable: response.status >= 500 }
@@ -80,6 +80,19 @@ export const api = {
     return structuredClone(mockTestCases)
   },
 
+  async importTestCase(file: File): Promise<TestCaseImportResponse> {
+    if (!USE_MOCK_API) {
+      const body = new FormData()
+      body.append('file', file)
+      return request('/test-cases/import', { method: 'POST', body })
+    }
+    const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!['txt','csv'].includes(extension)) throw new ApiError({ code: 'MOCK_BINARY_IMPORT_UNAVAILABLE', message: 'XLSX/DOCX 가져오기는 실제 백엔드가 연결된 통합 스테이징에서 사용할 수 있습니다.', requestId: 'mock', retryable: false }, 400)
+    const rawText = await file.text()
+    if (!rawText.trim()) throw new ApiError({ code: 'EMPTY_TEST_CASE_FILE', message: '파일에서 테스트 케이스 내용을 찾지 못했습니다.', requestId: 'mock', retryable: false }, 422)
+    return { fileName: file.name, format: extension.toUpperCase(), title: file.name.replace(/\.[^.]+$/, ''), rawText, warnings: [] }
+  },
+
   async listEnvironments(): Promise<EnvironmentSummary[]> {
     if (!USE_MOCK_API) return request('/environments')
     return [{ id: 'env-staging', name: 'Staging', baseUrl: 'https://staging.storefront.test', allowedDomains: ['staging.storefront.test'], defaultViewport: '1440x900' }]
@@ -108,6 +121,7 @@ export const api = {
       ],
       assumptions: rawText.includes('안전한 비밀번호') ? ['test_password 변수를 사용합니다.'] : [],
       confidence: 0.94,
+      aiUsage: { source: 'RULE_BASED', callCount: 0, inputTokens: 0, outputTokens: 0, costUsd: '0', dailySpentUsd: '0', dailyBudgetUsd: '0' },
     }
   },
 

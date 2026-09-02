@@ -69,6 +69,14 @@ export interface StructuredTestCase {
   }
 }
 
+export interface TestCaseImportResponse {
+  fileName: string
+  format: string
+  title: string
+  rawText: string
+  warnings: string[]
+}
+
 export interface CreateExecutionRequest {
   testCaseVersionId: string
   environmentId: string

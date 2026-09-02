@@ -201,7 +201,7 @@ function App() {
         </header>
 
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
-        {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}} onToast={toast}/>}
+        {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
         {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
         {view === 'run' && <RunMonitor state={runState} execution={execution} details={executionDetails} activeStep={activeStep} start={startRun} stop={cancelRun} onResult={() => setView('result')}/>}
@@ -283,13 +283,13 @@ function ManagementPage({kind,onToast}:{kind:'environment'|'account'|'policy';on
   </section>
 }
 
-function Cases({query,setQuery,rows,loading,onRun,onCreate,onToast}: {query:string; setQuery:(s:string)=>void; rows:TestCaseSummary[]; loading:boolean; onRun:()=>void; onCreate:()=>void; onToast:(s:string)=>void}) {
+function Cases({query,setQuery,rows,loading,onRun,onCreate}: {query:string; setQuery:(s:string)=>void; rows:TestCaseSummary[]; loading:boolean; onRun:()=>void; onCreate:()=>void}) {
   const [status,setStatus] = useState('ALL')
   const [group,setGroup] = useState('ALL')
   const visibleRows = rows.filter(row => (status === 'ALL' || row.status === status) && (group === 'ALL' || row.group === group))
   const groups = [...new Set(rows.map(row => row.group))]
   return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">TEST LIBRARY</p><h1>테스트 케이스</h1><p>자연어 TC를 구조화하고 실행 준비 상태를 관리합니다.</p></div><button className="primary" onClick={onCreate}><Plus size={16}/> 새 테스트 케이스</button></div>
-    <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="ID, 이름 또는 그룹 검색"/></div><Select value={status} setValue={setStatus} options={['ALL','READY','REVIEW_REQUIRED']}/><Select value={group} setValue={setGroup} options={['ALL',...groups]}/><button className="secondary" onClick={()=>onToast('XLSX 가져오기는 백엔드 파서 연결 후 활성화됩니다.')}><Upload size={15}/> 파일 가져오기</button></div>
+    <div className="toolbar"><div className="search"><Search size={17}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="ID, 이름 또는 그룹 검색"/></div><Select value={status} setValue={setStatus} options={['ALL','READY','REVIEW_REQUIRED']}/><Select value={group} setValue={setGroup} options={['ALL',...groups]}/><button className="secondary" onClick={onCreate}><Upload size={15}/> 파일로 새 TC</button></div>
     <article className="panel table-panel"><table><thead><tr><th>테스트 케이스</th><th>그룹</th><th>준비 상태</th><th>최근 성공률</th><th>마지막 실행</th><th/></tr></thead><tbody>{visibleRows.map((row)=><tr key={row.id}><td><span className="file-icon"><FileText/></span><span><b>{row.title}</b><small>{row.id}</small></span></td><td>{row.group}</td><td><span className={`pill ${row.status==='READY'?'pass':'review'}`}>{row.status.replace('_',' ')}</span></td><td><div className="rate"><span><i style={{width:`${row.passRate}%`}}/></span>{row.passRate}%</div></td><td>{row.lastExecutedAt}</td><td><button className="row-play" onClick={onRun} aria-label={`${row.title} 실행`}><Play size={14}/></button></td></tr>)}</tbody></table>{loading&&<div className="empty-table"><Activity className="spin" size={16}/> 테스트 케이스를 불러오는 중입니다.</div>}{!loading&&visibleRows.length===0&&<div className="empty-table">조건에 맞는 테스트 케이스가 없습니다.</div>}</article>
   </section>
 }
@@ -298,15 +298,30 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   const [title,setTitle] = useState('신규 사용자 이메일 회원가입')
   const [raw,setRaw] = useState('Staging 환경에 접속한다.\n회원가입 버튼을 누르고 사용하지 않은 이메일과 안전한 비밀번호를 입력한다.\n약관에 동의한 뒤 가입을 완료한다.\n가입 완료 후 환영 메시지와 대시보드가 표시되는지 확인한다.')
   const [importedFile,setImportedFile] = useState('')
+  const [importing,setImporting] = useState(false)
+  const [importWarnings,setImportWarnings] = useState<string[]>([])
   const [structured,setStructured] = useState<StructuredTestCase | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const importFile = (file?: File) => {
+  const importFile = async (file?: File) => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
     if (!['csv','xlsx','docx','txt'].includes(extension ?? '')) return onToast('지원하지 않는 파일 형식입니다.')
+    if (file.size > 10 * 1024 * 1024) return onToast('파일 크기는 최대 10MB까지 지원합니다.')
     setImportedFile(file.name)
-    if (extension === 'txt' || extension === 'csv') file.text().then(text => { setRaw(text); setTitle(file.name.replace(/\.[^.]+$/, '')); onToast(`${file.name} 내용을 불러왔습니다.`) })
-    else onToast(`${file.name}을 선택했습니다. 서버 파서 연결 후 분석할 수 있습니다.`)
+    setImportWarnings([])
+    setImporting(true)
+    try {
+      const imported = await api.importTestCase(file)
+      setTitle(imported.title)
+      setRaw(imported.rawText)
+      setImportWarnings(imported.warnings)
+      setStage('draft')
+      onToast(`${imported.fileName} 분석을 완료했습니다.`)
+    } catch (error) {
+      setImportedFile('')
+      if (fileInput.current) fileInput.current.value=''
+      onToast(error instanceof ApiError ? error.body.message : '파일을 가져오지 못했습니다.')
+    } finally { setImporting(false) }
   }
   const structure = async () => {
     if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
@@ -318,7 +333,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>setStage('ready')}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
-      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()}><Upload size={15}/> 파일 가져오기</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거"><XCircle size={14}/></button></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>setTitle(e.target.value)}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>setRaw(e.target.value)}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT 지원</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
+      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>setTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>setRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
       <article className={`panel review-panel ${stage==='draft'?'empty-review':''}`}>
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>현재는 AI 토큰 없이 전제조건, 실행 단계와 기대 결과를 안전한 규칙으로 분리합니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
