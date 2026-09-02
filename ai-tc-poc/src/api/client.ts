@@ -67,9 +67,10 @@ export const api = {
 
   async checkHealth(): Promise<HealthStatus> {
     if (USE_MOCK_API) return { status: 'ok', environment: 'mock' }
-    const healthUrl = /^https?:\/\//.test(API_BASE_URL)
-      ? `${new URL(API_BASE_URL).origin}/health`
-      : '/health'
+    const apiOrigin = /^https?:\/\//.test(API_BASE_URL)
+      ? new URL(API_BASE_URL).origin
+      : window.location.origin
+    const healthUrl = `${apiOrigin}/health`
     return request(healthUrl)
   },
 
