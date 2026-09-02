@@ -12,7 +12,7 @@ import type { AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Exe
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
-type AuthorStage = 'draft' | 'structuring' | 'review' | 'ready'
+type AuthorStage = 'draft' | 'structuring' | 'split-review' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
 type AuthStatus = 'checking' | 'authenticated' | 'unauthenticated'
 const ACTIVE_EXECUTION_KEY = 'tracepilot.activeExecutionId'
@@ -300,6 +300,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   const [importedFile,setImportedFile] = useState('')
   const [importing,setImporting] = useState(false)
   const [importWarnings,setImportWarnings] = useState<string[]>([])
+  const [splitReview,setSplitReview] = useState<{detectedTestCaseCount:number;rawTextLength:number}|null>(null)
   const [structured,setStructured] = useState<StructuredTestCase | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const importFile = async (file?: File) => {
@@ -309,6 +310,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
     if (file.size > 10 * 1024 * 1024) return onToast('파일 크기는 최대 10MB까지 지원합니다.')
     setImportedFile(file.name)
     setImportWarnings([])
+    setSplitReview(null)
     setImporting(true)
     try {
       const imported = await api.importTestCase(file)
@@ -326,16 +328,28 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   const structure = async () => {
     if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
     setStage('structuring')
-    try { setStructured(await api.structureTestCase(title.trim(),raw.trim())); setStage('review') }
-    catch (error) { setStage('draft'); onToast(error instanceof ApiError ? error.body.message : 'TC 구조화에 실패했습니다. 다시 시도해 주세요.') }
+    try { setStructured(await api.structureTestCase(title.trim(),raw.trim())); setSplitReview(null); setStage('review') }
+    catch (error) {
+      if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
+        const count=Number(error.body.details?.detectedTestCaseCount)
+        const length=Number(error.body.details?.rawTextLength)
+        setStructured(null)
+        setSplitReview({detectedTestCaseCount:Number.isFinite(count)?count:0,rawTextLength:Number.isFinite(length)?length:raw.trim().length})
+        setStage('split-review')
+        onToast('여러 테스트 케이스가 감지되어 TC별 분리가 필요합니다.')
+        return
+      }
+      setStage('draft'); onToast(error instanceof ApiError ? error.body.message : 'TC 구조화에 실패했습니다. 다시 시도해 주세요.')
+    }
   }
   return <section className="page author-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>setStage('ready')}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
-    <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
+    <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
       <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>setTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>setRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
-      <article className={`panel review-panel ${stage==='draft'?'empty-review':''}`}>
+      <article className={`panel review-panel ${(stage==='draft'||stage==='split-review')?'empty-review':''}`}>
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>현재는 AI 토큰 없이 전제조건, 실행 단계와 기대 결과를 안전한 규칙으로 분리합니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
+        {stage==='split-review'&&splitReview&&<div className="review-empty split-review"><div><ListChecks/></div><h2>TC별 분리가 필요합니다.</h2><p>하나의 파일에서 여러 테스트 케이스가 감지되어 단일 실행 단계로 구조화하지 않았습니다.</p><div className="split-review-stats"><span><b>{splitReview.detectedTestCaseCount.toLocaleString()}개</b> 감지된 TC</span><span><b>{splitReview.rawTextLength.toLocaleString()}자</b> 원문 길이</span></div><div className="ambiguity"><AlertTriangle/><div><b>검토가 필요한 상태입니다.</b><p>현재 원문을 TC별로 분리한 뒤 각각 구조화해야 합니다. 이 결과는 승인하거나 실행할 수 없습니다.</p></div></div></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
         {(stage==='review'||stage==='ready')&&structured&&<><div className="section-head"><div><h2>구조화 검토</h2><p>AI 생성 결과를 실행 전에 확인하세요.</p></div><span className="confidence">신뢰도 <b>{Math.round(structured.confidence*100)}%</b></span></div><div className="review-block"><label>전제조건 · {structured.preconditions.length}</label>{structured.preconditions.map(item=><div className="condition" key={item}><CheckCircle2/> {item}</div>)}</div><div className="review-block"><label>실행 단계 · {structured.steps.length}</label>{structured.steps.map((step,i)=><div className="structured-step" key={step.id}><span>{i+1}</span><div><b>{step.title}</b><small><em>{step.action.toUpperCase()}</em> {step.note}</small></div><button aria-label={`${step.title} 추가 메뉴`}><MoreHorizontal/></button></div>)}</div><div className="review-block"><label>기대 결과 · {structured.assertions.length}</label>{structured.assertions.map((assertion,i)=><div className="assertion" key={`${assertion.type}-${i}`}><ShieldCheck/><div><b>{assertion.expected}</b><small>{assertion.type.toUpperCase()} · {assertion.operator.toUpperCase()} · timeout {assertion.timeoutMs/1000}s</small></div></div>)}</div>{stage==='review'&&structured.assumptions.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>확인이 필요한 가정 {structured.assumptions.length}개</b>{structured.assumptions.map(item=><p key={item}>{item}</p>)}</div></div>}{stage==='ready'&&<div className="ready-box"><CheckCircle2/><div><b>실행 준비가 완료되었습니다.</b><p>승인된 {structured.versionId}은 수정할 수 없으며 변경 시 새 버전이 생성됩니다.</p></div></div>}</>}
       </article>
