@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, ROUND_UP
 from uuid import UUID, uuid4
@@ -26,8 +27,22 @@ class StructureService:
         self.gateway = gateway or OpenAIGateway(settings)
 
     async def structure(self, body: StructureRequest) -> StructuredTestCase:
+        detected_count = detect_test_case_count(body.rawText)
+        if detected_count > 1:
+            raise DomainError(
+                "MULTIPLE_TEST_CASES_REVIEW_REQUIRED",
+                "여러 테스트 케이스가 포함되어 있어 TC별 분리 검토가 필요합니다.",
+                422,
+                retryable=False,
+                details={
+                    "reviewStatus": "REVIEW_REQUIRED",
+                    "detectedTestCaseCount": detected_count,
+                    "rawTextLength": len(body.rawText),
+                    "aiCallCount": 0,
+                },
+            )
         if not self.settings.ai_ready:
-            return deterministic_structure(body, self.settings.ai_daily_budget_usd)
+            return rule_based_structure(body, self.settings.ai_daily_budget_usd)
 
         organization_id = UUID(self.settings.default_organization_id)
         request_hash = self._request_hash(body)
@@ -135,24 +150,77 @@ class StructureService:
         )
 
 
-def deterministic_structure(body: StructureRequest, budget: Decimal = Decimal("0")) -> StructuredTestCase:
+def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0")) -> StructuredTestCase:
+    segments = _test_segments(body.rawText)
+    steps = []
+    assertions = []
+    assumptions = []
+    preconditions = []
+    for index, segment in enumerate(segments[:20], start=1):
+        action = _action_for(segment)
+        if action == "assert":
+            assertions.append({"type": "text", "operator": "contains", "expected": segment, "timeoutMs": 10_000})
+        if any(keyword in segment.lower() for keyword in ("전제", "준비", "환경", "조건", "precondition")):
+            preconditions.append(segment)
+        steps.append({
+            "id": f"step-{index}",
+            "title": segment[:80],
+            "note": segment,
+            "action": action,
+            "confidence": 0.7 if action != "assert" else 0.8,
+        })
+    if not assertions:
+        expected = segments[-1]
+        assertions.append({"type": "text", "operator": "contains", "expected": expected, "timeoutMs": 10_000})
+        steps[-1]["action"] = "assert"
+    if len(segments) > 20:
+        assumptions.append(f"원문의 {len(segments)}개 항목 중 앞 20개만 구조화했습니다. 나머지 항목은 검토가 필요합니다.")
     return StructuredTestCase(
         versionId=VERSION_ID, title=body.title,
-        preconditions=["Staging 환경과 미사용 이메일 계정이 준비되어 있다."],
-        steps=[
-            {"id": "step-1", "title": "로그인 페이지 진입", "note": "URL과 로그인 폼을 확인합니다.", "action": "navigate"},
-            {"id": "step-2", "title": "테스트 계정 입력", "note": "보안 저장소의 계정 별칭을 사용합니다.", "action": "fill"},
-            {"id": "step-3", "title": "로그인 버튼 선택", "note": "접근성 후보를 탐색합니다.", "action": "click"},
-            {"id": "step-4", "title": "대시보드 노출 검증", "note": "URL과 환영 문구를 확인합니다.", "action": "assert"},
-        ],
-        assertions=[
-            {"type": "text", "operator": "contains", "expected": "환영", "timeoutMs": 10_000},
-            {"type": "url", "operator": "matches", "expected": "/dashboard", "timeoutMs": 10_000},
-        ],
-        assumptions=["test_password 변수를 사용합니다."] if "안전한 비밀번호" in body.rawText else [],
-        confidence=0.94,
+        preconditions=list(dict.fromkeys(preconditions)),
+        steps=steps,
+        assertions=assertions,
+        assumptions=assumptions,
+        confidence=0.68,
         aiUsage=AiUsageSummary(source="RULE_BASED", callCount=0, inputTokens=0, outputTokens=0, costUsd="0.00000000", dailySpentUsd="0.00000000", dailyBudgetUsd=money(budget)),
     )
+
+
+def detect_test_case_count(raw_text: str) -> int:
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    explicit_ids = set(re.findall(r"(?im)\b(?:TC|TEST[-_ ]?CASE)[-_ ]?\d{1,6}\b", raw_text))
+    if len(explicit_ids) > 1:
+        return len(explicit_ids)
+
+    for index, line in enumerate(lines[:10]):
+        cells = [cell.strip().lower() for cell in line.split("|")]
+        header = " ".join(cells)
+        if len(cells) > 1 and any(marker in header for marker in ("tc id", "tc no", "test case id", "테스트 케이스 id", "테스트케이스 id", "케이스 id")):
+            data_rows = [candidate for candidate in lines[index + 1:] if "|" in candidate]
+            if len(data_rows) > 1:
+                return len(data_rows)
+
+    # Large tabular imports are not safe to collapse into one executable TC.
+    tabular_rows = sum(1 for line in lines if "|" in line)
+    if len(raw_text) > 5_000 and (len(lines) >= 20 or tabular_rows >= 10):
+        return max(tabular_rows, len(lines) - 1)
+    return 1
+
+
+def _test_segments(raw_text: str) -> list[str]:
+    segments = [item.strip(" -\t") for item in re.split(r"(?:\r?\n)+|(?<=[.!?。])\s+", raw_text) if item.strip(" -\t")]
+    return segments or [raw_text.strip()]
+
+
+def _action_for(segment: str) -> str:
+    lowered = segment.lower()
+    if any(keyword in lowered for keyword in ("접속", "이동", "진입", "navigate", "open", "url")):
+        return "navigate"
+    if any(keyword in lowered for keyword in ("입력", "작성", "기입", "fill", "type")):
+        return "fill"
+    if any(keyword in lowered for keyword in ("클릭", "선택", "누르", "click", "tap")):
+        return "click"
+    return "assert"
 
 
 def money(value: Decimal) -> str:

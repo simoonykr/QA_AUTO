@@ -31,7 +31,10 @@
 - `AI`: 이번 요청에서 실제 호출 1회가 발생했다.
 - `CACHE`: 같은 조직·모델·정규화 입력 결과를 재사용했으며 이번 호출과 비용은 0이다.
 - `RULE_BASED`: AI가 비활성화됐거나 준비되지 않아 기존 규칙 기반 결과를 반환했으며 호출과 비용은 0이다.
+- `RULE_BASED` 결과는 요청의 실제 `rawText`에서 단계와 기대 결과를 추출한다. 고정 로그인 예제나 원문과 무관한 placeholder를 반환하지 않는다.
 - 금액은 부동소수 오차를 피하기 위해 소수점 8자리 문자열로 반환한다.
+
+요청의 `rawText`는 최대 50,000자까지 그대로 전달된다. 하나의 파일에서 여러 TC가 감지되면 현재 버전은 임의로 하나로 합치지 않고 아래 검토 오류를 반환한다. 이 경로에서는 AI를 호출하지 않는다.
 
 ## 원장·예산·캐시
 
@@ -47,12 +50,15 @@
 
 | HTTP | code | 의미 | retryable |
 |---|---|---|---|
+| 422 | `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` | 여러 TC가 감지되어 TC별 분리 검토 필요 | false |
 | 429 | `AI_DAILY_BUDGET_EXCEEDED` | 일일 예산과 예약 비용을 합산하면 한도 초과 | false |
 | 502 | `AI_UPSTREAM_ERROR` | OpenAI HTTP/연결 오류 | upstream 5xx 또는 연결 오류만 true |
 | 502 | `AI_RESPONSE_INVALID` | JSON schema 결과 또는 사용량 응답 검증 실패 | false |
 | 502 | `AI_USAGE_LIMIT_ERROR` | 실제 사용 비용이 선예약 상한 초과 | false |
 | 504 | `AI_TIMEOUT` | 설정된 Gateway 제한시간 초과 | true |
 | 500 | `AI_INTERNAL_ERROR` | 원장·캐시 저장 중 내부 오류 | true |
+
+다중 TC 오류의 `details`에는 `reviewStatus=REVIEW_REQUIRED`, `detectedTestCaseCount`, `rawTextLength`, `aiCallCount=0`이 포함된다.
 
 ## 로컬 안전 시작
 

@@ -214,11 +214,37 @@ def test_structure_test_case() -> None:
     })
     assert response.status_code == 200
     body = response.json()
-    assert body["confidence"] == 0.94
-    assert len(body["steps"]) == 4
-    assert len(body["assertions"]) == 2
+    assert body["confidence"] == 0.68
+    assert body["steps"][0]["note"] in "회원가입하고 안전한 비밀번호를 입력한 뒤 대시보드를 확인한다."
+    assert body["assertions"][0]["expected"] in "회원가입하고 안전한 비밀번호를 입력한 뒤 대시보드를 확인한다."
     assert body["aiUsage"]["source"] == "RULE_BASED"
     assert body["aiUsage"]["callCount"] == 0
+
+
+def test_structure_rejects_9613_character_multi_tc_import_for_review() -> None:
+    rows = ["TC ID | 제목 | 단계"] + [
+        f"TC-{index:03d} | KakaoGames 테스트 {index} | 실행 후 결과 확인"
+        for index in range(1, 103)
+    ]
+    raw_text = "\n".join(rows)
+    raw_text += "가" * (9_613 - len(raw_text))
+    assert len(raw_text) == 9_613
+
+    response = client.post("/api/v1/test-case-versions/current/structure", json={
+        "title": "KakaoGames 102건",
+        "rawText": raw_text,
+    })
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "MULTIPLE_TEST_CASES_REVIEW_REQUIRED"
+    assert body["retryable"] is False
+    assert body["details"] == {
+        "reviewStatus": "REVIEW_REQUIRED",
+        "detectedTestCaseCount": 102,
+        "rawTextLength": 9_613,
+        "aiCallCount": 0,
+    }
 
 
 def test_import_txt_test_case() -> None:

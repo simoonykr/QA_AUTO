@@ -83,6 +83,10 @@
 - 프론트는 응답의 `title`, `rawText`를 편집기에 반영한 뒤 기존 구조화 API를 호출
 - 오류 코드: `UNSUPPORTED_FILE_TYPE`(415), `FILE_TOO_LARGE`(413), `EMPTY_TEST_CASE_FILE`(422), `UNSUPPORTED_TEXT_ENCODING`(422), `INVALID_DOCUMENT`(422), `EXTRACTED_TEXT_TOO_LARGE`(413)
 - 파싱은 서버에서 결정적으로 수행하며 AI API를 호출하지 않음
+- 가져온 `rawText`는 구조화 요청에서 최대 50,000자까지 그대로 전송한다.
+- 여러 TC가 감지되면 구조화 API는 HTTP 422 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED`와 `details.reviewStatus=REVIEW_REQUIRED`, 감지 건수, 원문 길이, `aiCallCount=0`을 반환한다. 프론트는 이를 일반 분석 성공으로 처리하지 않고 TC별 분리가 필요한 검토 상태로 안내한다.
+- AI 비활성 상태의 단일 TC는 원문 기반 `RULE_BASED`, `callCount=0` 결과를 반환하며 고정 로그인 예제를 반환하지 않는다.
+- 실제 OpenAI 응답인 경우에만 `aiUsage.source=AI`, `callCount=1`이다. 캐시는 `CACHE/0`, AI 비활성 규칙 기반은 `RULE_BASED/0`이다.
 
 새 상세 조회 계약:
 

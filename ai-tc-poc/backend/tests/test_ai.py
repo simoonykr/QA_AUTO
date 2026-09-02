@@ -6,7 +6,7 @@ import pytest
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.modules.ai.gateway import GatewayResult
-from app.modules.ai.service import StructureService, deterministic_structure
+from app.modules.ai.service import StructureService, detect_test_case_count, rule_based_structure
 from app.schemas.test_cases import StructureRequest
 
 
@@ -59,10 +59,37 @@ def ai_settings(**updates):
 
 
 def test_disabled_ai_uses_rule_based_structure_without_tokens() -> None:
-    result = deterministic_structure(BODY)
+    result = rule_based_structure(BODY)
     assert result.aiUsage.source == "RULE_BASED"
     assert result.aiUsage.callCount == 0
     assert result.aiUsage.costUsd == "0.00000000"
+    assert result.steps[0].note in BODY.rawText
+    assert result.assertions[0].expected in BODY.rawText
+
+
+def test_structure_request_preserves_full_9613_character_raw_text() -> None:
+    raw_text = "가" * 9_613
+    request = StructureRequest(title="KakaoGames", rawText=raw_text)
+    assert len(request.rawText) == 9_613
+    assert request.rawText == raw_text
+
+
+def test_detects_multiple_test_cases_in_large_tabular_import() -> None:
+    rows = ["TC ID | 제목 | 단계"] + [f"TC-{index:03d} | 테스트 {index} | 실행 후 결과 확인" for index in range(1, 103)]
+    raw_text = "\n".join(rows)
+    assert detect_test_case_count(raw_text) == 102
+
+
+@pytest.mark.asyncio
+async def test_multiple_test_cases_are_blocked_before_ai_call() -> None:
+    body = StructureRequest(title="KakaoGames", rawText="\n".join(f"TC-{index:03d} | 테스트 {index}" for index in range(1, 103)))
+    gateway = FakeGateway()
+    with pytest.raises(DomainError) as raised:
+        await StructureService(FakeSession([]), ai_settings(), gateway).structure(body)
+    assert raised.value.code == "MULTIPLE_TEST_CASES_REVIEW_REQUIRED"
+    assert raised.value.details["detectedTestCaseCount"] == 102
+    assert raised.value.details["aiCallCount"] == 0
+    assert gateway.calls == 0
 
 
 @pytest.mark.asyncio

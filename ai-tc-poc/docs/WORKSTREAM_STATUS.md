@@ -73,6 +73,9 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 토큰·비용 원장, UTC 일일 `$1` 예산 선차단, 조직·모델·동일 입력 캐시 구현
 - 구조화 응답 `aiUsage` 및 표준 AI 오류 계약 문서화
 - API 컨테이너 재생성 후에도 Nginx가 Docker DNS를 갱신하도록 reverse proxy `502` 복구 보완
+- AI 비활성 구조화가 원문과 무관한 고정 로그인 예제를 반환하던 문제 수정
+- 구조화 요청의 9,613자 원문 무손실 전달 및 다중 TC 102건 감지 회귀 테스트 추가
+- 다중 TC를 단일 성공 결과로 축약하지 않고 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 검토 오류로 반환
 
 프론트엔드에 요청:
 
@@ -94,12 +97,14 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - Firebase와 실제 API 연결 후 인증·SSE·증적 통합 검증
 - 가입·승인·사용자 역할 API
 - 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
-- 추출된 원문을 구조화·실행 생성 흐름으로 연결
+- 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
 
 ## 최근 검증
 
-- 백엔드: `31 passed` (`3 warnings`)
+- 백엔드: `35 passed` (`3 warnings`)
+- 구조화 회귀: 정확히 9,613자 원문 보존, 102건 다중 TC 감지, AI 호출 전 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 차단 확인
+- AI 사용량 계약: 실제 Gateway 결과 `AI/1`, 캐시 `CACHE/0`, AI 비활성 원문 기반 결과 `RULE_BASED/0`
 - Docker 통합: PostgreSQL·Redis·MinIO·API·Outbox·Playwright Worker·Frontend 정상 실행
 - 실제 Worker smoke execution: `PASS`, AI 호출 `0`
 - 성공 Execution `201c45fc-c846-4cce-b847-1a9fd01c3202`: navigate/fill/click/assert 전체 `PASS`
