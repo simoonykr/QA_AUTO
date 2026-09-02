@@ -77,6 +77,11 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - AI 비활성 구조화가 원문과 무관한 고정 로그인 예제를 반환하던 문제 수정
 - 구조화 요청의 9,613자 원문 무손실 전달 및 다중 TC 102건 감지 회귀 테스트 추가
 - 다중 TC를 단일 성공 결과로 축약하지 않고 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 검토 오류로 반환
+- 구조화 요청마다 실제 TestCase와 고유 UUID TestCaseVersion을 생성하고 `raw_text`, `structured_spec`, `REVIEW_REQUIRED` 상태 저장
+- `POST /api/v1/test-case-versions/{versionId}/approve` 추가 및 승인 후 `READY` 전환
+- 실행 생성 시 실제 UUID 버전의 조직·프로젝트·READY 상태 검증, `tcv-new-v1` alias 제거
+- Worker가 execution의 동일 조직·프로젝트 버전과 저장된 `structured_spec.steps`만 조회·실행하도록 강화
+- 프론트 검토 승인 버튼을 실제 승인 API에 연결하고 반환 `versionId`를 실행 설정·생성 요청까지 전달
 
 프론트엔드에 요청:
 
@@ -99,13 +104,16 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 가입·승인·사용자 역할 API
 - 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
+- 저장된 구조화 단계의 selector/value가 불완전할 때 승인 전에 수정하는 편집·검증 UX
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
 
 ## 최근 검증
 
-- 백엔드: `35 passed` (`3 warnings`)
+- 백엔드: `38 passed` (`3 warnings`)
 - 구조화 회귀: 정확히 9,613자 원문 보존, 102건 다중 TC 감지, AI 호출 전 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 차단 확인
 - AI 사용량 계약: 실제 Gateway 결과 `AI/1`, 캐시 `CACHE/0`, AI 비활성 원문 기반 결과 `RULE_BASED/0`
+- 영속 버전 통합: Version `787dc8b2-cecf-4ae4-b438-9786a7a65e2f`, 승인 전 `TC_NOT_READY`(409), 승인 `READY`
+- 실제 Worker 통합 Execution `f322af6c-c3f5-4b93-99ee-8fd0f5d6a24b`: 저장된 navigate/fill/click/assert 4단계 전체 `PASS`, AI 호출 `0`
 - Docker 통합: PostgreSQL·Redis·MinIO·API·Outbox·Playwright Worker·Frontend 정상 실행
 - 실제 Worker smoke execution: `PASS`, AI 호출 `0`
 - 성공 Execution `201c45fc-c846-4cce-b847-1a9fd01c3202`: navigate/fill/click/assert 전체 `PASS`

@@ -48,10 +48,17 @@ export interface StructuredStep {
   note: string
   action: ActionType | 'assert'
   confidence?: number
+  url?: string | null
+  selector?: string | null
+  value?: string | null
+  operator?: string | null
+  expected?: string | null
+  timeoutMs?: number | null
 }
 
 export interface StructuredTestCase {
   versionId: string
+  status: 'REVIEW_REQUIRED' | 'READY'
   title: string
   preconditions: string[]
   steps: StructuredStep[]
@@ -68,6 +75,8 @@ export interface StructuredTestCase {
     dailyBudgetUsd: string
   }
 }
+
+export interface TestCaseVersionApproval { versionId: string; status: 'READY' }
 
 export interface TestCaseImportResponse {
   fileName: string

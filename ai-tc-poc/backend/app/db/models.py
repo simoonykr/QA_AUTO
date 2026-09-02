@@ -27,6 +27,13 @@ class ExecutionStatus(str, enum.Enum):
     SYSTEM_ERROR = "SYSTEM_ERROR"
 
 
+class TestCaseStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    READY = "READY"
+    ARCHIVED = "ARCHIVED"
+
+
 class OutboxStatus(str, enum.Enum):
     PENDING = "PENDING"
     PUBLISHED = "PUBLISHED"
@@ -116,7 +123,7 @@ class TestCaseVersion(Base):
     version_no: Mapped[int] = mapped_column(Integer, nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     structured_spec: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    status: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[TestCaseStatus] = mapped_column(Enum(TestCaseStatus, name="test_case_status", create_type=False), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 

@@ -34,6 +34,12 @@ class StructuredStep(BaseModel):
     note: str
     action: Literal["navigate", "click", "fill", "select", "press", "scroll", "wait", "upload", "assert"]
     confidence: float | None = Field(default=None, ge=0, le=1)
+    url: str | None = None
+    selector: str | None = None
+    value: str | None = None
+    operator: str | None = None
+    expected: str | None = None
+    timeoutMs: int | None = Field(default=None, ge=100, le=60_000)
 
 
 class AssertionSpec(BaseModel):
@@ -55,6 +61,7 @@ class AiUsageSummary(BaseModel):
 
 class StructuredTestCase(BaseModel):
     versionId: str
+    status: Literal["REVIEW_REQUIRED", "READY"] = "REVIEW_REQUIRED"
     title: str
     preconditions: list[str]
     steps: list[StructuredStep]
@@ -62,3 +69,8 @@ class StructuredTestCase(BaseModel):
     assumptions: list[str]
     confidence: float = Field(ge=0, le=1)
     aiUsage: AiUsageSummary
+
+
+class TestCaseVersionApproval(BaseModel):
+    versionId: str
+    status: Literal["READY"]

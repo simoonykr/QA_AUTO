@@ -25,7 +25,7 @@ class OpenAIGateway:
             "model": self.settings.openai_model,
             "store": False,
             "max_output_tokens": self.settings.ai_max_output_tokens,
-            "instructions": "Convert the Korean or English QA notes into one concise executable test-case structure. Never include real credentials or invent secret values.",
+            "instructions": "Convert the Korean or English QA notes into one concise executable Playwright test-case structure. Provide url for navigate and selector/value/expected/operator when the source contains them; otherwise use null and make uncertainty explicit. Never include real credentials or invent secret values.",
             "input": f"Title: {title}\n\nQA notes:\n{raw_text}",
             "text": {"format": {"type": "json_schema", "name": "structured_test_case", "strict": True, "schema": _OUTPUT_SCHEMA}},
         }
@@ -70,7 +70,11 @@ _OUTPUT_SCHEMA = {
                 "id": {"type": "string"}, "title": {"type": "string"}, "note": {"type": "string"},
                 "action": {"type": "string", "enum": ["navigate", "click", "fill", "select", "press", "scroll", "wait", "upload", "assert"]},
                 "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-            }, "required": ["id", "title", "note", "action", "confidence"],
+                "url": {"type": ["string", "null"]}, "selector": {"type": ["string", "null"]},
+                "value": {"type": ["string", "null"]}, "operator": {"type": ["string", "null"]},
+                "expected": {"type": ["string", "null"]},
+                "timeoutMs": {"type": ["integer", "null"], "minimum": 100, "maximum": 60000},
+            }, "required": ["id", "title", "note", "action", "confidence", "url", "selector", "value", "operator", "expected", "timeoutMs"],
         }},
         "assertions": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,

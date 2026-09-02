@@ -15,13 +15,6 @@ from app.schemas.executions import (
 )
 
 
-POC_ID_ALIASES = {
-    "tcv-new-v1": UUID("00000000-0000-0000-0000-000000000501"),
-    "env-staging": UUID("00000000-0000-0000-0000-000000000301"),
-    "qa-runner-01": UUID("00000000-0000-0000-0000-000000000601"),
-}
-
-
 class ExecutionRuleError(Exception):
     def __init__(self, code: str, message: str):
         self.code = code
@@ -252,8 +245,6 @@ class SqlExecutionRepository:
 
     @staticmethod
     def _resolve_id(value: str) -> UUID:
-        if value in POC_ID_ALIASES:
-            return POC_ID_ALIASES[value]
         try:
             return UUID(value)
         except ValueError as exc:

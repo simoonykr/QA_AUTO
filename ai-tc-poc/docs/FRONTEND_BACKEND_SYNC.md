@@ -56,8 +56,35 @@
 
 - TC 목록: `TestCaseSummary[]`
 - 구조화 요청: `{ title, rawText }`
-- 구조화 응답: `versionId`, `preconditions`, `steps`, `assertions`, `assumptions`, `confidence`, `aiUsage`
+- 구조화 응답: `versionId`, `status`, `preconditions`, `steps`, `assertions`, `assumptions`, `confidence`, `aiUsage`
 - 실행 생성: `Idempotency-Key` 필수, 성공 시 HTTP 202와 `ExecutionResponse`
+
+### 구조화 → 승인 → 실행 계약 (2026-09-02)
+
+1. `POST /api/v1/test-case-versions/current/structure`
+   - 요청: `{ title, rawText }`
+   - 서버는 새 `test_cases`와 `test_case_versions` row를 만들고 원문과 구조화 결과를 저장한다.
+   - 응답의 `versionId`는 매 요청마다 생성되는 UUID이며 `status`는 `REVIEW_REQUIRED`다.
+   - `structured_spec`에는 Worker가 읽을 `schemaVersion`, `steps`, 전제조건, assertion, 가정, confidence가 저장된다.
+2. `POST /api/v1/test-case-versions/{versionId}/approve`
+   - 요청 body 없음
+   - 응답: `{ "versionId": "<uuid>", "status": "READY" }`
+   - 이미 READY인 버전의 재승인은 같은 응답을 반환한다.
+3. `POST /api/v1/executions`
+   - 구조화 응답에서 받은 동일 `versionId`를 `testCaseVersionId`로 보낸다.
+   - 서버는 해당 UUID가 현재 조직·프로젝트에 실제 존재하고 `READY`인지 확인한다.
+   - Worker는 execution이 가리키는 동일 버전의 DB `structured_spec.steps`만 실행한다. 빈 명세나 고정 Seed fallback은 사용하지 않는다.
+
+버전 상태 enum: `DRAFT | REVIEW_REQUIRED | READY | ARCHIVED`. 현재 새 구조화 버전은 `REVIEW_REQUIRED`, 승인 성공 후 `READY`다.
+
+| HTTP | code | 프론트 처리 |
+|---|---|---|
+| 404 | `TC_VERSION_NOT_FOUND` | 존재하지 않거나 다른 조직·프로젝트의 버전으로 동일하게 안내 |
+| 409 | `TC_VERSION_NOT_REVIEWABLE` | 검토 대기 버전이 아니므로 승인 불가 |
+| 409 | `TC_NOT_READY` | 승인 전 실행 차단 후 구조화 검토 화면으로 이동 |
+| 400 | `INVALID_RESOURCE_ID` | UUID가 아닌 과거 `tcv-new-v1` 등 alias 사용 중단 |
+
+프론트는 구조화 응답의 `versionId`를 보관하고 승인 성공 후에만 실행 설정으로 이동하며, 실행 생성 요청에 해당 값을 그대로 사용한다. 환경·계정은 목록 API가 반환한 UUID를 사용한다.
 
 ## 백엔드 담당자 확인 요청
 

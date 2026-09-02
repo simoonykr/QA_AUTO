@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -112,7 +112,7 @@ export const api = {
     if (!USE_MOCK_API) return request('/test-case-versions/current/structure', { method: 'POST', body: JSON.stringify({ title, rawText }) })
     await wait(950)
     return {
-      versionId: 'tcv-new-v1', title,
+      versionId: crypto.randomUUID(), status: 'REVIEW_REQUIRED', title,
       preconditions: ['Staging 환경과 미사용 이메일 계정이 준비되어 있다.'],
       steps: structuredClone(mockSteps),
       assertions: [
@@ -125,6 +125,11 @@ export const api = {
     }
   },
 
+  async approveTestCaseVersion(versionId: string): Promise<TestCaseVersionApproval> {
+    if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/approve`, { method: 'POST' })
+    return { versionId, status: 'READY' }
+  },
+
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {
     if (!USE_MOCK_API) return request('/executions', { method: 'POST', body: JSON.stringify(input), headers: { 'Idempotency-Key': crypto.randomUUID() } })
     await wait(300)
@@ -133,7 +138,7 @@ export const api = {
 
   async getExecution(id: string): Promise<Execution> {
     if (!USE_MOCK_API) return request(`/executions/${id}`)
-    return { id, status: 'RUNNING', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString(), startedAt: new Date().toISOString() }
+    return { id, status: 'RUNNING', testCaseVersionId: crypto.randomUUID(), queuedAt: new Date().toISOString(), startedAt: new Date().toISOString() }
   },
 
   async getExecutionDetails(id: string): Promise<ExecutionDetails> {
@@ -155,11 +160,11 @@ export const api = {
 
   async cancelExecution(id: string): Promise<ExecutionActionResponse> {
     if (!USE_MOCK_API) return request(`/executions/${id}/cancel`, { method: 'POST' })
-    return { accepted: true, execution: { id, status: 'CANCEL_REQUESTED', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString() } }
+    return { accepted: true, execution: { id, status: 'CANCEL_REQUESTED', testCaseVersionId: crypto.randomUUID(), queuedAt: new Date().toISOString() } }
   },
 
   async retryExecution(id: string): Promise<ExecutionActionResponse> {
     if (!USE_MOCK_API) return request(`/executions/${id}/retry`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } })
-    return { accepted: true, execution: { id: `EX-${Date.now()}`, status: 'QUEUED', testCaseVersionId: 'tcv-new-v1', queuedAt: new Date().toISOString(), parentExecutionId: id } }
+    return { accepted: true, execution: { id: `EX-${Date.now()}`, status: 'QUEUED', testCaseVersionId: crypto.randomUUID(), queuedAt: new Date().toISOString(), parentExecutionId: id } }
   },
 }

@@ -22,8 +22,6 @@ const workerSteps = [
   { title: '격리 브라우저 준비', note: 'Chromium 컨텍스트와 viewport를 생성합니다.', type: 'PROVISION' },
   { title: '대상 페이지 접속', note: '허용 도메인을 검사하고 DOM 로드를 확인합니다.', type: 'NAVIGATE' },
 ]
-const defaultExecution: CreateExecutionRequest = { testCaseVersionId:'tcv-new-v1', environmentId:'env-staging', browser:'Chromium', accountId:'qa-runner-01', viewport:'1440x900', locale:'ko-KR', limits:{timeoutMinutes:15,maxAiCalls:0,retryCount:2}, requireRiskApproval:true }
-
 function executionPresentation(status: Execution['status']): { runState: RunState; activeStep: number } {
   if (status === 'PASS') return { runState: 'done', activeStep: 3 }
   if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(status)) return { runState: 'failed', activeStep: 3 }
@@ -39,6 +37,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [notice, setNotice] = useState('')
   const [authorStage, setAuthorStage] = useState<AuthorStage>('draft')
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(null)
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([])
   const [loadingCases, setLoadingCases] = useState(true)
   const [startingRun, setStartingRun] = useState(false)
@@ -130,7 +129,13 @@ function App() {
       toast(error instanceof ApiError ? error.body.message : '실행을 시작하지 못했습니다.')
     } finally { setStartingRun(false) }
   }
-  const startRun = () => createRun(defaultExecution)
+  const startRun = () => {
+    if (!activeVersionId) {
+      setAuthorStage('draft'); setView('author'); toast('테스트 케이스를 구조화하고 승인한 뒤 실행해 주세요.')
+      return
+    }
+    setView('configure')
+  }
   const cancelRun = async () => {
     if (execution && !apiConfig.mock) {
       try { setExecution((await api.cancelExecution(execution.id)).execution); toast('실행 중단을 요청했습니다.') }
@@ -202,8 +207,8 @@ function App() {
 
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setAuthorStage('draft'); setView('author')}}/>}
-        {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onToast={toast}/>} 
-        {view === 'configure' && <RunConfigure onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
+        {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onVersion={setActiveVersionId} onToast={toast}/>}
+        {view === 'configure' && activeVersionId && <RunConfigure versionId={activeVersionId} onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
         {view === 'run' && <RunMonitor state={runState} execution={execution} details={executionDetails} activeStep={activeStep} start={startRun} stop={cancelRun} onResult={() => setView('result')}/>}
         {view === 'result' && <ResultDetail execution={execution} details={executionDetails} onBack={() => setView('dashboard')} onRetry={retryRun}/>}
         {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
@@ -294,7 +299,7 @@ function Cases({query,setQuery,rows,loading,onRun,onCreate}: {query:string; setQ
   </section>
 }
 
-function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setStage:(s:AuthorStage)=>void; onBack:()=>void; onRun:()=>void; onToast:(s:string)=>void}) {
+function Author({stage,setStage,onBack,onRun,onVersion,onToast}: {stage:AuthorStage; setStage:(s:AuthorStage)=>void; onBack:()=>void; onRun:()=>void; onVersion:(id:string|null)=>void; onToast:(s:string)=>void}) {
   const [title,setTitle] = useState('신규 사용자 이메일 회원가입')
   const [raw,setRaw] = useState('Staging 환경에 접속한다.\n회원가입 버튼을 누르고 사용하지 않은 이메일과 안전한 비밀번호를 입력한다.\n약관에 동의한 뒤 가입을 완료한다.\n가입 완료 후 환영 메시지와 대시보드가 표시되는지 확인한다.')
   const [importedFile,setImportedFile] = useState('')
@@ -328,7 +333,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   const structure = async () => {
     if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
     setStage('structuring')
-    try { setStructured(await api.structureTestCase(title.trim(),raw.trim())); setSplitReview(null); setStage('review') }
+    try { const result=await api.structureTestCase(title.trim(),raw.trim()); setStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
     catch (error) {
       if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
         const count=Number(error.body.details?.detectedTestCaseCount)
@@ -342,8 +347,16 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
       setStage('draft'); onToast(error instanceof ApiError ? error.body.message : 'TC 구조화에 실패했습니다. 다시 시도해 주세요.')
     }
   }
+  const approve = async () => {
+    if (!structured) return
+    try {
+      const approved=await api.approveTestCaseVersion(structured.versionId)
+      setStructured({...structured,status:approved.status}); onVersion(approved.versionId); setStage('ready')
+      onToast('검토 승인이 완료되었습니다.')
+    } catch (error) { onToast(error instanceof ApiError ? error.body.message : '검토 승인에 실패했습니다.') }
+  }
   return <section className="page author-page">
-    <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>setStage('ready')}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
+    <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
       <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>setTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>setRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
@@ -357,7 +370,7 @@ function Author({stage,setStage,onBack,onRun,onToast}: {stage:AuthorStage; setSt
   </section>
 }
 
-function RunConfigure({onBack,onStart,starting}: {onBack:()=>void; onStart:(input:CreateExecutionRequest)=>void; starting:boolean}) {
+function RunConfigure({versionId,onBack,onStart,starting}: {versionId:string; onBack:()=>void; onStart:(input:CreateExecutionRequest)=>void; starting:boolean}) {
   const [environment,setEnvironment]=useState('env-staging')
   const [browser,setBrowser]=useState<CreateExecutionRequest['browser']>('Chromium')
   const [account,setAccount]=useState('qa-runner-01')
@@ -385,7 +398,7 @@ function RunConfigure({onBack,onStart,starting}: {onBack:()=>void; onStart:(inpu
   const allowedMaxAiCalls=Math.min(Math.max(policy?.maxAiCalls??0,0),1)
   const aiCallOptions=Array.from({length:allowedMaxAiCalls+1},(_,index)=>({value:String(index),label:`${index}회`}))
   const retryOptions=['0','1','2'].filter(value=>Number(value)<=(policy?.maxRetries??2))
-  const submit = () => onStart({ testCaseVersionId:'tcv-new-v1', environmentId:environment, browser, accountId:account, viewport, locale, limits:{timeoutMinutes:Number(duration),maxAiCalls:Math.min(Number(maxAiCalls),allowedMaxAiCalls),retryCount:Number(retryCount)}, requireRiskApproval:approval })
+  const submit = () => onStart({ testCaseVersionId:versionId, environmentId:environment, browser, accountId:account, viewport, locale, limits:{timeoutMinutes:Number(duration),maxAiCalls:Math.min(Number(maxAiCalls),allowedMaxAiCalls),retryCount:Number(retryCount)}, requireRiskApproval:approval })
   return <section className="page config-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 구조화 검토</button><span className="config-id">TC-NEW · Version 1 · READY</span></div>
     <div className="page-heading compact"><div><p className="eyebrow">EXECUTION SETUP</p><h1>실행 설정</h1><p>격리된 브라우저에서 사용할 환경, 계정과 안전 한도를 확인하세요.</p></div></div>

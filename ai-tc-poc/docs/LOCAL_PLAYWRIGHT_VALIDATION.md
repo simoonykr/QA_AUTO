@@ -146,3 +146,9 @@ OneDrive 이동 직후 기존 `.env.public`이 사라져 일부 필수 비밀값
 ### Secure 쿠키
 
 `APP_ENV=public-demo`에서는 `DEMO_COOKIE_SECURE=true`가 강제된다. 로컬 HTTP API 검증은 로그인 응답의 Secure HttpOnly 쿠키를 테스트 요청에 명시적으로 전달했다. 실제 외부 공개는 HTTPS를 사용해야 한다.
+
+## 영속 구조화 버전 통합 검증 (2026-09-02)
+
+Temporary Staging HTTPS에서 AI 호출을 비활성화한 상태로 새 TC를 구조화했다. 응답 UUID `787dc8b2-cecf-4ae4-b438-9786a7a65e2f`가 `REVIEW_REQUIRED`로 저장됐고, 승인 전 실행 생성은 HTTP 409 `TC_NOT_READY`로 차단됐다. 승인 API 호출 후 같은 UUID가 `READY`가 됐다.
+
+이 UUID로 생성한 Execution `f322af6c-c3f5-4b93-99ee-8fd0f5d6a24b`를 Outbox Publisher와 Playwright Worker가 처리했다. Worker는 DB `structured_spec`의 `navigate → fill → click → assert` 네 단계를 조회해 모두 `PASS`로 기록했고 최종 실행도 `PASS`였다. 구조화 응답은 `RULE_BASED`, `callCount=0`으로 실제 AI 호출과 비용은 없었다.

@@ -33,7 +33,7 @@ async def create_execution(body: CreateExecutionRequest, request: Request, idemp
     try:
         return await repository_for(session, request).create(body, idempotency_key)
     except ExecutionRuleError as exc:
-        status_code = 409 if exc.code == "IDEMPOTENCY_CONFLICT" else 400
+        status_code = 409 if exc.code in {"IDEMPOTENCY_CONFLICT", "TC_NOT_READY"} else 404 if exc.code.endswith("_NOT_FOUND") else 400
         raise DomainError(exc.code, exc.message, status_code) from None
 
 

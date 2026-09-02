@@ -15,7 +15,6 @@ from app.modules.ai.gateway import OpenAIGateway
 from app.schemas.test_cases import AiUsageSummary, StructureRequest, StructuredTestCase
 
 
-VERSION_ID = "00000000-0000-0000-0000-000000000501"
 ENDPOINT = "/api/v1/test-case-versions/current/structure"
 _MONEY = Decimal("0.00000001")
 
@@ -26,7 +25,8 @@ class StructureService:
         self.settings = settings
         self.gateway = gateway or OpenAIGateway(settings)
 
-    async def structure(self, body: StructureRequest) -> StructuredTestCase:
+    async def structure(self, body: StructureRequest, version_id: UUID | None = None) -> StructuredTestCase:
+        version_id = version_id or uuid4()
         detected_count = detect_test_case_count(body.rawText)
         if detected_count > 1:
             raise DomainError(
@@ -42,7 +42,7 @@ class StructureService:
                 },
             )
         if not self.settings.ai_ready:
-            return rule_based_structure(body, self.settings.ai_daily_budget_usd)
+            return rule_based_structure(body, self.settings.ai_daily_budget_usd, version_id)
 
         organization_id = UUID(self.settings.default_organization_id)
         request_hash = self._request_hash(body)
@@ -55,6 +55,8 @@ class StructureService:
         spent = await self._daily_spent(organization_id)
         if cached:
             result = dict(cached.structured_result)
+            result["versionId"] = str(version_id)
+            result["status"] = "REVIEW_REQUIRED"
             result["aiUsage"] = self._usage("CACHE", 0, 0, Decimal("0"), spent)
             return StructuredTestCase.model_validate(result)
 
@@ -81,7 +83,7 @@ class StructureService:
             if cost > reservation:
                 raise DomainError("AI_USAGE_LIMIT_ERROR", "AI 사용량이 예약 한도를 초과했습니다.", 502, retryable=False)
             structured = StructuredTestCase.model_validate({
-                "versionId": VERSION_ID, "title": body.title, **gateway_result.data,
+                "versionId": str(version_id), "status": "REVIEW_REQUIRED", "title": body.title, **gateway_result.data,
                 "aiUsage": self._usage("AI", gateway_result.input_tokens, gateway_result.output_tokens, cost, spent + cost),
             })
             ledger.status = AiUsageStatus.COMPLETED
@@ -150,7 +152,7 @@ class StructureService:
         )
 
 
-def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0")) -> StructuredTestCase:
+def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"), version_id: UUID | None = None) -> StructuredTestCase:
     segments = _test_segments(body.rawText)
     steps = []
     assertions = []
@@ -162,13 +164,16 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"))
             assertions.append({"type": "text", "operator": "contains", "expected": segment, "timeoutMs": 10_000})
         if any(keyword in segment.lower() for keyword in ("전제", "준비", "환경", "조건", "precondition")):
             preconditions.append(segment)
-        steps.append({
+        step = {
             "id": f"step-{index}",
             "title": segment[:80],
             "note": segment,
             "action": action,
             "confidence": 0.7 if action != "assert" else 0.8,
-        })
+            "timeoutMs": 10_000,
+        }
+        step.update(_execution_fields(segment, action))
+        steps.append(step)
     if not assertions:
         expected = segments[-1]
         assertions.append({"type": "text", "operator": "contains", "expected": expected, "timeoutMs": 10_000})
@@ -176,7 +181,7 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"))
     if len(segments) > 20:
         assumptions.append(f"원문의 {len(segments)}개 항목 중 앞 20개만 구조화했습니다. 나머지 항목은 검토가 필요합니다.")
     return StructuredTestCase(
-        versionId=VERSION_ID, title=body.title,
+        versionId=str(version_id or uuid4()), status="REVIEW_REQUIRED", title=body.title,
         preconditions=list(dict.fromkeys(preconditions)),
         steps=steps,
         assertions=assertions,
@@ -221,6 +226,25 @@ def _action_for(segment: str) -> str:
     if any(keyword in lowered for keyword in ("클릭", "선택", "누르", "click", "tap")):
         return "click"
     return "assert"
+
+
+def _execution_fields(segment: str, action: str) -> dict:
+    selector_match = re.search(r"(\[[^\]]+\]|#[A-Za-z0-9_-]+|\.[A-Za-z0-9_-]+)", segment)
+    quoted = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
+    fields: dict = {}
+    if action == "navigate":
+        url_match = re.search(r"https?://[^\s]+", segment)
+        if url_match:
+            fields["url"] = url_match.group(0).rstrip(".,)")
+        return fields
+    if selector_match:
+        fields["selector"] = selector_match.group(1)
+    if action == "fill" and quoted:
+        fields["value"] = quoted[-1]
+    if action == "assert":
+        fields["operator"] = "contains"
+        fields["expected"] = quoted[-1] if quoted else segment
+    return fields
 
 
 def money(value: Decimal) -> str:

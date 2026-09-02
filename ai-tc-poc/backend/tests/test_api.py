@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from io import BytesIO
 from types import SimpleNamespace
+from uuid import UUID
 from zipfile import ZipFile
 from fastapi.testclient import TestClient
 import pytest
@@ -9,7 +10,8 @@ from app.core.database import get_session
 from app.core.config import Settings, get_settings
 from app.db.models import Base
 from app.main import app
-from app.modules.executions.repository import SqlExecutionRepository
+from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
+from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError as VersionRuleError
 from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
@@ -23,11 +25,25 @@ async def fake_session():
 
 
 class FakeTestCaseRepository:
+    versions: dict[str, str] = {}
+
     def __init__(self, *_args):
         pass
 
     async def list(self):
         return [TestCaseSummary(id="TC-142", title="회원가입", group="Authentication", status="READY", passRate=96, lastExecutedAt="12분 전")]
+
+    async def save_structured(self, _body, result):
+        self.versions[result.versionId] = "REVIEW_REQUIRED"
+        return result
+
+    async def approve(self, version_id):
+        key = str(version_id)
+        if key not in self.versions:
+            from app.modules.test_cases.repository import TestCaseVersionRuleError
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        self.versions[key] = "READY"
+        return {"versionId": key, "status": "READY"}
 
 
 class FakeExecutionRepository:
@@ -125,6 +141,7 @@ def isolate_database(monkeypatch):
     monkeypatch.setattr("app.modules.executions.router.SqlExecutionRepository", FakeExecutionRepository)
     monkeypatch.setattr("app.modules.resources.router.SqlResourceRepository", FakeResourceRepository)
     FakeExecutionRepository.ids.clear()
+    FakeTestCaseRepository.versions.clear()
     yield
     app.dependency_overrides.clear()
 
@@ -219,6 +236,23 @@ def test_structure_test_case() -> None:
     assert body["assertions"][0]["expected"] in "회원가입하고 안전한 비밀번호를 입력한 뒤 대시보드를 확인한다."
     assert body["aiUsage"]["source"] == "RULE_BASED"
     assert body["aiUsage"]["callCount"] == 0
+    assert body["status"] == "REVIEW_REQUIRED"
+    assert body["versionId"] != "00000000-0000-0000-0000-000000000501"
+
+    approved = client.post(f'/api/v1/test-case-versions/{body["versionId"]}/approve')
+    assert approved.status_code == 200
+    assert approved.json() == {"versionId": body["versionId"], "status": "READY"}
+
+
+def test_each_structure_creates_a_unique_review_version_and_unknown_approval_is_hidden() -> None:
+    payload = {"title": "고유 버전", "rawText": "페이지에 접속하고 결과가 보이는지 확인한다."}
+    first = client.post("/api/v1/test-case-versions/current/structure", json=payload)
+    second = client.post("/api/v1/test-case-versions/current/structure", json=payload)
+    unknown = client.post("/api/v1/test-case-versions/ffffffff-ffff-ffff-ffff-ffffffffffff/approve")
+    assert first.json()["versionId"] != second.json()["versionId"]
+    assert first.json()["status"] == second.json()["status"] == "REVIEW_REQUIRED"
+    assert unknown.status_code == 404
+    assert unknown.json()["code"] == "TC_VERSION_NOT_FOUND"
 
 
 def test_structure_rejects_9613_character_multi_tc_import_for_review() -> None:
@@ -479,10 +513,56 @@ def test_required_database_models_are_registered() -> None:
     assert len(Base.metadata.tables) == 15
 
 
-def test_frontend_poc_aliases_resolve_to_seed_uuids() -> None:
-    assert str(SqlExecutionRepository._resolve_id("tcv-new-v1")) == "00000000-0000-0000-0000-000000000501"
-    assert str(SqlExecutionRepository._resolve_id("env-staging")) == "00000000-0000-0000-0000-000000000301"
-    assert str(SqlExecutionRepository._resolve_id("qa-runner-01")) == "00000000-0000-0000-0000-000000000601"
+def test_execution_resource_ids_require_real_uuids() -> None:
+    with pytest.raises(ExecutionRuleError):
+        SqlExecutionRepository._resolve_id("tcv-new-v1")
+
+
+class CaptureScalarSession:
+    def __init__(self):
+        self.statements = []
+
+    async def scalar(self, statement):
+        self.statements.append(statement)
+        return None
+
+
+@pytest.mark.asyncio
+async def test_version_approval_query_enforces_organization_and_project_scope() -> None:
+    session = CaptureScalarSession()
+    repository = SqlTestCaseRepository(
+        session,
+        UUID("00000000-0000-0000-0000-000000000001"),
+        UUID("00000000-0000-0000-0000-000000000201"),
+    )
+    with pytest.raises(VersionRuleError, match="찾을 수 없습니다"):
+        await repository.approve(UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"))
+    query = str(session.statements[0])
+    assert "test_case_versions.organization_id" in query
+    assert "test_cases.organization_id" in query
+    assert "test_cases.project_id" in query
+
+
+@pytest.mark.asyncio
+async def test_execution_version_query_enforces_organization_and_project_scope() -> None:
+    session = CaptureScalarSession()
+    repository = SqlExecutionRepository(
+        session,
+        UUID("00000000-0000-0000-0000-000000000001"),
+        UUID("00000000-0000-0000-0000-000000000201"),
+        UUID("00000000-0000-0000-0000-000000000101"),
+        UUID("00000000-0000-0000-0000-000000000999"),
+    )
+    with pytest.raises(ExecutionRuleError, match="찾을 수 없습니다"):
+        await repository._validate_resources(
+            UUID("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+            UUID("00000000-0000-0000-0000-000000000301"),
+            None,
+        )
+    query = str(session.statements[0])
+    assert "test_case_versions.organization_id" in query
+    assert "test_cases.organization_id" in query
+    assert "test_cases.project_id" in query
 
 
 def test_worker_parses_viewport_and_blocks_unknown_domains() -> None:

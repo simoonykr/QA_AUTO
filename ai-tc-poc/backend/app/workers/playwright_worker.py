@@ -14,7 +14,7 @@ from sqlalchemy import func, select, update
 
 from app.core.config import get_settings
 from app.core.database import SessionFactory
-from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, StepRun, TestCaseVersion
+from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, StepRun, TestCase, TestCaseVersion
 from app.workers.artifacts import ArtifactStore, StoredArtifact
 from app.workers.step_executor import StepDefinitionError, execute_step
 
@@ -64,12 +64,29 @@ async def _load_execution(execution_id: UUID) -> tuple[Execution, Environment, T
         execution = await session.scalar(select(Execution).where(Execution.id == execution_id))
         if not execution:
             raise WorkerExecutionError("EXECUTION_NOT_FOUND", "실행 정보를 찾을 수 없습니다.")
-        environment = await session.scalar(select(Environment).where(Environment.id == execution.environment_id))
+        environment = await session.scalar(select(Environment).where(
+            Environment.id == execution.environment_id,
+            Environment.organization_id == execution.organization_id,
+            Environment.project_id == execution.project_id,
+        ))
         if not environment:
             raise WorkerExecutionError("ENVIRONMENT_NOT_FOUND", "실행 환경을 찾을 수 없습니다.")
-        version = await session.scalar(select(TestCaseVersion).where(TestCaseVersion.id == execution.test_case_version_id))
+        version = await session.scalar(
+            select(TestCaseVersion)
+            .join(TestCase, TestCase.id == TestCaseVersion.test_case_id)
+            .where(
+                TestCaseVersion.id == execution.test_case_version_id,
+                TestCaseVersion.organization_id == execution.organization_id,
+                TestCase.organization_id == execution.organization_id,
+                TestCase.project_id == execution.project_id,
+            )
+        )
         if not version:
             raise WorkerExecutionError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        if version.status != "READY":
+            raise WorkerExecutionError("TC_NOT_READY", "승인되지 않은 테스트 케이스는 실행할 수 없습니다.")
+        if not version.structured_spec:
+            raise WorkerExecutionError("INVALID_TEST_SPEC", "구조화된 실행 명세가 없습니다.")
         return execution, environment, version
 
 
@@ -192,9 +209,9 @@ async def execute(execution_id: UUID) -> None:
             await _finish(execution_id, ExecutionStatus.CANCELLED)
             return
 
-        structured_spec = version.structured_spec or {}
-        steps = structured_spec.get("steps") or [{"action": "navigate", "url": environment.base_url}]
-        if not isinstance(steps, list):
+        structured_spec = version.structured_spec
+        steps = structured_spec.get("steps")
+        if not isinstance(steps, list) or not steps:
             raise WorkerExecutionError("INVALID_TEST_SPEC", "구조화된 실행 단계 형식이 올바르지 않습니다.")
 
         async with async_playwright() as playwright:
