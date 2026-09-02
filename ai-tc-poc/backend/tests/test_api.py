@@ -62,6 +62,15 @@ class FakeTestCaseRepository:
         plan["steps"][0].update(body.model_dump(exclude_unset=True))
         return plan
 
+    async def delete_step(self, version_id, step_id, environment_id=None):
+        plan = await self.execution_plan(version_id, environment_id)
+        plan["revision"] = 2
+        plan["planHash"] = None
+        plan["steps"] = []
+        plan["warnings"] = [{"code": "EXECUTION_PLAN_INVALID", "message": "실행 단계가 없습니다.", "missingFields": []}]
+        plan["executable"] = False
+        return plan
+
 
 class FakeExecutionRepository:
     ids: dict[str, ExecutionResponse] = {}
@@ -294,6 +303,18 @@ def test_patch_review_step_returns_recalculated_plan() -> None:
     assert response.json()["planHash"] == "b" * 64
 
 
+def test_delete_review_step_returns_recalculated_plan() -> None:
+    response = client.delete(
+        "/api/v1/test-case-versions/00000000-0000-0000-0000-000000000501/steps/step-1",
+        params={"environmentId": "00000000-0000-0000-0000-000000000301"},
+    )
+    assert response.status_code == 200
+    assert response.json()["revision"] == 2
+    assert response.json()["steps"] == []
+    assert response.json()["executable"] is False
+    assert response.json()["warnings"][0]["code"] == "EXECUTION_PLAN_INVALID"
+
+
 def test_structure_rejects_9613_character_multi_tc_import_for_review() -> None:
     rows = ["TC ID | 제목 | 단계"] + [
         f"TC-{index:03d} | KakaoGames 테스트 {index} | 실행 후 결과 확인"
@@ -378,7 +399,7 @@ def test_import_xlsx_test_case() -> None:
         files={"file": ("login.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert response.status_code == 200
-    assert response.json()["rawText"] == "단계 | 기대결과\n로그인 | 대시보드 노출"
+    assert response.json()["rawText"] == "로그인 | 대시보드 노출"
 
 
 def test_import_xlsx_excludes_report_metadata_before_tc_table() -> None:
@@ -418,9 +439,51 @@ def test_import_xlsx_excludes_report_metadata_before_tc_table() -> None:
     body = response.json()
     assert "Pass" not in body["rawText"]
     assert "Build Version" not in body["rawText"]
-    assert "Expected Result" in body["rawText"]
     assert "대시보드 노출" in body["rawText"]
     assert body["warnings"] == ["XLSX_METADATA_ROWS_EXCLUDED:3", "XLSX_TEST_CASES_DETECTED:2"]
+
+
+def test_import_xlsx_excludes_repeated_headers_numbers_and_status_source_rows() -> None:
+    workbook = BytesIO()
+    rows = [
+        ["TC ID", "Test Steps", "Expected Result"],
+        ["TC-001", "사이트 접속", "로그인 화면"],
+        ["2."],
+        ["Not Test", "Not Test", "Source:https://example.test/ (확인일 2026-08-27)"],
+        ["TC ID", "Test Steps", "Expected Result"],
+        ["TC-002", "메뉴 클릭", "메뉴 노출"],
+    ]
+    row_xml = "".join(
+        "<row>" + "".join(f'<c t="inlineStr"><is><t>{cell}</t></is></c>' for cell in row) + "</row>"
+        for row in rows
+    )
+    with ZipFile(workbook, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="TC" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+            f'{row_xml}</sheetData></worksheet>',
+        )
+    response = client.post(
+        "/api/v1/test-cases/import",
+        files={"file": ("repeated.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rawText"] == "TC-001 | 사이트 접속 | 로그인 화면\nTC-002 | 메뉴 클릭 | 메뉴 노출"
+    assert body["warnings"] == [
+        "XLSX_METADATA_ROWS_EXCLUDED:0", "XLSX_TEST_CASES_DETECTED:2", "XLSX_NON_TC_ROWS_EXCLUDED:3",
+    ]
 
 
 def test_import_rejects_unsupported_or_large_file() -> None:

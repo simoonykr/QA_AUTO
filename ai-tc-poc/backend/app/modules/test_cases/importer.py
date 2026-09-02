@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from pathlib import Path
 from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
@@ -75,6 +76,22 @@ def _is_tc_header(row: list[str]) -> bool:
     return bool(headers & expected_headers) and bool(headers & (id_headers | step_headers))
 
 
+def _is_xlsx_non_tc_row(row: list[str]) -> bool:
+    values = [value.strip() for value in row if value and value.strip()]
+    if not values or _is_tc_header(values):
+        return True
+    if len(values) == 1 and re.fullmatch(r"\d+[.)]?", values[0]):
+        return True
+    normalized = [_normalize_header(value) for value in values]
+    metadata_labels = {"담당자", "브라우저", "buildversion", "빌드버전", "확인일", "작성일"}
+    if normalized[0] in metadata_labels and len(values) <= 3:
+        return True
+    statuses = {"pass", "fail", "na", "block", "blocked", "nottest", "미실행"}
+    has_status = any(value in statuses for value in normalized)
+    has_source = any(value.lower().startswith("source:") or value.lower().startswith("source：") for value in values)
+    return has_status and has_source
+
+
 def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str]]:
     header_index = next((index for index, row in enumerate(rows) if _is_tc_header(row)), None)
     if header_index is None:
@@ -83,15 +100,19 @@ def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str]]:
     normalized_header = [_normalize_header(value) for value in tc_rows[0]]
     id_headers = {"tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}
     id_column = next((index for index, value in enumerate(normalized_header) if value in id_headers), None)
+    content_rows = [row for row in tc_rows[1:] if not _is_xlsx_non_tc_row(row)]
     if id_column is None:
-        detected_count = sum(1 for row in tc_rows[1:] if any(value.strip() for value in row))
+        detected_count = len(content_rows)
     else:
-        detected_count = sum(1 for row in tc_rows[1:] if len(row) > id_column and row[id_column].strip())
+        detected_count = sum(1 for row in content_rows if len(row) > id_column and row[id_column].strip())
     warnings = [
         f"XLSX_METADATA_ROWS_EXCLUDED:{header_index}",
         f"XLSX_TEST_CASES_DETECTED:{detected_count}",
     ]
-    return _clean([" | ".join(value for value in row if value) for row in tc_rows]), warnings
+    excluded_content_count = len(tc_rows) - 1 - len(content_rows)
+    if excluded_content_count:
+        warnings.append(f"XLSX_NON_TC_ROWS_EXCLUDED:{excluded_content_count}")
+    return _clean([" | ".join(value for value in row if value) for row in content_rows]), warnings
 
 
 def _parse_xlsx(data: bytes) -> tuple[str, list[str]]:

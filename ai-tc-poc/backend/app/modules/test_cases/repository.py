@@ -150,6 +150,30 @@ class SqlTestCaseRepository:
         environment = await self._environment(environment_id)
         return self._plan_response(version, environment)
 
+    async def delete_step(self, version_id: UUID, step_id: str, environment_id: UUID | None = None) -> ExecutionPlanResponse:
+        version = await self._version(version_id, lock=True)
+        if not version:
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        if version.status != "REVIEW_REQUIRED":
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_REVIEWABLE", "승인 전 REVIEW_REQUIRED 단계만 삭제할 수 있습니다.")
+        spec = dict(version.structured_spec or {})
+        steps = [dict(step) for step in spec.get("steps") or []]
+        remaining = [step for step in steps if str(step.get("id")) != step_id]
+        if len(remaining) == len(steps):
+            raise TestCaseVersionRuleError("TC_STEP_NOT_FOUND", "삭제할 구조화 단계를 찾을 수 없습니다.")
+        for step_no, step in enumerate(remaining, start=1):
+            if "stepNo" in step:
+                step["stepNo"] = step_no
+        spec["steps"] = remaining
+        spec["planRevision"] = int(spec.get("planRevision") or 1) + 1
+        version.structured_spec = spec
+        self.session.add(self._audit("test_case_version.step_deleted", version.id, {
+            "stepId": step_id, "remainingStepCount": len(remaining), "planRevision": spec["planRevision"],
+        }))
+        await self.session.commit()
+        environment = await self._environment(environment_id)
+        return self._plan_response(version, environment)
+
     async def _version(self, version_id: UUID, lock: bool = False) -> TestCaseVersion | None:
         statement = (
             select(TestCaseVersion)

@@ -130,6 +130,18 @@ $editablePlanAfter = (Invoke-Api PATCH "/api/v1/test-case-versions/$($editableSt
     value = "qa@example.test"
 }).Body
 $editableApproval = Invoke-Api POST "/api/v1/test-case-versions/$($editableStructured.versionId)/approve"
+$approvedDelete = Invoke-Api DELETE "/api/v1/test-case-versions/$($editableStructured.versionId)/steps/step-2?environmentId=$($environment.id)"
+
+$deletableStructured = (Invoke-Api POST "/api/v1/test-case-versions/current/structure" @{
+    title = "Temporary Staging deletable plan"
+    rawText = $importResponse.rawText
+}).Body
+$deletablePlanBefore = (Invoke-Api GET "/api/v1/test-case-versions/$($deletableStructured.versionId)/execution-plan?environmentId=$($environment.id)").Body
+$deletablePlanAfter = (Invoke-Api DELETE "/api/v1/test-case-versions/$($deletableStructured.versionId)/steps/step-2?environmentId=$($environment.id)").Body
+$emptyPlan = $deletablePlanAfter
+foreach ($remainingStepId in @("step-1", "step-3", "step-4")) {
+    $emptyPlan = (Invoke-Api DELETE "/api/v1/test-case-versions/$($deletableStructured.versionId)/steps/${remainingStepId}?environmentId=$($environment.id)").Body
+}
 
 $invalidStructured = (Invoke-Api POST "/api/v1/test-case-versions/current/structure" @{
     title = "Temporary Staging invalid plan"
@@ -155,8 +167,16 @@ if ($editablePlanBefore.executable -or
     $editablePlanAfter.revision -ne ($editablePlanBefore.revision + 1) -or
     -not $editablePlanAfter.executable -or
     -not $editablePlanAfter.planHash -or
-    $editableApproval.Status -ne 200) {
+    $editableApproval.Status -ne 200 -or $approvedDelete.Status -ne 409 -or
+    $approvedDelete.Body.code -ne "TC_VERSION_NOT_REVIEWABLE") {
     throw "Editable plan PATCH validation failed."
+}
+if ($deletablePlanAfter.revision -ne ($deletablePlanBefore.revision + 1) -or
+    $deletablePlanAfter.steps.Count -ne ($deletablePlanBefore.steps.Count - 1) -or
+    $deletablePlanAfter.planHash -eq $deletablePlanBefore.planHash -or
+    ($deletablePlanAfter.steps.stepNo -join ',') -ne '1,2,3' -or
+    $emptyPlan.steps.Count -ne 0 -or $emptyPlan.executable -or $emptyPlan.warnings.Count -eq 0) {
+    throw "Plan step DELETE validation failed."
 }
 if ($invalidPlan.executable -or $invalidApproval.Status -ne 422) {
     throw "Invalid plan was not blocked."
@@ -204,6 +224,19 @@ if ($invalidPlan.executable -or $invalidApproval.Status -ne 422) {
         revisionAfter = $editablePlanAfter.revision
         planHashAfter = $editablePlanAfter.planHash
         approvalStatus = $editableApproval.Status
+        approvedDeleteStatus = $approvedDelete.Status
+        approvedDeleteError = $approvedDelete.Body.code
+    }
+    deleted = @{
+        versionId = $deletableStructured.versionId
+        revisionBefore = $deletablePlanBefore.revision
+        revisionAfter = $deletablePlanAfter.revision
+        planHashBefore = $deletablePlanBefore.planHash
+        planHashAfter = $deletablePlanAfter.planHash
+        remainingStepNumbers = $deletablePlanAfter.steps.stepNo
+        emptyRevision = $emptyPlan.revision
+        emptyExecutable = $emptyPlan.executable
+        emptyWarning = $emptyPlan.warnings[0].code
     }
     invalid = @{
         versionId = $invalidStructured.versionId

@@ -83,6 +83,26 @@ async def patch_test_case_version_step(
         raise DomainError(exc.code, exc.message, status_code) from None
 
 
+@version_router.delete("/{version_id}/steps/{step_id}", response_model=ExecutionPlanResponse)
+async def delete_test_case_version_step(
+    version_id: UUID,
+    step_id: str,
+    request: Request,
+    environment_id: UUID | None = Query(default=None, alias="environmentId"),
+    session: AsyncSession = Depends(get_session),
+) -> ExecutionPlanResponse:
+    settings = get_settings()
+    repository = SqlTestCaseRepository(
+        session, UUID(settings.default_organization_id), UUID(settings.default_project_id),
+        UUID(settings.default_user_id), UUID(request.state.request_id),
+    )
+    try:
+        return await repository.delete_step(version_id, step_id, environment_id)
+    except TestCaseVersionRuleError as exc:
+        status_code = 409 if exc.code == "TC_VERSION_NOT_REVIEWABLE" else 404
+        raise DomainError(exc.code, exc.message, status_code) from None
+
+
 @version_router.get("/{version_id}/execution-plan", response_model=ExecutionPlanResponse)
 async def get_test_case_execution_plan(
     version_id: UUID,

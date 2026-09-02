@@ -97,6 +97,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 승인 전 `PATCH /test-case-versions/{versionId}/steps/{stepId}`로 selector·URL·operator·expected·value/secretRef를 수정하고 revision/hash를 재계산하는 API 추가
 - 원문에 없는 AI selector를 제거하고 `assumptions`에 검토 사유를 남기는 selector grounding 보호 추가
 - XLSX TC 헤더 이전 결과 집계·보고서 메타데이터를 제외하고 Expected Result를 보존하며 제외 행 수·감지 TC 수 warning 반환
+- 승인 전 `DELETE /test-case-versions/{versionId}/steps/{stepId}`로 불필요한 구조화 단계를 삭제하고 단계 번호·revision·plan hash를 재계산하는 API 추가
+- XLSX 구조화 입력에서 TC 헤더, 숫자만 있는 행, 반복 `Not Test/Source` 보고 행을 제외하고 실제 필터 결과를 기준으로 TC 수를 계산
 
 프론트엔드에 요청:
 
@@ -108,6 +110,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 배포 빌드는 동일 출처 `/api/v1`을 사용하고 임시·고정 Staging 주소를 소스 코드에 하드코딩하지 않음
 - Local·Staging·Production 표시가 필요한 경우 비밀정보가 아닌 빌드 환경명만 사용
 - AI 정책이 `1`일 때 선택지를 `0회`, `1회`로 제한하고 키·달러 예산 환경변수는 프론트에서 참조하지 않음
+- 단계 편집 화면에서 DELETE API를 연결하고 확인창·중복 클릭 방지·반환 계획 즉시 반영·마지막 단계 삭제 시 승인 차단 처리
 
 다음 작업:
 
@@ -123,6 +126,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 ## 최근 검증
 
 - 백엔드: `48 passed` (`3 warnings`), 프론트 배포 Dockerfile 프로덕션 빌드 통과
+- 백엔드 단계 삭제·XLSX 오탐 회귀: `50 passed` (`3 warnings`)
 - 구조화 회귀: 정확히 9,613자 원문 보존, 102건 다중 TC 감지, AI 호출 전 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 차단 확인
 - AI 사용량 계약: 실제 Gateway 결과 `AI/1`, 캐시 `CACHE/0`, AI 비활성 원문 기반 결과 `RULE_BASED/0`
 - 영속 버전 통합: Version `787dc8b2-cecf-4ae4-b438-9786a7a65e2f`, 승인 전 `TC_NOT_READY`(409), 승인 `READY`
@@ -154,6 +158,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - HTTPS 실패 검증 Execution `8fb52bc6-207b-44ba-b63b-c4441387e9ea`: 최종 `FAIL`, `ASSERTION_FAILED`, 실패 PNG Artifact `8ca2274f-7dff-459e-9ceb-c6e249361139` 및 PNG signature 확인
 - HTTPS 단계 편집 검증 Version `32ab90d3-1c61-4cc4-9c9a-0f029661944e`: PATCH 전 `executable=false`, `missingFields=[value,secretRef]`; 저장 후 revision `1→2`, plan hash 재계산, `executable=true`, 승인 200
 - 위 HTTPS 재검증은 API `AI_ENABLED=false`, 실행 `maxAiCalls=0`, 구조화 `RULE_BASED/0회/$0` 상태로 수행
+- HTTPS 단계 삭제 검증 Version `476ca1df-2b55-4123-bf7e-acb33cde1e75`: 4단계 중 1개 삭제 후 revision `1→2`, plan hash 변경, 남은 `stepNo=1,2,3`; 전체 삭제 후 revision 5, `steps=[]`, `executable=false`, `EXECUTION_PLAN_INVALID` 확인
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
 - OpenAI 설정 변경: 정적 diff 검사 통과. Docker Desktop 엔진 미실행으로 백엔드 테스트는 다음 작업에서 재검증 필요
