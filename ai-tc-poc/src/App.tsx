@@ -8,7 +8,7 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionDetails, ExecutionPlan, ExecutionPolicy, ExecutionStepRun, StructuredTestCase, TestAccountSummary, TestCaseSummary } from './api/types'
+import type { AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionDetails, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
@@ -338,7 +338,30 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [excludedResultColumns,setExcludedResultColumns] = useState(0)
   const [splitReview,setSplitReview] = useState<{detectedTestCaseCount:number;rawTextLength:number}|null>(null)
   const [structured,setStructured] = useState<StructuredTestCase | null>(null)
+  const [reviewEnvironments,setReviewEnvironments] = useState<EnvironmentSummary[]>([])
+  const [reviewEnvironmentId,setReviewEnvironmentId] = useState('')
+  const [reviewPlan,setReviewPlan] = useState<ExecutionPlan | null>(null)
+  const [planLoading,setPlanLoading] = useState(false)
+  const [planError,setPlanError] = useState('')
+  const [editingStep,setEditingStep] = useState<ExecutionPlanStep | null>(null)
+  const [stepDraft,setStepDraft] = useState({selector:'',url:'',operator:'',expected:'',value:'',secretRef:'',assertionType:''})
+  const [dirtyFields,setDirtyFields] = useState<Array<keyof TestCaseVersionStepPatch>>([])
+  const [savingStep,setSavingStep] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
+  useEffect(()=>{
+    if (stage!=='review') return
+    api.listEnvironments().then(items=>{
+      setReviewEnvironments(items)
+      setReviewEnvironmentId(current=>current||items[0]?.id||'')
+    }).catch(error=>setPlanError(error instanceof ApiError?error.body.message:'실행 환경을 불러오지 못했습니다.'))
+  },[stage])
+  useEffect(()=>{
+    if (stage!=='review'||!structured?.versionId||!reviewEnvironmentId) return
+    setPlanLoading(true); setPlanError('')
+    api.getExecutionPlan(structured.versionId,reviewEnvironmentId).then(setReviewPlan).catch(error=>{
+      setReviewPlan(null); setPlanError(error instanceof ApiError?error.body.message:'실행 계획을 불러오지 못했습니다.')
+    }).finally(()=>setPlanLoading(false))
+  },[stage,structured?.versionId,reviewEnvironmentId])
   const importFile = async (file?: File) => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
@@ -370,7 +393,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     setExcludedMetadataLines(prepared.excludedLineCount)
     setExcludedResultColumns(prepared.excludedResultColumns)
     setStage('structuring')
-    try { const result=await api.structureTestCase(title.trim(),prepared.rawText); setStructured(result); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
+    try { const result=await api.structureTestCase(title.trim(),prepared.rawText); setStructured(result); setReviewPlan(null); setEditingStep(null); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
     catch (error) {
       if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
         const count=Number(error.body.details?.detectedTestCaseCount)
@@ -385,17 +408,46 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     }
   }
   const approve = async () => {
-    if (!structured) return
+    if (!structured||reviewPlan?.executable!==true) return onToast('실행 계획의 누락 항목을 먼저 수정해 주세요.')
     try {
       const approved=await api.approveTestCaseVersion(structured.versionId)
       const ready={...structured,status:approved.status}; setStructured(ready); onStructured(ready); onVersion(approved.versionId); setStage('ready')
       onToast('검토 승인이 완료되었습니다.')
     } catch (error) { onToast(error instanceof ApiError ? error.body.message : '검토 승인에 실패했습니다.') }
   }
+  const openStepEditor = (step:ExecutionPlanStep) => {
+    setEditingStep(step)
+    setStepDraft({selector:step.selector??'',url:step.url??'',operator:step.operator??'',expected:step.expected??'',value:step.value==='***'?'':step.value??'',secretRef:step.secretRef??'',assertionType:step.assertionType??''})
+    setDirtyFields([])
+  }
+  const changeStepField = (field:keyof TestCaseVersionStepPatch,value:string) => {
+    setStepDraft(current=>({...current,[field]:value}))
+    setDirtyFields(current=>current.includes(field)?current:[...current,field])
+  }
+  const saveStep = async () => {
+    if (!structured||!editingStep||!reviewEnvironmentId||dirtyFields.length===0) return
+    const dirty=new Set(dirtyFields)
+    const patch:TestCaseVersionStepPatch={
+      ...(dirty.has('selector')?{selector:stepDraft.selector.trim()||null}:{}), ...(dirty.has('url')?{url:stepDraft.url.trim()||null}:{}),
+      ...(dirty.has('operator')?{operator:stepDraft.operator.trim()||null}:{}), ...(dirty.has('expected')?{expected:stepDraft.expected.trim()||null}:{}),
+      ...(dirty.has('value')?{value:stepDraft.value||null}:{}), ...(dirty.has('secretRef')?{secretRef:stepDraft.secretRef.trim()||null}:{}),
+      ...(dirty.has('assertionType')?{assertionType:(stepDraft.assertionType||null) as TestCaseVersionStepPatch['assertionType']}:{}),
+    }
+    setSavingStep(true)
+    try {
+      const updated=await api.updateTestCaseVersionStep(structured.versionId,editingStep.id,reviewEnvironmentId,patch)
+      setReviewPlan(updated)
+      const planStep=updated.steps.find(item=>item.id===editingStep.id)
+      const next:StructuredTestCase=planStep?{...structured,steps:structured.steps.map(item=>item.id===planStep.id?{...item,url:planStep.url,selector:planStep.selector,value:planStep.value,secretRef:planStep.secretRef,operator:planStep.operator,expected:planStep.expected,assertionType:planStep.assertionType,timeoutMs:planStep.timeoutMs}:item)}:structured
+      setStructured(next); onStructured(next); setEditingStep(null); setDirtyFields([])
+      onToast(`단계를 저장했습니다. revision ${updated.revision}`)
+    } catch (error) { onToast(error instanceof ApiError?error.body.message:'단계를 저장하지 못했습니다.') }
+    finally { setSavingStep(false) }
+  }
   const editTitle = (value:string) => { setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   const editRaw = (value:string) => { setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   return <section className="page author-page">
-    <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
+    <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()} disabled={reviewPlan?.executable!==true||planLoading||savingStep} title={reviewPlan?.executable?'검토 승인':'누락된 단계 필드를 먼저 수정해 주세요.'}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
       <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);setExcludedMetadataLines(0);setExcludedResultColumns(0);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}{(excludedMetadataLines>0||excludedResultColumns>0)&&<div className="metadata-filter"><ShieldCheck/><div><b>결과 집계 {excludedMetadataLines}개 행 · 결과 기록 {excludedResultColumns}개 열 제외</b><p>실제 TC의 ID, 계층, 전제조건, Step, Expected Result만 구조화에 사용했습니다.</p></div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>editTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>editRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
@@ -403,7 +455,13 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>현재는 AI 토큰 없이 전제조건, 실행 단계와 기대 결과를 안전한 규칙으로 분리합니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
         {stage==='split-review'&&splitReview&&<div className="review-empty split-review"><div><ListChecks/></div><h2>TC별 분리가 필요합니다.</h2><p>하나의 파일에서 여러 테스트 케이스가 감지되어 단일 실행 단계로 구조화하지 않았습니다.</p><div className="split-review-stats"><span><b>{splitReview.detectedTestCaseCount.toLocaleString()}개</b> 감지된 TC</span><span><b>{splitReview.rawTextLength.toLocaleString()}자</b> 원문 길이</span></div><div className="ambiguity"><AlertTriangle/><div><b>검토가 필요한 상태입니다.</b><p>현재 원문을 TC별로 분리한 뒤 각각 구조화해야 합니다. 이 결과는 승인하거나 실행할 수 없습니다.</p></div></div></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
-        {(stage==='review'||stage==='ready')&&structured&&<><div className="section-head"><div><h2>구조화 검토</h2><p>AI 생성 결과를 실행 전에 확인하세요.</p></div><span className="confidence">신뢰도 <b>{Math.round(structured.confidence*100)}%</b></span></div><div className="review-block"><label>전제조건 · {structured.preconditions.length}</label>{structured.preconditions.map(item=><div className="condition" key={item}><CheckCircle2/> {item}</div>)}</div><div className="review-block"><label>실행 단계 · {structured.steps.length}</label>{structured.steps.map((step,i)=><div className="structured-step" key={step.id}><span>{i+1}</span><div><b>{step.title}</b><small><em>{step.action.toUpperCase()}</em> {step.note}</small></div><button aria-label={`${step.title} 추가 메뉴`}><MoreHorizontal/></button></div>)}</div><div className="review-block"><label>기대 결과 · {structured.assertions.length}</label>{structured.assertions.map((assertion,i)=><div className="assertion" key={`${assertion.type}-${i}`}><ShieldCheck/><div><b>{assertion.expected}</b><small>{assertion.type.toUpperCase()} · {assertion.operator.toUpperCase()} · timeout {assertion.timeoutMs/1000}s</small></div></div>)}</div>{stage==='review'&&structured.assumptions.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>확인이 필요한 가정 {structured.assumptions.length}개</b>{structured.assumptions.map(item=><p key={item}>{item}</p>)}</div></div>}{stage==='ready'&&<div className="ready-box"><CheckCircle2/><div><b>실행 준비가 완료되었습니다.</b><p>승인된 {structured.versionId}은 수정할 수 없으며 변경 시 새 버전이 생성됩니다.</p></div></div>}</>}
+        {(stage==='review'||stage==='ready')&&structured&&<><div className="section-head"><div><h2>구조화 검토</h2><p>서버가 검증한 실행 계획을 승인 전에 확인하고 수정하세요.</p></div><span className="confidence">신뢰도 <b>{Math.round(structured.confidence*100)}%</b></span></div>
+          {stage==='review'&&<div className="review-plan-status"><label>검증 환경<select value={reviewEnvironmentId} onChange={event=>setReviewEnvironmentId(event.target.value)} disabled={planLoading||savingStep}>{reviewEnvironments.map(environment=><option key={environment.id} value={environment.id}>{environment.name}</option>)}</select></label><div><span>revision <b>{reviewPlan?.revision??'-'}</b></span><span>plan hash <b>{reviewPlan?.planHash?.slice(0,12)??'-'}</b></span><span className={reviewPlan?.executable?'plan-ok':'plan-blocked'}>{planLoading?'검증 중':reviewPlan?.executable?'실행 가능':'수정 필요'}</span></div></div>}
+          {planError&&<div className="config-error"><AlertTriangle size={16}/><div><b>실행 계획 확인 실패</b><span>{planError}</span></div></div>}
+          <div className="review-block"><label>전제조건 · {structured.preconditions.length}</label>{structured.preconditions.map(item=><div className="condition" key={item}><CheckCircle2/> {item}</div>)}</div>
+          <div className="review-block"><label>실행 단계 · {(reviewPlan?.steps??structured.steps).length}</label>{(reviewPlan?.steps??structured.steps.map((step,index)=>({...step,stepNo:index+1,timeoutMs:step.timeoutMs??10000}))).map((step,i)=>{const warning=reviewPlan?.warnings.find(item=>item.stepId===step.id||item.stepNo===step.stepNo);return <div className={`structured-step ${warning?'invalid':''}`} key={step.id}><span>{step.stepNo??i+1}</span><div><b>{step.title}</b><small><em>{step.action.toUpperCase()}</em> {step.url||step.selector||('note' in step?step.note:'필수 값 확인 필요')}</small>{warning&&<p className="step-warning">{warning.message}{warning.missingFields.length>0&&` · 누락: ${warning.missingFields.join(', ')}`}</p>}</div>{stage==='review'?<button onClick={()=>openStepEditor(step as ExecutionPlanStep)} aria-label={`${step.title} 단계 편집`} title="단계 편집"><Settings/></button>:<button aria-label={`${step.title} 추가 메뉴`}><MoreHorizontal/></button>}</div>})}</div>
+          {stage==='review'&&editingStep&&<div className="step-editor"><div className="step-editor-head"><div><b>{editingStep.stepNo}단계 편집</b><small>{editingStep.title} · 변경된 필드만 서버에 저장합니다.</small></div><button onClick={()=>setEditingStep(null)} aria-label="단계 편집 닫기"><XCircle/></button></div><div className="step-editor-grid"><label>selector<input value={stepDraft.selector} onChange={e=>changeStepField('selector',e.target.value)} placeholder="예: #login-button"/></label><label>URL<input value={stepDraft.url} onChange={e=>changeStepField('url',e.target.value)} placeholder="예: /login 또는 https://..."/></label><label>operator<input value={stepDraft.operator} onChange={e=>changeStepField('operator',e.target.value)} placeholder="contains, equals, matches"/></label><label>expected<input value={stepDraft.expected} onChange={e=>changeStepField('expected',e.target.value)}/></label><label>value<input type="password" value={stepDraft.value} onChange={e=>changeStepField('value',e.target.value)} placeholder={editingStep.value==='***'?'기존 값 설정됨 · 변경 시에만 입력':'입력 값'}/></label><label>secretRef<input value={stepDraft.secretRef} onChange={e=>changeStepField('secretRef',e.target.value)} placeholder="예: TEST_PASSWORD"/></label><label>assertionType<select value={stepDraft.assertionType} onChange={e=>changeStepField('assertionType',e.target.value)}><option value="">선택 안 함</option><option value="url">url</option><option value="text">text</option><option value="element">element</option></select></label></div><div className="step-editor-actions"><button className="secondary" onClick={()=>setEditingStep(null)} disabled={savingStep}>취소</button><button className="primary" onClick={()=>void saveStep()} disabled={savingStep||dirtyFields.length===0}>{savingStep?<Activity className="spin"/>:<Save/>} 저장 후 재검증</button></div></div>}
+          <div className="review-block"><label>기대 결과 · {structured.assertions.length}</label>{structured.assertions.map((assertion,i)=><div className="assertion" key={`${assertion.type}-${i}`}><ShieldCheck/><div><b>{assertion.expected}</b><small>{assertion.type.toUpperCase()} · {assertion.operator.toUpperCase()} · timeout {assertion.timeoutMs/1000}s</small></div></div>)}</div>{stage==='review'&&structured.assumptions.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>확인이 필요한 가정 {structured.assumptions.length}개</b>{structured.assumptions.map(item=><p key={item}>{item}</p>)}</div></div>}{stage==='ready'&&<div className="ready-box"><CheckCircle2/><div><b>실행 준비가 완료되었습니다.</b><p>승인된 {structured.versionId}은 수정할 수 없으며 변경 시 새 버전이 생성됩니다.</p></div></div>}</>}
       </article>
     </div>
   </section>

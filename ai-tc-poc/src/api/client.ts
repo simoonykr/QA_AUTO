@@ -142,6 +142,10 @@ export const api = {
   },
 
   async updateTestCaseVersionStep(versionId: string, stepId: string, environmentId: string, patch: TestCaseVersionStepPatch): Promise<ExecutionPlan> {
+    if (USE_MOCK_API) {
+      const plan=await this.getExecutionPlan(versionId,environmentId)
+      return {...plan,revision:plan.revision+1,planHash:`mock-plan-${Date.now()}`,steps:plan.steps.map(step=>step.id===stepId?{...step,...patch}:step),warnings:[],executable:true}
+    }
     return request(`/test-case-versions/${versionId}/steps/${encodeURIComponent(stepId)}?environmentId=${encodeURIComponent(environmentId)}`, {
       method: 'PATCH', body: JSON.stringify(patch),
     })

@@ -1,6 +1,6 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-02
+마지막 갱신: 2026-09-03
 
 이 문서는 두 담당 에이전트의 공용 전달판이다. 각 담당자는 작업 시작 전에 읽고, 작업 완료 커밋에서 자기 영역을 직접 갱신한다.
 
@@ -39,6 +39,9 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 새 TC 시작·파일 교체·승인 후 원문 편집 시 이전 승인 `versionId`를 즉시 무효화해 과거 구조화 결과 실행 방지
 - 실행 설정과 생성 사이에 예상 시나리오·UUID·구조화 출처·필수 파라미터 검증 화면을 추가하고, 실행 모니터의 고정 로그인 데모 화면 제거
 - 실제 동일 출처 배포에서 상태 확인이 `/api/v1/health`로 잘못 조합되던 문제를 수정하고 `/health` 직접 호출로 통일
+- 구조화 검토 화면에서 실행 환경별 계획을 조회하고 warning의 `stepNo`·`stepId`·`missingFields`로 오류 단계를 강조
+- 승인 전 selector·URL·operator·expected·value·secretRef·assertionType 부분 편집을 PATCH API에 연결하고 반환된 revision·plan hash·warnings·executable을 즉시 반영
+- 서버 실행 계획의 `executable=true`일 때만 검토 승인 버튼을 활성화하고, 마스킹된 value는 사용자가 직접 변경하지 않는 한 PATCH body에서 제외
 
 백엔드에 요청:
 
@@ -118,7 +121,6 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
 - 저장된 구조화 단계의 selector/value가 불완전할 때 승인 전에 수정하는 편집·검증 UX
-- 단계 수정 API를 구조화 검토 편집 UI에 연결하고 저장 후 반환된 revision/hash/warnings로 승인 버튼 상태 갱신
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
 
 ## 최근 검증
@@ -149,6 +151,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - AI 독립 Playwright Execution `fbc2e998-9600-41ff-8364-bd4a8ac4d3a4`: 4단계 전체 `PASS`, 원장·비용 변화 없음
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - 프론트 AI 정책 UI: 서버 정책 `0/1`에 따른 선택 제한 및 요청값 상한 적용 검증
+- 프론트 구조화 단계 편집: TypeScript 검사, 실제 API 프로덕션 빌드, Firebase Mock 빌드 통과
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
 - OpenAI 설정 변경: 정적 diff 검사 통과. Docker Desktop 엔진 미실행으로 백엔드 테스트는 다음 작업에서 재검증 필요
