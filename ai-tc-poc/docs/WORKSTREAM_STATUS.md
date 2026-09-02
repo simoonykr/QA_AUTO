@@ -51,9 +51,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 
 다음 작업:
 
-- 실제 API 주소가 준비되면 Mock 비활성화 통합 테스트
 - 가입 신청·승인 대기·거절 화면을 백엔드 계약에 맞춰 연결
-- 파일 업로드 UI 연결
+- 다중 TC 자동 분리 API가 확정되면 선택·분리·일괄 저장 UX 연결
 
 ## 백엔드 현황
 
@@ -118,9 +117,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - PostgreSQL·Redis·MinIO·Worker 외부 통합 배포
 - Firebase와 실제 API 연결 후 인증·SSE·증적 통합 검증
 - 가입·승인·사용자 역할 API
-- 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
-- 저장된 구조화 단계의 selector/value가 불완전할 때 승인 전에 수정하는 편집·검증 UX
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
 
 ## 최근 검증
@@ -152,6 +149,11 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 프론트엔드: 타입 검사 및 Firebase 데모 빌드 통과
 - 프론트 AI 정책 UI: 서버 정책 `0/1`에 따른 선택 제한 및 요청값 상한 적용 검증
 - 프론트 구조화 단계 편집: TypeScript 검사, 실제 API 프로덕션 빌드, Firebase Mock 빌드 통과
+- 최신 `main` `4b516d9` Temporary Staging 재배포: 프론트 Docker 프로덕션 빌드 통과, `/health` 200, 미인증 API 401, 기존 Quick Tunnel 유지, 외부 공개 포트는 frontend `8080`만 사용
+- HTTPS 성공 검증 Version `f0869071-9fdb-4f25-be56-3580f65c67bd`, Execution `8e61b8d7-d612-406d-9aca-545c8b5e12a0`: plan hash `613541ba457b545e9003f2654247a87c07df58283295642129289c98d0387694`, 계획/실제 4단계 및 `planStepId` 일치, 최종 `PASS`
+- HTTPS 실패 검증 Execution `8fb52bc6-207b-44ba-b63b-c4441387e9ea`: 최종 `FAIL`, `ASSERTION_FAILED`, 실패 PNG Artifact `8ca2274f-7dff-459e-9ceb-c6e249361139` 및 PNG signature 확인
+- HTTPS 단계 편집 검증 Version `32ab90d3-1c61-4cc4-9c9a-0f029661944e`: PATCH 전 `executable=false`, `missingFields=[value,secretRef]`; 저장 후 revision `1→2`, plan hash 재계산, `executable=true`, 승인 200
+- 위 HTTPS 재검증은 API `AI_ENABLED=false`, 실행 `maxAiCalls=0`, 구조화 `RULE_BASED/0회/$0` 상태로 수행
 - Firebase UI: `https://tracepilot-demo.web.app`
 - Firebase 공개 회귀: 대시보드·주요 메뉴·Mock PASS 실행 확인
 - OpenAI 설정 변경: 정적 diff 검사 통과. Docker Desktop 엔진 미실행으로 백엔드 테스트는 다음 작업에서 재검증 필요

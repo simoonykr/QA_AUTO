@@ -120,6 +120,17 @@ if ($failureDetails.artifacts.Count -gt 0) {
     $artifactCheck = @{ id = $artifact.id; type = $artifact.type; sizeBytes = $artifact.sizeBytes; pngSignature = $signature }
 }
 
+$editableStructured = (Invoke-Api POST "/api/v1/test-case-versions/current/structure" @{
+    title = "Temporary Staging editable plan"
+    rawText = "navigate 접속`n#email 입력`n#submit 클릭`n#welcome 문구 `"환영합니다`" 확인"
+}).Body
+$editablePlanBefore = (Invoke-Api GET "/api/v1/test-case-versions/$($editableStructured.versionId)/execution-plan?environmentId=$($environment.id)").Body
+$editablePlanAfter = (Invoke-Api PATCH "/api/v1/test-case-versions/$($editableStructured.versionId)/steps/step-2?environmentId=$($environment.id)" @{
+    selector = '[data-testid="email"]'
+    value = "qa@example.test"
+}).Body
+$editableApproval = Invoke-Api POST "/api/v1/test-case-versions/$($editableStructured.versionId)/approve"
+
 $invalidStructured = (Invoke-Api POST "/api/v1/test-case-versions/current/structure" @{
     title = "Temporary Staging invalid plan"
     rawText = "navigate 접속`n#email 입력`n#submit 클릭`n#welcome 문구 `"환영합니다`" 확인"
@@ -139,6 +150,13 @@ if (@($successDetails.steps | Where-Object { -not $_.planStepId }).Count -gt 0) 
 }
 if ($failure.status -ne "FAIL" -or $failureDetails.errorCode -ne "ASSERTION_FAILED" -or -not $artifactCheck) {
     throw "Intentional failure evidence validation failed."
+}
+if ($editablePlanBefore.executable -or
+    $editablePlanAfter.revision -ne ($editablePlanBefore.revision + 1) -or
+    -not $editablePlanAfter.executable -or
+    -not $editablePlanAfter.planHash -or
+    $editableApproval.Status -ne 200) {
+    throw "Editable plan PATCH validation failed."
 }
 if ($invalidPlan.executable -or $invalidApproval.Status -ne 422) {
     throw "Invalid plan was not blocked."
@@ -176,6 +194,16 @@ if ($invalidPlan.executable -or $invalidApproval.Status -ne 422) {
         errorCode = $failureDetails.errorCode
         failedSteps = @($failureDetails.steps | Where-Object status -eq "FAIL")
         artifact = $artifactCheck
+    }
+    editable = @{
+        versionId = $editableStructured.versionId
+        executableBefore = $editablePlanBefore.executable
+        revisionBefore = $editablePlanBefore.revision
+        missingFieldsBefore = $editablePlanBefore.warnings[0].missingFields
+        executableAfter = $editablePlanAfter.executable
+        revisionAfter = $editablePlanAfter.revision
+        planHashAfter = $editablePlanAfter.planHash
+        approvalStatus = $editableApproval.Status
     }
     invalid = @{
         versionId = $invalidStructured.versionId
