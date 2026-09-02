@@ -25,7 +25,7 @@ class OpenAIGateway:
             "model": self.settings.openai_model,
             "store": False,
             "max_output_tokens": self.settings.ai_max_output_tokens,
-            "instructions": "Convert the Korean or English QA notes into one concise executable Playwright test-case structure. Provide url for navigate and selector/value/expected/operator when the source contains them; otherwise use null and make uncertainty explicit. Never include real credentials or invent secret values.",
+            "instructions": "Convert the Korean or English QA notes into one concise executable Playwright test-case structure. Provide url for navigate and selector/value/expected/operator only when the exact value is grounded in the source; otherwise use null and add an assumption that review is required. Never invent selectors, credentials, or secret values.",
             "input": f"Title: {title}\n\nQA notes:\n{raw_text}",
             "text": {"format": {"type": "json_schema", "name": "structured_test_case", "strict": True, "schema": _OUTPUT_SCHEMA}},
         }

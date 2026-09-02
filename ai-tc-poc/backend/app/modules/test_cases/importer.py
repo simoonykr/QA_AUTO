@@ -63,7 +63,38 @@ def _parse_docx(data: bytes) -> str:
     return _clean(paragraphs)
 
 
-def _parse_xlsx(data: bytes) -> str:
+def _normalize_header(value: str) -> str:
+    return "".join(character for character in value.lower() if character.isalnum() or "가" <= character <= "힣")
+
+
+def _is_tc_header(row: list[str]) -> bool:
+    headers = {_normalize_header(value) for value in row}
+    id_headers = {"tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}
+    step_headers = {"step", "steps", "teststep", "teststeps", "단계", "테스트단계"}
+    expected_headers = {"expectedresult", "expected", "기대결과", "예상결과"}
+    return bool(headers & expected_headers) and bool(headers & (id_headers | step_headers))
+
+
+def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str]]:
+    header_index = next((index for index, row in enumerate(rows) if _is_tc_header(row)), None)
+    if header_index is None:
+        return _clean([" | ".join(value for value in row if value) for row in rows]), []
+    tc_rows = rows[header_index:]
+    normalized_header = [_normalize_header(value) for value in tc_rows[0]]
+    id_headers = {"tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}
+    id_column = next((index for index, value in enumerate(normalized_header) if value in id_headers), None)
+    if id_column is None:
+        detected_count = sum(1 for row in tc_rows[1:] if any(value.strip() for value in row))
+    else:
+        detected_count = sum(1 for row in tc_rows[1:] if len(row) > id_column and row[id_column].strip())
+    warnings = [
+        f"XLSX_METADATA_ROWS_EXCLUDED:{header_index}",
+        f"XLSX_TEST_CASES_DETECTED:{detected_count}",
+    ]
+    return _clean([" | ".join(value for value in row if value) for row in tc_rows]), warnings
+
+
+def _parse_xlsx(data: bytes) -> tuple[str, list[str]]:
     main_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
     doc_rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -77,7 +108,7 @@ def _parse_xlsx(data: bytes) -> str:
         workbook = ElementTree.fromstring(_read_archive_member(archive, "xl/workbook.xml"))
         relationships = ElementTree.fromstring(_read_archive_member(archive, "xl/_rels/workbook.xml.rels"))
         targets = {item.attrib["Id"]: item.attrib["Target"] for item in relationships.findall(f"{{{rel_ns}}}Relationship")}
-        lines: list[str] = []
+        rows: list[list[str]] = []
         for sheet in workbook.findall(f".//{{{main_ns}}}sheet"):
             relationship_id = sheet.attrib[f"{{{doc_rel_ns}}}id"]
             target = targets[relationship_id].lstrip("/")
@@ -96,11 +127,10 @@ def _parse_xlsx(data: bytes) -> str:
                         value = shared[int(value_node.text or "0")]
                     else:
                         value = value_node.text or ""
-                    if value.strip():
-                        values.append(value.strip())
-                if values:
-                    lines.append(" | ".join(values))
-    return _clean(lines)
+                    values.append(value.strip())
+                if any(values):
+                    rows.append(values)
+    return _prepare_xlsx_rows(rows)
 
 
 def import_test_case(filename: str, data: bytes) -> ImportedTestCase:
@@ -126,7 +156,7 @@ def import_test_case(filename: str, data: bytes) -> ImportedTestCase:
         elif extension == ".docx":
             raw_text = _parse_docx(data)
         else:
-            raw_text = _parse_xlsx(data)
+            raw_text, warnings = _parse_xlsx(data)
     except (BadZipFile, KeyError, ElementTree.ParseError, IndexError, ValueError):
         raise DomainError("INVALID_DOCUMENT", "손상되었거나 지원하지 않는 문서 구조입니다.", 422) from None
 
@@ -135,4 +165,5 @@ def import_test_case(filename: str, data: bytes) -> ImportedTestCase:
         format=extension.removeprefix("."),
         title=Path(safe_name).stem[:200] or "가져온 테스트 케이스",
         rawText=raw_text,
+        warnings=warnings if extension == ".xlsx" else [],
     )

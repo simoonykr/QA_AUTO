@@ -7,7 +7,7 @@ from app.core.database import get_session
 from app.core.errors import DomainError
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError
 from app.modules.test_cases.execution_plan import ExecutionPlanError
-from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCase, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval
+from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCase, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
 from app.modules.test_cases.importer import MAX_UPLOAD_BYTES, import_test_case
 from app.modules.ai.service import StructureService
 
@@ -58,8 +58,29 @@ async def approve_test_case_version(version_id: UUID, request: Request, session:
     except ExecutionPlanError as exc:
         raise DomainError(
             exc.code, exc.message, 422, retryable=False,
-            details={"stepNo": exc.step_no} if exc.step_no else {},
+            details={"stepNo": exc.step_no, "stepId": exc.step_id, "missingFields": exc.missing_fields},
         ) from None
+
+
+@version_router.patch("/{version_id}/steps/{step_id}", response_model=ExecutionPlanResponse)
+async def patch_test_case_version_step(
+    version_id: UUID,
+    step_id: str,
+    body: TestCaseVersionStepPatch,
+    request: Request,
+    environment_id: UUID | None = Query(default=None, alias="environmentId"),
+    session: AsyncSession = Depends(get_session),
+) -> ExecutionPlanResponse:
+    settings = get_settings()
+    repository = SqlTestCaseRepository(
+        session, UUID(settings.default_organization_id), UUID(settings.default_project_id),
+        UUID(settings.default_user_id), UUID(request.state.request_id),
+    )
+    try:
+        return await repository.patch_step(version_id, step_id, body, environment_id)
+    except TestCaseVersionRuleError as exc:
+        status_code = 409 if exc.code == "TC_VERSION_NOT_REVIEWABLE" else (422 if exc.code == "TC_STEP_PATCH_EMPTY" else 404)
+        raise DomainError(exc.code, exc.message, status_code) from None
 
 
 @version_router.get("/{version_id}/execution-plan", response_model=ExecutionPlanResponse)

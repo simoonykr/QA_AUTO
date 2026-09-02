@@ -32,6 +32,19 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
             raise AssertionError(f"HTTP {response.status}")
         return StepResult(action={"type": "navigate", "url": url})
 
+    if action_type == "assert" and (step.get("assertionType") == "url" or (step.get("url") and not step.get("selector"))):
+        operator = step.get("operator", "contains")
+        expected = str(_required(step, "expected"))
+        if operator == "equals":
+            await expect(page).to_have_url(expected, timeout=timeout)
+        elif operator in {"contains", "matches"}:
+            if expected not in page.url:
+                raise AssertionError(f"URL does not contain expected value: {expected}")
+        else:
+            raise StepDefinitionError(f"지원하지 않는 URL assertion operator입니다: {operator}")
+        assertion = {"type": "url", "operator": operator, "expected": expected}
+        return StepResult(action={"type": "assert", "url": page.url}, assertion=assertion)
+
     selector = _required(step, "selector")
     locator = page.locator(selector)
     if action_type == "fill":
@@ -52,7 +65,7 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
             await expect(locator).to_contain_text(expected, timeout=timeout)
         else:
             raise StepDefinitionError(f"지원하지 않는 assertion operator입니다: {operator}")
-        assertion = {"type": "text", "selector": selector, "operator": operator, "expected": expected}
+        assertion = {"type": step.get("assertionType") or "text", "selector": selector, "operator": operator, "expected": expected}
         return StepResult(action={"type": "assert", "selector": selector}, assertion=assertion)
 
     raise StepDefinitionError(f"지원하지 않는 action입니다: {action_type}")

@@ -39,6 +39,7 @@ class StructuredStep(BaseModel):
     value: str | None = None
     operator: str | None = None
     expected: str | None = None
+    assertionType: Literal["url", "text", "element"] | None = None
     timeoutMs: int | None = Field(default=None, ge=100, le=60_000)
 
 
@@ -76,6 +77,16 @@ class TestCaseVersionApproval(BaseModel):
     status: Literal["READY"]
 
 
+class TestCaseVersionStepPatch(BaseModel):
+    selector: str | None = None
+    url: str | None = None
+    operator: str | None = None
+    expected: str | None = None
+    value: str | None = None
+    secretRef: str | None = None
+    assertionType: Literal["url", "text", "element"] | None = None
+
+
 class ExecutionPlanEnvironment(BaseModel):
     id: str
     name: str
@@ -93,6 +104,7 @@ class ExecutionPlanStep(BaseModel):
     secretRef: str | None = None
     operator: str | None = None
     expected: str | None = None
+    assertionType: Literal["url", "text", "element"] | None = None
     timeoutMs: int
 
 
@@ -100,6 +112,8 @@ class ExecutionPlanWarning(BaseModel):
     code: str
     message: str
     stepNo: int | None = None
+    stepId: str | None = None
+    missingFields: list[str] = Field(default_factory=list)
 
 
 class ExecutionPlanResponse(BaseModel):

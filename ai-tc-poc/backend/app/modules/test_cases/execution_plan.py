@@ -11,10 +11,12 @@ SUPPORTED_ACTIONS = {"navigate", "fill", "click", "assert"}
 
 
 class ExecutionPlanError(Exception):
-    def __init__(self, code: str, message: str, *, step_no: int | None = None):
+    def __init__(self, code: str, message: str, *, step_no: int | None = None, step_id: str | None = None, missing_fields: list[str] | None = None):
         self.code = code
         self.message = message
         self.step_no = step_no
+        self.step_id = step_id
+        self.missing_fields = missing_fields or []
 
 
 @dataclass(frozen=True)
@@ -59,20 +61,25 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
             "secretRef": source.get("secretRef"),
             "operator": source.get("operator"),
             "expected": source.get("expected"),
+            "assertionType": source.get("assertionType"),
             "timeoutMs": int(source.get("timeoutMs") or 10_000),
         }
         if action == "navigate":
             step["url"] = step["url"] or environment.base_url
             _validate_target_url(step["url"], environment.allowed_domains, step_no)
         elif action == "fill":
-            _require(step, "selector", step_no)
+            _require(step, ["selector"], step_no)
             if not step.get("value") and not step.get("secretRef"):
-                raise ExecutionPlanError("STEP_PARAMETER_MISSING", "fill 단계에 value 또는 secretRef가 필요합니다.", step_no=step_no)
+                raise ExecutionPlanError("STEP_PARAMETER_MISSING", "fill 단계에 value 또는 secretRef가 필요합니다.", step_no=step_no, step_id=step["id"], missing_fields=["value", "secretRef"])
         elif action == "click":
-            _require(step, "selector", step_no)
+            _require(step, ["selector"], step_no)
         elif action == "assert":
-            for field in ("selector", "operator", "expected"):
-                _require(step, field, step_no)
+            assertion_type = step.get("assertionType") or ("url" if step.get("url") and not step.get("selector") else "text")
+            step["assertionType"] = assertion_type
+            required = ["url", "operator", "expected"] if assertion_type == "url" else ["selector", "operator", "expected"]
+            _require(step, required, step_no)
+            if assertion_type == "url":
+                _validate_target_url(step["url"], environment.allowed_domains, step_no, step["id"])
         normalized.append(step)
 
     revision = int(spec.get("planRevision") or 1)
@@ -112,17 +119,22 @@ def preview_execution_steps(version: TestCaseVersion, environment: Environment) 
             "secretRef": source.get("secretRef"),
             "operator": source.get("operator"),
             "expected": source.get("expected"),
+            "assertionType": source.get("assertionType") or ("url" if action == "assert" and source.get("url") and not source.get("selector") else ("text" if action == "assert" else None)),
             "timeoutMs": int(source.get("timeoutMs") or 10_000),
         })
     return preview
 
 
-def _require(step: dict[str, Any], field: str, step_no: int) -> None:
-    if step.get(field) is None or step.get(field) == "":
-        raise ExecutionPlanError("STEP_PARAMETER_MISSING", f"{step['action']} 단계에 {field} 값이 필요합니다.", step_no=step_no)
+def _require(step: dict[str, Any], fields: list[str], step_no: int) -> None:
+    missing = [field for field in fields if step.get(field) is None or step.get(field) == ""]
+    if missing:
+        raise ExecutionPlanError(
+            "STEP_PARAMETER_MISSING", f"{step['action']} 단계에 {', '.join(missing)} 값이 필요합니다.",
+            step_no=step_no, step_id=step["id"], missing_fields=missing,
+        )
 
 
-def _validate_target_url(url: str, allowed_domains: list[str], step_no: int) -> None:
+def _validate_target_url(url: str, allowed_domains: list[str], step_no: int, step_id: str | None = None) -> None:
     host = urlparse(url).hostname
     if not host or host not in allowed_domains:
-        raise ExecutionPlanError("TARGET_URL_NOT_ALLOWED", "허용되지 않은 테스트 대상 주소입니다.", step_no=step_no)
+        raise ExecutionPlanError("TARGET_URL_NOT_ALLOWED", "허용되지 않은 테스트 대상 주소입니다.", step_no=step_no, step_id=step_id)

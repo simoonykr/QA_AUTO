@@ -53,6 +53,7 @@ export interface StructuredStep {
   value?: string | null
   operator?: string | null
   expected?: string | null
+  assertionType?: 'url' | 'text' | 'element' | null
   timeoutMs?: number | null
 }
 
@@ -89,6 +90,7 @@ export interface ExecutionPlanStep {
   secretRef?: string | null
   operator?: string | null
   expected?: string | null
+  assertionType?: 'url' | 'text' | 'element' | null
   timeoutMs: number
 }
 
@@ -99,9 +101,19 @@ export interface ExecutionPlan {
   planHash?: string | null
   environment: { id: string; name: string; baseUrl: string }
   steps: ExecutionPlanStep[]
-  warnings: Array<{ code: string; message: string; stepNo?: number | null }>
+  warnings: Array<{ code: string; message: string; stepNo?: number | null; stepId?: string | null; missingFields: string[] }>
   executable: boolean
   source: 'AI' | 'CACHE' | 'RULE_BASED'
+}
+
+export interface TestCaseVersionStepPatch {
+  selector?: string | null
+  url?: string | null
+  operator?: string | null
+  expected?: string | null
+  value?: string | null
+  secretRef?: string | null
+  assertionType?: 'url' | 'text' | 'element' | null
 }
 
 export interface TestCaseImportResponse {

@@ -91,6 +91,10 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 프론트 실행 예정 시나리오를 서버 `executable`, `warnings` 단일 기준으로 전환
 - XLSX 구조화 요청 전 결과 집계·보고서 메타데이터 영역을 제외하고 실제 TC 헤더부터 전송하며 제외 행 수를 UI에 표시 (`Expected Result` 유지)
 - 최신 `main` `3ec9900`을 기존 Cloudflare Quick Tunnel에 공개용 Compose로 재배포하고, 파일 업로드부터 실제 Worker 성공·실패까지 재현 가능한 HTTPS 검증 스크립트 추가
+- 실행 계획 오류에 `stepNo`·`stepId`·`missingFields`를 추가하고 URL assertion은 selector 없이, text/element assertion은 selector 필수로 분리 검증
+- 승인 전 `PATCH /test-case-versions/{versionId}/steps/{stepId}`로 selector·URL·operator·expected·value/secretRef를 수정하고 revision/hash를 재계산하는 API 추가
+- 원문에 없는 AI selector를 제거하고 `assumptions`에 검토 사유를 남기는 selector grounding 보호 추가
+- XLSX TC 헤더 이전 결과 집계·보고서 메타데이터를 제외하고 Expected Result를 보존하며 제외 행 수·감지 TC 수 warning 반환
 
 프론트엔드에 요청:
 
@@ -114,11 +118,12 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 프론트 파일 가져오기 UI와 `/test-cases/import` 실제 연결
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
 - 저장된 구조화 단계의 selector/value가 불완전할 때 승인 전에 수정하는 편집·검증 UX
+- 단계 수정 API를 구조화 검토 편집 UI에 연결하고 저장 후 반환된 revision/hash/warnings로 승인 버튼 상태 갱신
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
 
 ## 최근 검증
 
-- 백엔드: `44 passed` (`3 warnings`)
+- 백엔드: `48 passed` (`3 warnings`), 프론트 배포 Dockerfile 프로덕션 빌드 통과
 - 구조화 회귀: 정확히 9,613자 원문 보존, 102건 다중 TC 감지, AI 호출 전 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 차단 확인
 - AI 사용량 계약: 실제 Gateway 결과 `AI/1`, 캐시 `CACHE/0`, AI 비활성 원문 기반 결과 `RULE_BASED/0`
 - 영속 버전 통합: Version `787dc8b2-cecf-4ae4-b438-9786a7a65e2f`, 승인 전 `TC_NOT_READY`(409), 승인 `READY`
@@ -128,6 +133,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 파일 기반 성공 Version `ec034696-6bd6-46c7-b7fb-cad261de0892`, Execution `930d4547-5bb4-4472-b250-dd7e039e3718`: `executable=true`, revision 1, plan hash `fa3f083e83d203ec695bd00545363ab32d5bb6de1f8ba315acc4e22fcf3daeab`, 계획/실제 각 4단계, `stepCountMatches=true`, `step-1..4` 모두 `planStepId` 및 action·selector·expected 일치, 최종 `PASS`
 - 의도적 실패 Version `647eae19-34df-4722-a40d-dd87ead60db2`, Execution `5d35f1e2-09b2-49d5-96ec-bb976ef7ea2b`: 4번 assert 실패, `ASSERTION_FAILED`, PNG Artifact `bdbbd9da-f54d-490c-8704-b69c96eb1af2` 다운로드 및 PNG signature 확인
 - 필수값 누락 Version `f7361da1-8887-4b8f-9fb8-1c0b6f2b88d2`: 계획 `executable=false`, `STEP_PARAMETER_MISSING`, 승인 HTTP 422로 실행 차단
+- 단계 수정 API 실환경 검증 Version `bb4afc1a-7f9d-4cc2-9ee3-626a47a0f8d8`: 누락 warning에 step 2/`step-2`/`value,secretRef`, PATCH 후 revision `1→2→3` 및 hash 변경, selector 없는 URL assertion `executable=true`, 승인 200
+- assert selector 누락 실환경 검증 Version `a1be9190-3a62-4e73-aa62-b67a9cb047e7`: `assumptions` 검토 안내, 계획·승인 오류 모두 step 4/`step-4`/`missingFields=[selector]`, 승인 422 확인
 - 위 성공·실패 실행은 모두 `maxAiCalls=0`, 구조화 `RULE_BASED/0회/$0`; API·Outbox·Worker 로그에서 비밀값, OpenAI 네트워크, 고정 Seed UUID, `tcv-new-v1`/fallback 표식 미검출
 - 검증 중 최초 fixture의 `#email/#submit/#welcome` selector가 실제 대상 DOM과 달라 실패한 문제를 발견했고, 파일 fixture를 대상의 `data-testid` 계약에 맞춰 수정하여 재검증 완료. `demo-target`은 선택된 테스트 환경으로만 사용됐으며 고정 Seed·로그인 샘플 fallback은 사용하지 않음
 - 필수 파라미터 누락 계획은 승인 시 `STEP_PARAMETER_MISSING`으로 차단 확인

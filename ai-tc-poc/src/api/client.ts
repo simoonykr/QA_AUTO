@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPlan, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPlan, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -139,6 +139,12 @@ export const api = {
       steps: structured.steps.map((step,index)=>({stepNo:index+1,id:step.id,title:step.title,action:step.action as 'navigate'|'fill'|'click'|'assert',url:step.url,selector:step.selector,value:step.value?'***':null,operator:step.operator,expected:step.expected,timeoutMs:step.timeoutMs??10000})),
       warnings: [], executable: true, source: structured.aiUsage.source,
     }
+  },
+
+  async updateTestCaseVersionStep(versionId: string, stepId: string, environmentId: string, patch: TestCaseVersionStepPatch): Promise<ExecutionPlan> {
+    return request(`/test-case-versions/${versionId}/steps/${encodeURIComponent(stepId)}?environmentId=${encodeURIComponent(environmentId)}`, {
+      method: 'PATCH', body: JSON.stringify(patch),
+    })
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {

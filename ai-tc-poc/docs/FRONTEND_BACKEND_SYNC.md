@@ -66,11 +66,15 @@
    - 서버는 새 `test_cases`와 `test_case_versions` row를 만들고 원문과 구조화 결과를 저장한다.
    - 응답의 `versionId`는 매 요청마다 생성되는 UUID이며 `status`는 `REVIEW_REQUIRED`다.
    - `structured_spec`에는 Worker가 읽을 `schemaVersion`, `steps`, 전제조건, assertion, 가정, confidence가 저장된다.
-2. `POST /api/v1/test-case-versions/{versionId}/approve`
+2. 승인 전 단계 수정이 필요한 경우:
+   - `PATCH /api/v1/test-case-versions/{versionId}/steps/{stepId}?environmentId={environmentId}`
+   - body에서 `selector`, `url`, `operator`, `expected`, `value`, `secretRef`, `assertionType`(`url|text|element`)을 부분 수정한다.
+   - `REVIEW_REQUIRED` 버전만 수정 가능하며 성공 시 revision을 1 증가시키고 새 plan hash를 계산한 `ExecutionPlanResponse`를 반환한다.
+3. `POST /api/v1/test-case-versions/{versionId}/approve`
    - 요청 body 없음
    - 응답: `{ "versionId": "<uuid>", "status": "READY" }`
    - 이미 READY인 버전의 재승인은 같은 응답을 반환한다.
-3. `POST /api/v1/executions`
+4. `POST /api/v1/executions`
    - 구조화 응답에서 받은 동일 `versionId`를 `testCaseVersionId`로 보낸다.
    - 서버는 해당 UUID가 현재 조직·프로젝트에 실제 존재하고 `READY`인지 확인한다.
    - Worker는 execution이 가리키는 동일 버전의 DB `structured_spec.steps`만 실행한다. 빈 명세나 고정 Seed fallback은 사용하지 않는다.
@@ -96,8 +100,8 @@ GET /api/v1/test-case-versions/{versionId}/execution-plan?environmentId={environ
 
 - `versionId`, `status`, `revision`, `planHash`
 - `environment`: `id`, `name`, `baseUrl`
-- `steps`: `stepNo`, `id`, `title`, `action`, `url`, `selector`, 마스킹된 `value`, `secretRef`, `operator`, `expected`, `timeoutMs`
-- `warnings`: `code`, `message`, `stepNo?`
+- `steps`: `stepNo`, `id`, `title`, `action`, `url`, `selector`, 마스킹된 `value`, `secretRef`, `operator`, `expected`, `assertionType`, `timeoutMs`
+- `warnings`: `code`, `message`, `stepNo?`, `stepId?`, `missingFields[]`
 - `executable`, `source`
 
 조회 API는 잘못된 계획도 HTTP 200으로 반환하며 `executable=false`, `planHash=null`, `warnings`로 검토 사유를 제공한다. 승인과 실행 생성은 같은 서버 검증기를 사용하고 잘못된 계획을 HTTP 422로 차단한다.
@@ -106,6 +110,13 @@ GET /api/v1/test-case-versions/{versionId}/execution-plan?environmentId={environ
 - `UNSUPPORTED_ACTION`: 현재 Worker가 지원하지 않는 action
 - `TARGET_URL_NOT_ALLOWED`: 환경 allowlist 밖의 navigate URL
 - `EXECUTION_PLAN_INVALID`: 빈 계획, 잘못된 단계 형식 또는 실행 생성 후 계획 불일치
+
+assertion 검증 규칙:
+
+- `assertionType=url`: `url`, `operator`, `expected` 필수. selector 없이 실행 가능하며 URL은 환경 allowlist를 통과해야 한다.
+- `assertionType=text|element`: `selector`, `operator`, `expected` 필수.
+- 과거 데이터는 assert 단계에 URL이 있고 selector가 없으면 `url`, 그 외에는 `text`로 호환 추론한다.
+- 승인 HTTP 422 오류의 `details`에도 `stepNo`, `stepId`, `missingFields`가 동일하게 포함된다.
 
 실행 생성 시 서버는 검증된 계획의 SHA-256 hash, revision, 환경 ID·base URL과 계획 단계 수를 execution 설정 snapshot에 저장한다. Worker는 실행 직전에 DB 명세로 hash를 다시 계산하고 snapshot과 하나라도 다르면 브라우저를 시작하지 않는다.
 
@@ -143,6 +154,9 @@ GET /api/v1/test-case-versions/{versionId}/execution-plan?environmentId={environ
 - 가져온 `rawText`는 구조화 요청에서 최대 50,000자까지 그대로 전송한다.
 - 여러 TC가 감지되면 구조화 API는 HTTP 422 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED`와 `details.reviewStatus=REVIEW_REQUIRED`, 감지 건수, 원문 길이, `aiCallCount=0`을 반환한다. 프론트는 이를 일반 분석 성공으로 처리하지 않고 TC별 분리가 필요한 검토 상태로 안내한다.
 - AI 비활성 상태의 단일 TC는 원문 기반 `RULE_BASED`, `callCount=0` 결과를 반환하며 고정 로그인 예제를 반환하지 않는다.
+- XLSX는 `TC ID/Test Steps/Expected Result` 또는 `단계/기대결과` 헤더를 TC 테이블 시작으로 탐지하고 그 이전 결과 집계·보고서 메타데이터 행을 `rawText`에서 제외한다. 개별 TC의 `Expected Result` 열은 유지한다.
+- XLSX 응답 `warnings`에는 `XLSX_METADATA_ROWS_EXCLUDED:{행수}`, `XLSX_TEST_CASES_DETECTED:{건수}`가 포함된다.
+- 구조화 selector는 원문에 정확한 근거가 있을 때만 유지한다. 원문에 없는 AI selector는 제거되고 `assumptions`에 승인 전 수정 필요 사유가 추가된다.
 - 실제 OpenAI 응답인 경우에만 `aiUsage.source=AI`, `callCount=1`이다. 캐시는 `CACHE/0`, AI 비활성 규칙 기반은 `RULE_BASED/0`이다.
 
 새 상세 조회 계약:

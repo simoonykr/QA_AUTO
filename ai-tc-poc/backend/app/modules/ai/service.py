@@ -42,7 +42,7 @@ class StructureService:
                 },
             )
         if not self.settings.ai_ready:
-            return rule_based_structure(body, self.settings.ai_daily_budget_usd, version_id)
+            return enforce_selector_grounding(rule_based_structure(body, self.settings.ai_daily_budget_usd, version_id), body.rawText)
 
         organization_id = UUID(self.settings.default_organization_id)
         request_hash = self._request_hash(body)
@@ -58,7 +58,7 @@ class StructureService:
             result["versionId"] = str(version_id)
             result["status"] = "REVIEW_REQUIRED"
             result["aiUsage"] = self._usage("CACHE", 0, 0, Decimal("0"), spent)
-            return StructuredTestCase.model_validate(result)
+            return enforce_selector_grounding(StructuredTestCase.model_validate(result), body.rawText)
 
         reservation = self._maximum_cost(body)
         if spent + reservation > self.settings.ai_daily_budget_usd:
@@ -86,6 +86,7 @@ class StructureService:
                 "versionId": str(version_id), "status": "REVIEW_REQUIRED", "title": body.title, **gateway_result.data,
                 "aiUsage": self._usage("AI", gateway_result.input_tokens, gateway_result.output_tokens, cost, spent + cost),
             })
+            structured = enforce_selector_grounding(structured, body.rawText)
             ledger.status = AiUsageStatus.COMPLETED
             ledger.input_tokens = gateway_result.input_tokens
             ledger.output_tokens = gateway_result.output_tokens
@@ -189,6 +190,20 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         confidence=0.68,
         aiUsage=AiUsageSummary(source="RULE_BASED", callCount=0, inputTokens=0, outputTokens=0, costUsd="0.00000000", dailySpentUsd="0.00000000", dailyBudgetUsd=money(budget)),
     )
+
+
+def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> StructuredTestCase:
+    assumptions = list(result.assumptions)
+    steps = []
+    for step in result.steps:
+        updated = step
+        if step.selector and step.selector not in raw_text:
+            assumptions.append(f"{step.id}: 원문 근거가 없는 selector를 제거했습니다. 승인 전에 selector를 입력해 주세요.")
+            updated = step.model_copy(update={"selector": None})
+        if updated.action in {"fill", "click", "assert"} and updated.assertionType != "url" and not updated.selector:
+            assumptions.append(f"{updated.id}: selector가 없어 승인 전에 검토·수정이 필요합니다.")
+        steps.append(updated)
+    return result.model_copy(update={"steps": steps, "assumptions": list(dict.fromkeys(assumptions))})
 
 
 def detect_test_case_count(raw_text: str) -> int:

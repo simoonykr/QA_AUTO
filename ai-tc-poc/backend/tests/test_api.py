@@ -55,6 +55,13 @@ class FakeTestCaseRepository:
             "warnings": [], "executable": True, "source": "RULE_BASED",
         }
 
+    async def patch_step(self, version_id, step_id, body, environment_id=None):
+        plan = await self.execution_plan(version_id, environment_id)
+        plan["revision"] = 2
+        plan["planHash"] = "b" * 64
+        plan["steps"][0].update(body.model_dump(exclude_unset=True))
+        return plan
+
 
 class FakeExecutionRepository:
     ids: dict[str, ExecutionResponse] = {}
@@ -276,6 +283,17 @@ def test_execution_plan_endpoint_returns_server_validated_contract() -> None:
     assert response.json()["planHash"] == "a" * 64
 
 
+def test_patch_review_step_returns_recalculated_plan() -> None:
+    response = client.patch(
+        "/api/v1/test-case-versions/00000000-0000-0000-0000-000000000501/steps/step-1",
+        params={"environmentId": "00000000-0000-0000-0000-000000000301"},
+        json={"url": "http://demo-target", "operator": "contains", "expected": "demo-target", "assertionType": "url"},
+    )
+    assert response.status_code == 200
+    assert response.json()["revision"] == 2
+    assert response.json()["planHash"] == "b" * 64
+
+
 def test_structure_rejects_9613_character_multi_tc_import_for_review() -> None:
     rows = ["TC ID | 제목 | 단계"] + [
         f"TC-{index:03d} | KakaoGames 테스트 {index} | 실행 후 결과 확인"
@@ -361,6 +379,48 @@ def test_import_xlsx_test_case() -> None:
     )
     assert response.status_code == 200
     assert response.json()["rawText"] == "단계 | 기대결과\n로그인 | 대시보드 노출"
+
+
+def test_import_xlsx_excludes_report_metadata_before_tc_table() -> None:
+    workbook = BytesIO()
+    rows = [
+        ["Pass", "12"], ["Build Version", "2026.09"], ["담당자", "QA"],
+        ["TC ID", "Test Steps", "Expected Result"],
+        ["TC-001", "로그인 버튼 클릭", "대시보드 노출"],
+        ["TC-002", "로그아웃 버튼 클릭", "로그인 화면 노출"],
+    ]
+    row_xml = "".join(
+        "<row>" + "".join(f'<c t="inlineStr"><is><t>{cell}</t></is></c>' for cell in row) + "</row>"
+        for row in rows
+    )
+    with ZipFile(workbook, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="Report" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+            f'{row_xml}</sheetData></worksheet>',
+        )
+    response = client.post(
+        "/api/v1/test-cases/import",
+        files={"file": ("report.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "Pass" not in body["rawText"]
+    assert "Build Version" not in body["rawText"]
+    assert "Expected Result" in body["rawText"]
+    assert "대시보드 노출" in body["rawText"]
+    assert body["warnings"] == ["XLSX_METADATA_ROWS_EXCLUDED:3", "XLSX_TEST_CASES_DETECTED:2"]
 
 
 def test_import_rejects_unsupported_or_large_file() -> None:
@@ -620,6 +680,24 @@ def test_execution_plan_validates_parameters_hash_and_masks_values() -> None:
     assert plan.steps[0]["url"] == "http://demo-target"
     assert plan.public_steps[1]["value"] == "***"
     assert plan.steps[1]["value"] == "private"
+
+
+def test_url_assertion_does_not_require_selector() -> None:
+    plan = validate_execution_plan(_plan_version([
+        {"id": "url-check", "title": "URL 확인", "action": "assert", "assertionType": "url", "url": "http://demo-target/dashboard", "operator": "contains", "expected": "/dashboard"},
+    ]), _plan_environment())
+    assert plan.steps[0]["selector"] is None
+    assert plan.steps[0]["assertionType"] == "url"
+
+
+def test_text_assertion_error_includes_step_and_missing_field() -> None:
+    with pytest.raises(ExecutionPlanError) as raised:
+        validate_execution_plan(_plan_version([
+            {"id": "result-check", "title": "결과 확인", "action": "assert", "assertionType": "text", "operator": "contains", "expected": "완료"},
+        ]), _plan_environment())
+    assert raised.value.step_no == 1
+    assert raised.value.step_id == "result-check"
+    assert raised.value.missing_fields == ["selector"]
 
 
 @pytest.mark.parametrize(("step","code"), [

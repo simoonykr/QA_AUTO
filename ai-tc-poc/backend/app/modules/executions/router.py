@@ -39,7 +39,7 @@ async def create_execution(body: CreateExecutionRequest, request: Request, idemp
     except ExecutionPlanError as exc:
         raise DomainError(
             exc.code, exc.message, 422, retryable=False,
-            details={"stepNo": exc.step_no} if exc.step_no else {},
+            details={"stepNo": exc.step_no, "stepId": exc.step_id, "missingFields": exc.missing_fields},
         ) from None
 
 

@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AuditEvent, Environment, Project, TestCase, TestCaseVersion
 from app.modules.test_cases.execution_plan import ExecutionPlanError, preview_execution_steps, validate_execution_plan
-from app.schemas.test_cases import ExecutionPlanResponse, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval
+from app.schemas.test_cases import ExecutionPlanResponse, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
 
 
 class TestCaseVersionRuleError(Exception):
@@ -119,7 +119,39 @@ class SqlTestCaseRepository:
         return TestCaseVersionApproval(versionId=str(version.id), status="READY")
 
     async def execution_plan(self, version_id: UUID, environment_id: UUID | None = None) -> ExecutionPlanResponse:
-        version = await self.session.scalar(
+        version = await self._version(version_id)
+        if not version:
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        environment = await self._environment(environment_id)
+        return self._plan_response(version, environment)
+
+    async def patch_step(self, version_id: UUID, step_id: str, body: TestCaseVersionStepPatch, environment_id: UUID | None = None) -> ExecutionPlanResponse:
+        version = await self._version(version_id, lock=True)
+        if not version:
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        if version.status != "REVIEW_REQUIRED":
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_REVIEWABLE", "승인 전 REVIEW_REQUIRED 단계만 수정할 수 있습니다.")
+        spec = dict(version.structured_spec or {})
+        steps = [dict(step) for step in spec.get("steps") or []]
+        target = next((step for step in steps if str(step.get("id")) == step_id), None)
+        if target is None:
+            raise TestCaseVersionRuleError("TC_STEP_NOT_FOUND", "수정할 구조화 단계를 찾을 수 없습니다.")
+        changes = body.model_dump(exclude_unset=True)
+        if not changes:
+            raise TestCaseVersionRuleError("TC_STEP_PATCH_EMPTY", "수정할 단계 값을 하나 이상 입력해 주세요.")
+        target.update(changes)
+        spec["steps"] = steps
+        spec["planRevision"] = int(spec.get("planRevision") or 1) + 1
+        version.structured_spec = spec
+        self.session.add(self._audit("test_case_version.step_updated", version.id, {
+            "stepId": step_id, "fields": sorted(changes), "planRevision": spec["planRevision"],
+        }))
+        await self.session.commit()
+        environment = await self._environment(environment_id)
+        return self._plan_response(version, environment)
+
+    async def _version(self, version_id: UUID, lock: bool = False) -> TestCaseVersion | None:
+        statement = (
             select(TestCaseVersion)
             .join(TestCase, TestCase.id == TestCaseVersion.test_case_id)
             .where(
@@ -129,9 +161,11 @@ class SqlTestCaseRepository:
                 TestCase.project_id == self.project_id,
             )
         )
-        if not version:
-            raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
-        environment = await self._environment(environment_id)
+        if lock:
+            statement = statement.with_for_update()
+        return await self.session.scalar(statement)
+
+    def _plan_response(self, version: TestCaseVersion, environment: Environment) -> ExecutionPlanResponse:
         try:
             plan = validate_execution_plan(version, environment)
             return ExecutionPlanResponse(
@@ -152,7 +186,10 @@ class SqlTestCaseRepository:
                 planHash=None,
                 environment={"id": str(environment.id), "name": environment.name, "baseUrl": environment.base_url},
                 steps=preview_execution_steps(version, environment),
-                warnings=[{"code": exc.code, "message": exc.message, "stepNo": exc.step_no}],
+                warnings=[{
+                    "code": exc.code, "message": exc.message, "stepNo": exc.step_no,
+                    "stepId": exc.step_id, "missingFields": exc.missing_fields,
+                }],
                 executable=False,
                 source=str((version.structured_spec or {}).get("source") or "RULE_BASED"),
             )
