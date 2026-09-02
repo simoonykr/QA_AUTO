@@ -1,0 +1,4 @@
+navigate 접속
+[data-testid="email"] 입력 "qa@example.test"
+[data-testid="login"] 클릭
+[data-testid="welcome"] 문구 "환영합니다" 확인
