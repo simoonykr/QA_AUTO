@@ -279,6 +279,32 @@ function Dashboard({onRun, onCases}: {onRun: () => void; onCases: () => void}) {
 function Metric({icon,label,value,delta,tone}: {icon: React.ReactNode; label:string; value:string; delta:string; tone:string}) { return <article className="metric"><div className={`metric-icon ${tone}`}>{icon}</div><div><p>{label}</p><strong>{value}</strong><small className={tone}>{delta}</small></div></article> }
 function StatusIcon({type}: {type:'pass'|'running'|'fail'}) { return <span className={`status-icon ${type}`}>{type==='pass'?<Check/>:type==='fail'?<XCircle/>:<Activity/>}</span> }
 
+function prepareStructureRawText(rawText:string):{rawText:string;excludedLineCount:number;excludedResultColumns:number} {
+  const lines=rawText.split(/\r?\n/)
+  const markerIndex=lines.findIndex(line=>/do not put test cases above this line/i.test(line))
+  let preparedLines=lines
+  let excludedLineCount=0
+  if(markerIndex>=0) {
+    preparedLines=lines.slice(markerIndex+1)
+    excludedLineCount=markerIndex+1
+  } else {
+    const tableIndex=lines.findIndex(line=>{const value=line.toLowerCase();return line.includes('|')&&/\bid\b/.test(value)&&value.includes('step')&&(value.includes('expected result')||value.includes('기대 결과'))})
+    const hasSummary=lines.slice(0,Math.max(tableIndex,0)).some(line=>/result\s*\|\s*count\s*\|\s*rate|^(pass|fail|n\/?a|block|not test|total)\s*\|/i.test(line.trim()))
+    if(tableIndex>0&&hasSummary){preparedLines=lines.slice(tableIndex);excludedLineCount=tableIndex}
+  }
+  const headerIndex=preparedLines.findIndex(line=>line.toLowerCase().includes('expected result')||line.includes('기대 결과'))
+  if(headerIndex>=0&&preparedLines[headerIndex].includes('|')) {
+    const headers=preparedLines[headerIndex].split('|').map(cell=>cell.trim())
+    const expectedIndex=headers.findIndex(header=>/expected result|기대 결과/i.test(header))
+    if(expectedIndex>=0&&headers.length>expectedIndex+1) {
+      const excludedResultColumns=headers.length-expectedIndex-1
+      const functionalLines=preparedLines.map((line,index)=>index>=headerIndex&&line.includes('|')?line.split('|').slice(0,expectedIndex+1).join(' | ').trim():line)
+      return {rawText:functionalLines.join('\n').trim(),excludedLineCount,excludedResultColumns}
+    }
+  }
+  return {rawText:preparedLines.join('\n').trim(),excludedLineCount,excludedResultColumns:0}
+}
+
 function ManagementPage({kind,onToast}:{kind:'environment'|'account'|'policy';onToast:(s:string)=>void}) {
   const data = {
     environment: { eyebrow:'EXECUTION TARGETS', title:'실행 환경', desc:'테스트 대상 URL과 브라우저 접근 범위를 관리합니다.', button:'환경 추가', icon:<TerminalSquare/>, rows:[['Staging','https://staging.storefront.test','정상'],['Development','https://dev.storefront.test','정상']] },
@@ -308,6 +334,8 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [importedFile,setImportedFile] = useState('')
   const [importing,setImporting] = useState(false)
   const [importWarnings,setImportWarnings] = useState<string[]>([])
+  const [excludedMetadataLines,setExcludedMetadataLines] = useState(0)
+  const [excludedResultColumns,setExcludedResultColumns] = useState(0)
   const [splitReview,setSplitReview] = useState<{detectedTestCaseCount:number;rawTextLength:number}|null>(null)
   const [structured,setStructured] = useState<StructuredTestCase | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -318,6 +346,8 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     if (file.size > 10 * 1024 * 1024) return onToast('파일 크기는 최대 10MB까지 지원합니다.')
     setImportedFile(file.name)
     setImportWarnings([])
+    setExcludedMetadataLines(0)
+    setExcludedResultColumns(0)
     setSplitReview(null)
     onVersion(null); onStructured(null)
     setImporting(true)
@@ -336,8 +366,11 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   }
   const structure = async () => {
     if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
+    const prepared=prepareStructureRawText(raw)
+    setExcludedMetadataLines(prepared.excludedLineCount)
+    setExcludedResultColumns(prepared.excludedResultColumns)
     setStage('structuring')
-    try { const result=await api.structureTestCase(title.trim(),raw.trim()); setStructured(result); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
+    try { const result=await api.structureTestCase(title.trim(),prepared.rawText); setStructured(result); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
     catch (error) {
       if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
         const count=Number(error.body.details?.detectedTestCaseCount)
@@ -359,13 +392,13 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       onToast('검토 승인이 완료되었습니다.')
     } catch (error) { onToast(error instanceof ApiError ? error.body.message : '검토 승인에 실패했습니다.') }
   }
-  const editTitle = (value:string) => { setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); onVersion(null); setStage('draft') }
-  const editRaw = (value:string) => { setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); onVersion(null); setStage('draft') }
+  const editTitle = (value:string) => { setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
+  const editRaw = (value:string) => { setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   return <section className="page author-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
-      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>editTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>editRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
+      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);setExcludedMetadataLines(0);setExcludedResultColumns(0);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}{(excludedMetadataLines>0||excludedResultColumns>0)&&<div className="metadata-filter"><ShieldCheck/><div><b>결과 집계 {excludedMetadataLines}개 행 · 결과 기록 {excludedResultColumns}개 열 제외</b><p>실제 TC의 ID, 계층, 전제조건, Step, Expected Result만 구조화에 사용했습니다.</p></div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>editTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>editRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> 규칙 기반으로 구조화 <ArrowRight/></>}</button></article>
       <article className={`panel review-panel ${(stage==='draft'||stage==='split-review')?'empty-review':''}`}>
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>현재는 AI 토큰 없이 전제조건, 실행 단계와 기대 결과를 안전한 규칙으로 분리합니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
         {stage==='split-review'&&splitReview&&<div className="review-empty split-review"><div><ListChecks/></div><h2>TC별 분리가 필요합니다.</h2><p>하나의 파일에서 여러 테스트 케이스가 감지되어 단일 실행 단계로 구조화하지 않았습니다.</p><div className="split-review-stats"><span><b>{splitReview.detectedTestCaseCount.toLocaleString()}개</b> 감지된 TC</span><span><b>{splitReview.rawTextLength.toLocaleString()}자</b> 원문 길이</span></div><div className="ambiguity"><AlertTriangle/><div><b>검토가 필요한 상태입니다.</b><p>현재 원문을 TC별로 분리한 뒤 각각 구조화해야 합니다. 이 결과는 승인하거나 실행할 수 없습니다.</p></div></div></div>}

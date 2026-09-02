@@ -89,6 +89,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 실행 생성 시 plan hash/revision/환경/단계 수 snapshot 저장, Worker 시작 전 DB 계획과 재검증
 - 실행 상세에 계획 UUID·hash·revision·환경·계획/실제 단계 수와 단계별 `planStepId` 추가
 - 프론트 실행 예정 시나리오를 서버 `executable`, `warnings` 단일 기준으로 전환
+- XLSX 구조화 요청 전 결과 집계·보고서 메타데이터 영역을 제외하고 실제 TC 헤더부터 전송하며 제외 행 수를 UI에 표시 (`Expected Result` 유지)
 - 최신 `main` `3ec9900`을 기존 Cloudflare Quick Tunnel에 공개용 Compose로 재배포하고, 파일 업로드부터 실제 Worker 성공·실패까지 재현 가능한 HTTPS 검증 스크립트 추가
 
 프론트엔드에 요청:
