@@ -10,7 +10,7 @@ import {
 import { api, apiConfig, ApiError } from './api/client'
 import type { AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionDetails, ExecutionPolicy, ExecutionStepRun, StructuredTestCase, TestAccountSummary, TestCaseSummary } from './api/types'
 
-type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
+type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
 type AuthorStage = 'draft' | 'structuring' | 'split-review' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
@@ -38,6 +38,8 @@ function App() {
   const [notice, setNotice] = useState('')
   const [authorStage, setAuthorStage] = useState<AuthorStage>('draft')
   const [activeVersionId, setActiveVersionId] = useState<string | null>(null)
+  const [activeStructured, setActiveStructured] = useState<StructuredTestCase | null>(null)
+  const [pendingExecution, setPendingExecution] = useState<CreateExecutionRequest | null>(null)
   const [testCases, setTestCases] = useState<TestCaseSummary[]>([])
   const [loadingCases, setLoadingCases] = useState(true)
   const [startingRun, setStartingRun] = useState(false)
@@ -206,9 +208,10 @@ function App() {
         </header>
 
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
-        {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setActiveVersionId(null); setAuthorStage('draft'); setView('author')}}/>}
-        {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onVersion={setActiveVersionId} onToast={toast}/>}
-        {view === 'configure' && activeVersionId && <RunConfigure versionId={activeVersionId} onBack={() => setView('author')} onStart={createRun} starting={startingRun}/>}
+        {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setActiveVersionId(null); setActiveStructured(null); setAuthorStage('draft'); setView('author')}}/>}
+        {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onVersion={setActiveVersionId} onStructured={setActiveStructured} onToast={toast}/>}
+        {view === 'configure' && activeVersionId && <RunConfigure versionId={activeVersionId} onBack={() => setView('author')} onStart={request=>{setPendingExecution(request);setView('plan')}} starting={startingRun}/>}
+        {view === 'plan' && activeStructured && pendingExecution && <ExecutionPlanPreview structured={activeStructured} request={pendingExecution} onBack={()=>setView('configure')} onConfirm={()=>void createRun(pendingExecution)} starting={startingRun}/>}
         {view === 'run' && <RunMonitor state={runState} execution={execution} details={executionDetails} activeStep={activeStep} start={startRun} stop={cancelRun} onResult={() => setView('result')}/>}
         {view === 'result' && <ResultDetail execution={execution} details={executionDetails} onBack={() => setView('dashboard')} onRetry={retryRun}/>}
         {view === 'environments' && <ManagementPage kind="environment" onToast={toast}/>}
@@ -299,7 +302,7 @@ function Cases({query,setQuery,rows,loading,onRun,onCreate}: {query:string; setQ
   </section>
 }
 
-function Author({stage,setStage,onBack,onRun,onVersion,onToast}: {stage:AuthorStage; setStage:(s:AuthorStage)=>void; onBack:()=>void; onRun:()=>void; onVersion:(id:string|null)=>void; onToast:(s:string)=>void}) {
+function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {stage:AuthorStage; setStage:(s:AuthorStage)=>void; onBack:()=>void; onRun:()=>void; onVersion:(id:string|null)=>void; onStructured:(value:StructuredTestCase|null)=>void; onToast:(s:string)=>void}) {
   const [title,setTitle] = useState('신규 사용자 이메일 회원가입')
   const [raw,setRaw] = useState('Staging 환경에 접속한다.\n회원가입 버튼을 누르고 사용하지 않은 이메일과 안전한 비밀번호를 입력한다.\n약관에 동의한 뒤 가입을 완료한다.\n가입 완료 후 환영 메시지와 대시보드가 표시되는지 확인한다.')
   const [importedFile,setImportedFile] = useState('')
@@ -316,7 +319,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onToast}: {stage:AuthorSt
     setImportedFile(file.name)
     setImportWarnings([])
     setSplitReview(null)
-    onVersion(null)
+    onVersion(null); onStructured(null)
     setImporting(true)
     try {
       const imported = await api.importTestCase(file)
@@ -334,12 +337,12 @@ function Author({stage,setStage,onBack,onRun,onVersion,onToast}: {stage:AuthorSt
   const structure = async () => {
     if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
     setStage('structuring')
-    try { const result=await api.structureTestCase(title.trim(),raw.trim()); setStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
+    try { const result=await api.structureTestCase(title.trim(),raw.trim()); setStructured(result); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
     catch (error) {
       if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
         const count=Number(error.body.details?.detectedTestCaseCount)
         const length=Number(error.body.details?.rawTextLength)
-        setStructured(null)
+        setStructured(null); onStructured(null)
         setSplitReview({detectedTestCaseCount:Number.isFinite(count)?count:0,rawTextLength:Number.isFinite(length)?length:raw.trim().length})
         setStage('split-review')
         onToast('여러 테스트 케이스가 감지되어 TC별 분리가 필요합니다.')
@@ -352,12 +355,12 @@ function Author({stage,setStage,onBack,onRun,onVersion,onToast}: {stage:AuthorSt
     if (!structured) return
     try {
       const approved=await api.approveTestCaseVersion(structured.versionId)
-      setStructured({...structured,status:approved.status}); onVersion(approved.versionId); setStage('ready')
+      const ready={...structured,status:approved.status}; setStructured(ready); onStructured(ready); onVersion(approved.versionId); setStage('ready')
       onToast('검토 승인이 완료되었습니다.')
     } catch (error) { onToast(error instanceof ApiError ? error.body.message : '검토 승인에 실패했습니다.') }
   }
-  const editTitle = (value:string) => { setTitle(value); setStructured(null); setSplitReview(null); onVersion(null); setStage('draft') }
-  const editRaw = (value:string) => { setRaw(value); setStructured(null); setSplitReview(null); onVersion(null); setStage('draft') }
+  const editTitle = (value:string) => { setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); onVersion(null); setStage('draft') }
+  const editRaw = (value:string) => { setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); onVersion(null); setStage('draft') }
   return <section className="page author-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
@@ -371,6 +374,19 @@ function Author({stage,setStage,onBack,onRun,onVersion,onToast}: {stage:AuthorSt
       </article>
     </div>
   </section>
+}
+
+function planStepIssue(step:StructuredTestCase['steps'][number]):string|null {
+  if(step.action==='fill'&&(!step.selector||!step.value))return 'selector와 입력값이 필요합니다.'
+  if(step.action==='click'&&!step.selector)return 'selector가 필요합니다.'
+  if(step.action==='assert'&&(!step.selector||!step.operator||!step.expected))return 'selector, operator, expected가 필요합니다.'
+  return null
+}
+
+function ExecutionPlanPreview({structured,request,onBack,onConfirm,starting}:{structured:StructuredTestCase;request:CreateExecutionRequest;onBack:()=>void;onConfirm:()=>void;starting:boolean}) {
+  const issues=structured.steps.map((step,index)=>({index,step,issue:planStepIssue(step)})).filter(item=>item.issue)
+  const executable=structured.status==='READY'&&structured.steps.length>0&&issues.length===0
+  return <section className="page plan-page"><div className="author-top"><button className="back-button" onClick={onBack}>← 실행 설정</button><span className={`stage-badge ${executable?'ready':'split-review'}`}>{executable?'EXECUTABLE':'PLAN REVIEW REQUIRED'}</span></div><div className="page-heading compact"><div><p className="eyebrow">EXECUTION PLAN</p><h1>실행 예정 시나리오</h1><p>Worker가 수행할 단계와 검증 조건을 실행 전에 확인하세요.</p></div></div><div className="plan-summary"><article className="panel"><small>TC 버전</small><b>{structured.versionId}</b></article><article className="panel"><small>구조화 출처</small><b>{structured.aiUsage.source} · {structured.aiUsage.callCount}회</b></article><article className="panel"><small>실행 환경</small><b>{request.environmentId}</b></article><article className="panel"><small>브라우저</small><b>{request.browser} · {request.viewport}</b></article></div>{!executable&&<div className="config-error"><AlertTriangle size={16}/><div><b>실행할 수 없는 계획입니다.</b><span>{structured.steps.length===0?'실행 단계가 없습니다.':`${issues.length}개 단계의 필수 실행값이 누락됐습니다.`}</span></div></div>}<div className="plan-grid"><article className="panel plan-steps"><div className="panel-head"><div><h2>예상 수행 단계</h2><p>{structured.steps.length}개 단계 · 승인 버전 기준</p></div><span className={`pill ${executable?'pass':'fail'}`}>{executable?'READY':'BLOCKED'}</span></div>{structured.steps.map((step,index)=>{const issue=planStepIssue(step);return <div className={`plan-step ${issue?'invalid':''}`} key={step.id}><span>{index+1}</span><div><b>{step.title}</b><small>{step.action.toUpperCase()} · {step.url||step.selector||'실행 환경 기본값'}</small>{step.action==='assert'&&<p>{step.operator} · {step.expected}</p>}{issue&&<p className="plan-issue">{issue}</p>}</div></div>})}</article><aside className="panel plan-confirm"><ShieldCheck/><h2>최종 실행 확인</h2><p>표시된 UUID와 단계가 실제 Worker 실행의 기준입니다. 입력 비밀값은 화면과 로그에서 마스킹됩니다.</p><dl><div><dt>단계</dt><dd>{structured.steps.length}개</dd></div><div><dt>AI 호출 한도</dt><dd>{request.limits.maxAiCalls}회</dd></div><div><dt>재시도</dt><dd>{request.limits.retryCount}회</dd></div></dl><button className="primary wide" onClick={onConfirm} disabled={!executable||starting}>{starting?<Activity className="spin"/>:<Play/>} {starting?'실행 생성 중':'이 시나리오로 실행'}</button>{!executable&&<small>누락된 실행값을 수정하고 다시 구조화해 주세요.</small>}</aside></div></section>
 }
 
 function RunConfigure({versionId,onBack,onStart,starting}: {versionId:string; onBack:()=>void; onStart:(input:CreateExecutionRequest)=>void; starting:boolean}) {
@@ -416,7 +432,7 @@ function RunConfigure({versionId,onBack,onStart,starting}: {versionId:string; on
       <ConfigCard icon={<Gauge/>} title="실행 한도" caption="무한 반복과 예상치 못한 비용을 방지합니다." tone="amber">
         <div className="form-grid triple"><Field label="최대 실행 시간"><Select value={duration} setValue={setDuration} options={durationOptions}/></Field><Field label="최대 AI 호출"><Select value={maxAiCalls} setValue={setMaxAiCalls} options={aiCallOptions}/></Field><Field label="오류 재시도"><Select value={retryCount} setValue={setRetryCount} options={retryOptions}/></Field></div><div className="toggle-row"><div><b>위험 행동 시 사람 승인</b><span>서버 정책에 따라 위험 행동에서 실행을 일시정지합니다.</span></div><button className={`toggle ${approval?'on':''}`} onClick={()=>setApproval(!approval)} aria-pressed={approval}><i/></button></div>
       </ConfigCard>
-    </div><aside className="panel launch-summary"><p className="eyebrow">EXECUTION SUMMARY</p><h2>신규 사용자 이메일 회원가입</h2><span className="summary-ready"><CheckCircle2/> {loadingResources?'설정 확인 중':'실행 준비 완료'}</span><dl><div><dt>환경</dt><dd>{selectedEnvironment?.name??environment}</dd></div><div><dt>브라우저</dt><dd>{browser}</dd></div><div><dt>계정</dt><dd>{selectedAccount?.name??account}</dd></div><div><dt>화면</dt><dd>{viewport}</dd></div><div><dt>AI 호출</dt><dd>{maxAiCalls}회</dd></div><div><dt>시간 제한</dt><dd>{duration}분</dd></div></dl><div className="cost-estimate"><Sparkles/><div><span>AI API 상태</span><b>{Number(maxAiCalls)===0?'비활성 · 토큰 사용 없음':`최대 ${maxAiCalls}회`}</b></div></div><button className="primary wide launch" onClick={submit} disabled={starting||loadingResources||Boolean(resourceError)||!environment||!account}>{starting?<Activity className="spin"/>:<Play fill="currentColor"/>} {starting?'실행 생성 중':'격리 세션에서 실행'}</button><p className="launch-note"><ShieldCheck/> 허용된 action만 정책 검사 후 수행됩니다.</p></aside></div>
+    </div><aside className="panel launch-summary"><p className="eyebrow">EXECUTION SUMMARY</p><h2>승인된 TC 실행</h2><span className="summary-ready"><CheckCircle2/> {loadingResources?'설정 확인 중':'실행 준비 완료'}</span><dl><div><dt>환경</dt><dd>{selectedEnvironment?.name??environment}</dd></div><div><dt>브라우저</dt><dd>{browser}</dd></div><div><dt>계정</dt><dd>{selectedAccount?.name??account}</dd></div><div><dt>화면</dt><dd>{viewport}</dd></div><div><dt>AI 호출</dt><dd>{maxAiCalls}회</dd></div><div><dt>시간 제한</dt><dd>{duration}분</dd></div></dl><div className="cost-estimate"><Sparkles/><div><span>AI API 상태</span><b>{Number(maxAiCalls)===0?'비활성 · 토큰 사용 없음':`최대 ${maxAiCalls}회`}</b></div></div><button className="primary wide launch" onClick={submit} disabled={starting||loadingResources||Boolean(resourceError)||!environment||!account}><Eye/> 실행 예정 시나리오 확인</button><p className="launch-note"><ShieldCheck/> 시나리오 확인 후에만 Worker 실행이 생성됩니다.</p></aside></div>
   </section>
 }
 
@@ -439,7 +455,7 @@ function RunMonitor({state,execution,details,activeStep,start,stop,onResult}: {s
   const terminal = state === 'done' || state === 'failed'
   const statusLabel = execution?.status ?? (state === 'idle' ? 'READY' : 'RUNNING')
   return <section className="page"><div className="page-heading compact"><div><p className="eyebrow">LIVE EXECUTION</p><h1>실행 모니터</h1><p>{running ? `${execution?.id ?? '실행 준비 중'} · ${statusLabel}` : state==='done' ? '실행이 성공적으로 완료되었습니다.' : state==='failed' ? `실행이 ${statusLabel} 상태로 종료되었습니다.` : '현재 실행 중인 테스트가 없습니다.'}</p></div><div className="run-controls">{!running && !terminal && <button className="primary" onClick={start}><Play size={16}/> 실행 시작</button>}{running && <button className="danger" onClick={stop}><Square size={15}/> 중단 요청</button>}{terminal&&<><button className="secondary" onClick={start}><RefreshCw size={15}/> 다시 실행</button><button className="primary" onClick={onResult}>결과 상세 <ArrowRight size={15}/></button></>}</div></div>
-    <div className="monitor-grid"><article className="panel browser-panel"><div className="browser-top"><span/><span/><span/><div>Playwright Chromium smoke test</div><ShieldCheck size={15}/></div><div className="mock-site"><div className="mock-logo">storefront</div><div className="mock-login"><h2>다시 만나서 반가워요</h2><p>테스트 계정으로 안전하게 로그인합니다.</p><label>이메일</label><div className="mock-input">qa.runner@company.test</div><label>비밀번호</label><div className="mock-input">••••••••••••</div><div className={`mock-button ${activeStep===3?'targeted':''}`}>로그인</div></div>{state==='done'&&<div className="success-overlay"><CheckCircle2/><b>페이지 접속 성공</b><span>Chromium smoke test가 정상적으로 완료되었습니다.</span></div>}{state==='failed'&&<div className="success-overlay failed-overlay"><XCircle/><b>페이지 접속 실패</b><span>{statusLabel} · 실행 결과 상세를 확인해 주세요.</span></div>}</div></article>
+    <div className="monitor-grid"><article className="panel browser-panel"><div className="browser-top"><span/><span/><span/><div>{execution?.id??'Playwright 실행 세션 준비 중'}</div><ShieldCheck size={15}/></div><div className="execution-surface"><div className={`execution-state ${state}`} >{running?<Activity className="spin"/>:state==='done'?<CheckCircle2/>:state==='failed'?<XCircle/>:<MonitorCheck/>}<h2>{running?'실제 브라우저를 실행하고 있습니다.':state==='done'?'실행이 완료되었습니다.':state==='failed'?'실행에 실패했습니다.':'실행 대기 중입니다.'}</h2><p>고정 데모 화면을 표시하지 않습니다. 실제 화면은 Worker가 저장한 스크린샷 증적에서 확인하세요.</p><dl><div><dt>Execution</dt><dd>{execution?.id??'-'}</dd></div><div><dt>TC Version</dt><dd>{execution?.testCaseVersionId??'-'}</dd></div><div><dt>Status</dt><dd>{statusLabel}</dd></div><div><dt>기록된 단계</dt><dd>{details?.steps.length??0}개</dd></div></dl></div></div></article>
       <article className="panel timeline"><div className="panel-head"><div><h2>Worker 실행 단계</h2><p>실제 상태 · {statusLabel}</p></div><span className={`live ${state}`}>{statusLabel}</span></div><div className="step-list">{details?.steps.length ? details.steps.map((s,i)=>{const done=s.status==='PASS'; const failed=s.status==='FAIL'||Boolean(s.errorCode); return <div className={`step ${done?'done':''} ${failed?'failed':''}`} key={s.id}><span>{done?<Check/>:failed?<XCircle/>:i+1}</span><div><b>{stepTitle(s)}</b><p>{typeof s.action?.selector==='string'?s.action.selector:typeof s.action?.url==='string'?s.action.url:'구조화된 테스트 단계'}</p><small>{stepAction(s)} · {s.status}{s.errorCode&&` · ${s.errorCode}`}</small></div></div>}) : workerSteps.map((s,i)=>{const done=i<activeStep&&state!=='failed'; const active=i===activeStep&&running; return <div className={`step ${done?'done':''} ${active?'active':''}`} key={s.title}><span>{done?<Check/>:active?<Activity/>:i+1}</span><div><b>{s.title}</b><p>{s.note}</p><small>{s.type} {done&&'· 완료'}</small></div></div>})}</div><div className="budget"><div><span>완료 단계</span><b>{details?.steps.filter(s=>s.status==='PASS').length ?? activeStep} / {details?.steps.length || workerSteps.length}</b></div><div className="budget-bar"><i style={{width:`${details?.steps.length ? details.steps.filter(s=>s.status==='PASS').length/details.steps.length*100 : Math.min(activeStep*33,100)}%`}}/></div><div><span>증적 파일</span><b>{details?.artifacts.length ?? 0}개</b></div></div></article></div>
   </section>
 }
