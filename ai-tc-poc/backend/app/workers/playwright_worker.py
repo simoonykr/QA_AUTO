@@ -17,6 +17,7 @@ from app.core.database import SessionFactory
 from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, StepRun, TestCase, TestCaseVersion
 from app.workers.artifacts import ArtifactStore, StoredArtifact
 from app.workers.step_executor import StepDefinitionError, execute_step
+from app.modules.test_cases.execution_plan import ExecutionPlanError, validate_execution_plan
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,17 @@ def _assert_allowed_url(url: str, allowed_domains: list[str]) -> None:
     host = urlparse(url).hostname
     if not host or host not in allowed_domains:
         raise WorkerExecutionError("DOMAIN_NOT_ALLOWED", "허용되지 않은 테스트 대상 주소입니다.")
+
+
+def _assert_plan_snapshot(execution: Execution, plan) -> None:
+    snapshot = execution.settings.get("executionPlan") or {}
+    if (
+        snapshot.get("hash") != plan.plan_hash
+        or int(snapshot.get("revision") or 0) != plan.revision
+        or int(snapshot.get("stepCount") or 0) != len(plan.steps)
+        or snapshot.get("environmentId") != plan.environment["id"]
+    ):
+        raise WorkerExecutionError("EXECUTION_PLAN_INVALID", "실행 생성 이후 계획이 변경되어 Worker 실행을 차단했습니다.")
 
 
 async def _claim_execution(execution_id: UUID) -> bool:
@@ -209,10 +221,12 @@ async def execute(execution_id: UUID) -> None:
             await _finish(execution_id, ExecutionStatus.CANCELLED)
             return
 
-        structured_spec = version.structured_spec
-        steps = structured_spec.get("steps")
-        if not isinstance(steps, list) or not steps:
-            raise WorkerExecutionError("INVALID_TEST_SPEC", "구조화된 실행 단계 형식이 올바르지 않습니다.")
+        try:
+            plan = validate_execution_plan(version, environment)
+        except ExecutionPlanError as exc:
+            raise WorkerExecutionError(exc.code, exc.message) from exc
+        _assert_plan_snapshot(execution, plan)
+        steps = plan.steps
 
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
@@ -224,7 +238,7 @@ async def execute(execution_id: UUID) -> None:
                         await _finish(execution_id, ExecutionStatus.CANCELLED)
                         return
                     current_started_at = datetime.now(UTC)
-                    current_action = {"type": step.get("action", "unknown"), "stepId": step.get("id")}
+                    current_action = {"type": step.get("action", "unknown"), "planStepId": step.get("id")}
                     try:
                         result = await execute_step(page, step, environment.base_url)
                     except Exception:
@@ -234,7 +248,7 @@ async def execute(execution_id: UUID) -> None:
                         execution_id,
                         current_step_no,
                         status="PASS",
-                        action=result.action,
+                        action={**result.action, "planStepId": step.get("id")},
                         assertion=result.assertion,
                         started_at=current_started_at,
                     )

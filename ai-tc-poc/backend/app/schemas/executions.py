@@ -44,6 +44,7 @@ class ExecutionActionResponse(BaseModel):
 class StepRunResponse(BaseModel):
     id: str
     stepNo: int
+    planStepId: str | None = None
     status: str
     action: dict[str, Any] | None = None
     assertion: dict[str, Any] | None = None
@@ -62,9 +63,21 @@ class ArtifactResponse(BaseModel):
     createdAt: datetime
 
 
+class ExecutionPlanComparison(BaseModel):
+    testCaseVersionId: str
+    planHash: str
+    planRevision: int
+    environmentId: str
+    baseUrl: str
+    plannedStepCount: int
+    actualStepCount: int
+    stepCountMatches: bool
+
+
 class ExecutionDetailsResponse(BaseModel):
     execution: ExecutionResponse
     result: dict[str, Any] | None = None
     errorCode: str | None = None
     steps: list[StepRunResponse]
     artifacts: list[ArtifactResponse]
+    plan: ExecutionPlanComparison | None = None

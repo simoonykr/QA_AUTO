@@ -11,8 +11,9 @@ from app.db.models import (
     StepRun, TestAccount, TestCase, TestCaseVersion,
 )
 from app.schemas.executions import (
-    ArtifactResponse, CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse, StepRunResponse,
+    ArtifactResponse, CreateExecutionRequest, ExecutionDetailsResponse, ExecutionPlanComparison, ExecutionResponse, StepRunResponse,
 )
+from app.modules.test_cases.execution_plan import ValidatedExecutionPlan, validate_execution_plan
 
 
 class ExecutionRuleError(Exception):
@@ -40,7 +41,15 @@ class SqlExecutionRepository:
         version_id = self._resolve_id(body.testCaseVersionId)
         environment_id = self._resolve_id(body.environmentId)
         account_id = self._resolve_id(body.accountId) if body.accountId else None
-        await self._validate_resources(version_id, environment_id, account_id)
+        plan = await self._validate_resources(version_id, environment_id, account_id)
+        execution_settings = body.model_dump(mode="json")
+        execution_settings["executionPlan"] = {
+            "hash": plan.plan_hash,
+            "revision": plan.revision,
+            "stepCount": len(plan.steps),
+            "environmentId": plan.environment["id"],
+            "baseUrl": plan.environment["baseUrl"],
+        }
 
         execution = Execution(
             organization_id=self.organization_id,
@@ -51,7 +60,7 @@ class SqlExecutionRepository:
             idempotency_key=idempotency_key,
             request_digest=digest,
             status=ExecutionStatus.QUEUED,
-            settings=body.model_dump(mode="json"),
+            settings=execution_settings,
         )
         self.session.add(execution)
         await self.session.flush()
@@ -92,12 +101,29 @@ class SqlExecutionRepository:
             .where(Artifact.execution_id == execution.id)
             .order_by(Artifact.created_at)
         )).all()
+        plan_snapshot = execution.settings.get("executionPlan") or {}
+        planned_count = int(plan_snapshot.get("stepCount") or 0)
+        actual_count = len(step_runs)
+        comparison = None
+        if plan_snapshot:
+            comparison = ExecutionPlanComparison(
+                testCaseVersionId=str(execution.test_case_version_id),
+                planHash=str(plan_snapshot.get("hash")),
+                planRevision=int(plan_snapshot.get("revision") or 1),
+                environmentId=str(plan_snapshot.get("environmentId")),
+                baseUrl=str(plan_snapshot.get("baseUrl")),
+                plannedStepCount=planned_count,
+                actualStepCount=actual_count,
+                stepCountMatches=planned_count == actual_count,
+            )
         return ExecutionDetailsResponse(
             execution=self._response(execution),
             result=execution.result,
             errorCode=execution.error_code,
             steps=[StepRunResponse(
-                id=str(item.id), stepNo=item.step_no, status=item.status,
+                id=str(item.id), stepNo=item.step_no,
+                planStepId=(item.action or {}).get("planStepId") or (item.action or {}).get("stepId"),
+                status=item.status,
                 action=item.action, assertion=item.assertion, errorCode=item.error_code,
                 startedAt=item.started_at, endedAt=item.ended_at,
             ) for item in step_runs],
@@ -106,6 +132,7 @@ class SqlExecutionRepository:
                 type=item.artifact_type, objectKey=item.object_key, sha256=item.sha256,
                 sizeBytes=item.size_bytes, createdAt=item.created_at,
             ) for item in artifacts],
+            plan=comparison,
         )
 
     async def artifact(self, execution_id: UUID, artifact_id: UUID) -> Artifact | None:
@@ -194,7 +221,7 @@ class SqlExecutionRepository:
             Execution.idempotency_key == idempotency_key,
         ))
 
-    async def _validate_resources(self, version_id: UUID, environment_id: UUID, account_id: UUID | None) -> None:
+    async def _validate_resources(self, version_id: UUID, environment_id: UUID, account_id: UUID | None) -> ValidatedExecutionPlan:
         version = await self.session.scalar(
             select(TestCaseVersion)
             .join(TestCase, TestCase.id == TestCaseVersion.test_case_id)
@@ -226,6 +253,7 @@ class SqlExecutionRepository:
                 raise ExecutionRuleError("TEST_ACCOUNT_NOT_FOUND", "테스트 계정을 찾을 수 없습니다.")
             if account.status != "AVAILABLE":
                 raise ExecutionRuleError("TEST_ACCOUNT_UNAVAILABLE", "현재 사용할 수 없는 테스트 계정입니다.")
+        return validate_execution_plan(version, environment)
 
     def _audit(self, action: str, resource_id: UUID, metadata: dict) -> AuditEvent:
         return AuditEvent(

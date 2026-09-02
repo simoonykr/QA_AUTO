@@ -86,6 +86,36 @@
 
 프론트는 구조화 응답의 `versionId`를 보관하고 승인 성공 후에만 실행 설정으로 이동하며, 실행 생성 요청에 해당 값을 그대로 사용한다. 환경·계정은 목록 API가 반환한 UUID를 사용한다.
 
+### 실행 계획 조회·일치 검증 계약 (2026-09-02)
+
+```http
+GET /api/v1/test-case-versions/{versionId}/execution-plan?environmentId={environmentId}
+```
+
+응답 필드:
+
+- `versionId`, `status`, `revision`, `planHash`
+- `environment`: `id`, `name`, `baseUrl`
+- `steps`: `stepNo`, `id`, `title`, `action`, `url`, `selector`, 마스킹된 `value`, `secretRef`, `operator`, `expected`, `timeoutMs`
+- `warnings`: `code`, `message`, `stepNo?`
+- `executable`, `source`
+
+조회 API는 잘못된 계획도 HTTP 200으로 반환하며 `executable=false`, `planHash=null`, `warnings`로 검토 사유를 제공한다. 승인과 실행 생성은 같은 서버 검증기를 사용하고 잘못된 계획을 HTTP 422로 차단한다.
+
+- `STEP_PARAMETER_MISSING`: action별 필수 값 누락
+- `UNSUPPORTED_ACTION`: 현재 Worker가 지원하지 않는 action
+- `TARGET_URL_NOT_ALLOWED`: 환경 allowlist 밖의 navigate URL
+- `EXECUTION_PLAN_INVALID`: 빈 계획, 잘못된 단계 형식 또는 실행 생성 후 계획 불일치
+
+실행 생성 시 서버는 검증된 계획의 SHA-256 hash, revision, 환경 ID·base URL과 계획 단계 수를 execution 설정 snapshot에 저장한다. Worker는 실행 직전에 DB 명세로 hash를 다시 계산하고 snapshot과 하나라도 다르면 브라우저를 시작하지 않는다.
+
+`GET /api/v1/executions/{executionId}/details`에는 다음이 추가된다.
+
+- 각 `steps[]`: `planStepId`
+- `plan`: `testCaseVersionId`, `planHash`, `planRevision`, `environmentId`, `baseUrl`, `plannedStepCount`, `actualStepCount`, `stepCountMatches`
+
+프론트 실행 전 화면은 로컬 구조화 결과가 아니라 이 API의 `executable`을 최종 기준으로 사용한다. `fill.value`는 실제 값이 있어도 항상 `***`로 반환한다.
+
 ## 백엔드 담당자 확인 요청
 
 완료된 연동:

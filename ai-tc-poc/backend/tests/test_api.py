@@ -12,11 +12,12 @@ from app.db.models import Base
 from app.main import app
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError as VersionRuleError
+from app.modules.test_cases.execution_plan import ExecutionPlanError, validate_execution_plan
 from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 from app.schemas.resources import EnvironmentSummary, TestAccountSummary
-from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _parse_viewport
+from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport
 from app.workers.step_executor import StepDefinitionError, execute_step
 
 
@@ -44,6 +45,15 @@ class FakeTestCaseRepository:
             raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
         self.versions[key] = "READY"
         return {"versionId": key, "status": "READY"}
+
+    async def execution_plan(self, version_id, environment_id=None):
+        return {
+            "versionId": str(version_id), "status": "READY", "revision": 1,
+            "planHash": "a" * 64,
+            "environment": {"id": str(environment_id or UUID('00000000-0000-0000-0000-000000000301')), "name": "Staging", "baseUrl": "http://demo-target"},
+            "steps": [{"stepNo": 1, "id": "step-1", "title": "페이지 진입", "action": "navigate", "url": "http://demo-target", "timeoutMs": 10000}],
+            "warnings": [], "executable": True, "source": "RULE_BASED",
+        }
 
 
 class FakeExecutionRepository:
@@ -253,6 +263,17 @@ def test_each_structure_creates_a_unique_review_version_and_unknown_approval_is_
     assert first.json()["status"] == second.json()["status"] == "REVIEW_REQUIRED"
     assert unknown.status_code == 404
     assert unknown.json()["code"] == "TC_VERSION_NOT_FOUND"
+
+
+def test_execution_plan_endpoint_returns_server_validated_contract() -> None:
+    response = client.get(
+        "/api/v1/test-case-versions/00000000-0000-0000-0000-000000000501/execution-plan",
+        params={"environmentId": "00000000-0000-0000-0000-000000000301"},
+    )
+    assert response.status_code == 200
+    assert response.json()["executable"] is True
+    assert response.json()["steps"][0]["stepNo"] == 1
+    assert response.json()["planHash"] == "a" * 64
 
 
 def test_structure_rejects_9613_character_multi_tc_import_for_review() -> None:
@@ -570,6 +591,60 @@ def test_worker_parses_viewport_and_blocks_unknown_domains() -> None:
     _assert_allowed_url("http://demo-target", ["demo-target"])
     with pytest.raises(WorkerExecutionError, match="허용되지 않은"):
         _assert_allowed_url("https://example.com", ["demo-target"])
+
+
+def _plan_version(steps):
+    return SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000501"),
+        status="READY",
+        structured_spec={"steps": steps, "planRevision": 2, "source": "RULE_BASED"},
+    )
+
+
+def _plan_environment():
+    return SimpleNamespace(
+        id=UUID("00000000-0000-0000-0000-000000000301"),
+        name="Staging", base_url="http://demo-target", allowed_domains=["demo-target"],
+    )
+
+
+def test_execution_plan_validates_parameters_hash_and_masks_values() -> None:
+    plan = validate_execution_plan(_plan_version([
+        {"id": "step-1", "title": "진입", "action": "navigate"},
+        {"id": "step-2", "title": "입력", "action": "fill", "selector": "#email", "value": "private", "timeoutMs": 5000},
+        {"id": "step-3", "title": "클릭", "action": "click", "selector": "#submit"},
+        {"id": "step-4", "title": "확인", "action": "assert", "selector": "#welcome", "operator": "contains", "expected": "환영"},
+    ]), _plan_environment())
+    assert plan.revision == 2
+    assert len(plan.plan_hash) == 64
+    assert plan.steps[0]["url"] == "http://demo-target"
+    assert plan.public_steps[1]["value"] == "***"
+    assert plan.steps[1]["value"] == "private"
+
+
+@pytest.mark.parametrize(("step","code"), [
+    ({"id": "step-1", "title": "입력", "action": "fill", "selector": "#email"}, "STEP_PARAMETER_MISSING"),
+    ({"id": "step-1", "title": "대기", "action": "wait"}, "UNSUPPORTED_ACTION"),
+    ({"id": "step-1", "title": "외부", "action": "navigate", "url": "https://example.com"}, "TARGET_URL_NOT_ALLOWED"),
+])
+def test_execution_plan_rejects_invalid_steps(step, code) -> None:
+    with pytest.raises(ExecutionPlanError) as raised:
+        validate_execution_plan(_plan_version([step]), _plan_environment())
+    assert raised.value.code == code
+    assert raised.value.step_no == 1
+
+
+def test_worker_blocks_changed_execution_plan_snapshot() -> None:
+    plan = validate_execution_plan(_plan_version([
+        {"id": "step-1", "title": "진입", "action": "navigate"},
+    ]), _plan_environment())
+    execution = SimpleNamespace(settings={"executionPlan": {
+        "hash": "changed", "revision": plan.revision, "stepCount": 1,
+        "environmentId": plan.environment["id"],
+    }})
+    with pytest.raises(WorkerExecutionError) as raised:
+        _assert_plan_snapshot(execution, plan)
+    assert raised.value.code == "EXECUTION_PLAN_INVALID"
 
 
 class FakeResponse:

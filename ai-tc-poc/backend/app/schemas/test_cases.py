@@ -74,3 +74,41 @@ class StructuredTestCase(BaseModel):
 class TestCaseVersionApproval(BaseModel):
     versionId: str
     status: Literal["READY"]
+
+
+class ExecutionPlanEnvironment(BaseModel):
+    id: str
+    name: str
+    baseUrl: str
+
+
+class ExecutionPlanStep(BaseModel):
+    stepNo: int
+    id: str
+    title: str
+    action: str
+    url: str | None = None
+    selector: str | None = None
+    value: str | None = None
+    secretRef: str | None = None
+    operator: str | None = None
+    expected: str | None = None
+    timeoutMs: int
+
+
+class ExecutionPlanWarning(BaseModel):
+    code: str
+    message: str
+    stepNo: int | None = None
+
+
+class ExecutionPlanResponse(BaseModel):
+    versionId: str
+    status: TestCaseStatus
+    revision: int
+    planHash: str | None = None
+    environment: ExecutionPlanEnvironment
+    steps: list[ExecutionPlanStep]
+    warnings: list[ExecutionPlanWarning] = Field(default_factory=list)
+    executable: bool
+    source: Literal["AI", "CACHE", "RULE_BASED"]

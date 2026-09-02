@@ -152,3 +152,9 @@ OneDrive 이동 직후 기존 `.env.public`이 사라져 일부 필수 비밀값
 Temporary Staging HTTPS에서 AI 호출을 비활성화한 상태로 새 TC를 구조화했다. 응답 UUID `787dc8b2-cecf-4ae4-b438-9786a7a65e2f`가 `REVIEW_REQUIRED`로 저장됐고, 승인 전 실행 생성은 HTTP 409 `TC_NOT_READY`로 차단됐다. 승인 API 호출 후 같은 UUID가 `READY`가 됐다.
 
 이 UUID로 생성한 Execution `f322af6c-c3f5-4b93-99ee-8fd0f5d6a24b`를 Outbox Publisher와 Playwright Worker가 처리했다. Worker는 DB `structured_spec`의 `navigate → fill → click → assert` 네 단계를 조회해 모두 `PASS`로 기록했고 최종 실행도 `PASS`였다. 구조화 응답은 `RULE_BASED`, `callCount=0`으로 실제 AI 호출과 비용은 없었다.
+
+## 실행 계획 hash·실제 단계 일치 검증 (2026-09-02)
+
+Version `5ea8101f-8ca9-4e19-ab83-d7fa5b3adc38`의 실행 계획을 조회해 64자 SHA-256 hash, revision 1, 네 단계와 `fill.value=***` 마스킹을 확인했다. 필수 입력값이 없는 별도 구조화 버전은 승인 시 `STEP_PARAMETER_MISSING`으로 차단됐다.
+
+정상 계획으로 생성한 Execution `bbf2ac81-84e7-42ef-9529-bee62826ca48`는 최종 `PASS`였다. 상세 응답의 version UUID와 plan hash가 조회 응답과 동일했고, 계획/실제 단계 수는 각각 4개였으며 `stepCountMatches=true`였다. 실제 단계는 `step-1`부터 `step-4`까지 각각 `planStepId`로 연결됐다. AI 호출은 0회였다.

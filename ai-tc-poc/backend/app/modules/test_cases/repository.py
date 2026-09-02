@@ -4,8 +4,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AuditEvent, Project, TestCase, TestCaseVersion
-from app.schemas.test_cases import StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval
+from app.db.models import AuditEvent, Environment, Project, TestCase, TestCaseVersion
+from app.modules.test_cases.execution_plan import ExecutionPlanError, preview_execution_steps, validate_execution_plan
+from app.schemas.test_cases import ExecutionPlanResponse, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval
 
 
 class TestCaseVersionRuleError(Exception):
@@ -74,6 +75,8 @@ class SqlTestCaseRepository:
             exclude_none=True,
         )
         structured_spec["schemaVersion"] = 1
+        structured_spec["planRevision"] = 1
+        structured_spec["source"] = result.aiUsage.source
         version = TestCaseVersion(
             id=version_id,
             organization_id=self.organization_id,
@@ -108,10 +111,65 @@ class SqlTestCaseRepository:
             return TestCaseVersionApproval(versionId=str(version.id), status="READY")
         if version.status != "REVIEW_REQUIRED" or not version.structured_spec:
             raise TestCaseVersionRuleError("TC_VERSION_NOT_REVIEWABLE", "검토 대기 중인 구조화 버전만 승인할 수 있습니다.")
+        environment = await self._environment(None)
+        validate_execution_plan(version, environment)
         version.status = "READY"
         self.session.add(self._audit("test_case_version.approved", version.id, {"status": "READY"}))
         await self.session.commit()
         return TestCaseVersionApproval(versionId=str(version.id), status="READY")
+
+    async def execution_plan(self, version_id: UUID, environment_id: UUID | None = None) -> ExecutionPlanResponse:
+        version = await self.session.scalar(
+            select(TestCaseVersion)
+            .join(TestCase, TestCase.id == TestCaseVersion.test_case_id)
+            .where(
+                TestCaseVersion.id == version_id,
+                TestCaseVersion.organization_id == self.organization_id,
+                TestCase.organization_id == self.organization_id,
+                TestCase.project_id == self.project_id,
+            )
+        )
+        if not version:
+            raise TestCaseVersionRuleError("TC_VERSION_NOT_FOUND", "테스트 케이스 버전을 찾을 수 없습니다.")
+        environment = await self._environment(environment_id)
+        try:
+            plan = validate_execution_plan(version, environment)
+            return ExecutionPlanResponse(
+                versionId=plan.version_id,
+                status=plan.status,
+                revision=plan.revision,
+                planHash=plan.plan_hash,
+                environment=plan.environment,
+                steps=plan.public_steps,
+                executable=True,
+                source=plan.source,
+            )
+        except ExecutionPlanError as exc:
+            return ExecutionPlanResponse(
+                versionId=str(version.id),
+                status=version.status.value if hasattr(version.status, "value") else str(version.status),
+                revision=int((version.structured_spec or {}).get("planRevision") or 1),
+                planHash=None,
+                environment={"id": str(environment.id), "name": environment.name, "baseUrl": environment.base_url},
+                steps=preview_execution_steps(version, environment),
+                warnings=[{"code": exc.code, "message": exc.message, "stepNo": exc.step_no}],
+                executable=False,
+                source=str((version.structured_spec or {}).get("source") or "RULE_BASED"),
+            )
+
+    async def _environment(self, environment_id: UUID | None) -> Environment:
+        statement = select(Environment).where(
+            Environment.organization_id == self.organization_id,
+            Environment.project_id == self.project_id,
+        )
+        if environment_id:
+            statement = statement.where(Environment.id == environment_id)
+        else:
+            statement = statement.order_by(Environment.created_at).limit(1)
+        environment = await self.session.scalar(statement)
+        if not environment:
+            raise TestCaseVersionRuleError("ENVIRONMENT_NOT_FOUND", "실행 환경을 찾을 수 없습니다.")
+        return environment
 
     def _audit(self, action: str, resource_id: UUID, metadata: dict) -> AuditEvent:
         return AuditEvent(

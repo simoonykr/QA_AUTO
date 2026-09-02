@@ -42,3 +42,13 @@ GET /api/v1/test-case-versions/{versionId}/execution-plan
 ## 프론트 선반영
 
 백엔드 계획 API 전까지는 현재 구조화 응답을 이용해 실행 전 예상 시나리오를 표시한다. 필수 파라미터가 누락된 계획은 실행을 차단하며, 계획 API가 제공되면 서버의 `executable`과 `warnings`를 단일 기준으로 전환한다.
+
+## 완료 확인 (2026-09-02)
+
+- 실행 계획 조회 API와 서버 검증기를 구현했다.
+- 승인·실행 생성·Worker가 같은 계획 검증 규칙을 사용한다.
+- plan hash/revision snapshot과 실행 상세 계획/실제 비교 계약을 구현했다.
+- 프론트 예상 시나리오 화면을 서버 `executable`, `warnings` 기준으로 전환했다.
+- Temporary Staging에서 누락 파라미터 승인 차단, 값 마스킹, 4단계 Worker PASS와 hash·UUID·단계 수 일치를 검증했다.
+
+상세 계약과 검증 ID는 `FRONTEND_BACKEND_SYNC.md`, `WORKSTREAM_STATUS.md`, `LOCAL_PLAYWRIGHT_VALIDATION.md`를 기준으로 한다.

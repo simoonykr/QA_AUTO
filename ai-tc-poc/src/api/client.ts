@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPlan, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -128,6 +128,17 @@ export const api = {
   async approveTestCaseVersion(versionId: string): Promise<TestCaseVersionApproval> {
     if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/approve`, { method: 'POST' })
     return { versionId, status: 'READY' }
+  },
+
+  async getExecutionPlan(versionId: string, environmentId: string): Promise<ExecutionPlan> {
+    if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/execution-plan?environmentId=${encodeURIComponent(environmentId)}`)
+    const structured = await this.structureTestCase('Mock execution plan', '페이지에 접속하고 결과를 확인한다.')
+    return {
+      versionId, status: 'READY', revision: 1, planHash: 'mock-plan-hash',
+      environment: { id: environmentId, name: 'Staging', baseUrl: 'https://staging.storefront.test' },
+      steps: structured.steps.map((step,index)=>({stepNo:index+1,id:step.id,title:step.title,action:step.action as 'navigate'|'fill'|'click'|'assert',url:step.url,selector:step.selector,value:step.value?'***':null,operator:step.operator,expected:step.expected,timeoutMs:step.timeoutMs??10000})),
+      warnings: [], executable: true, source: structured.aiUsage.source,
+    }
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {

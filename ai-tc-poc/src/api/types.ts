@@ -78,6 +78,32 @@ export interface StructuredTestCase {
 
 export interface TestCaseVersionApproval { versionId: string; status: 'READY' }
 
+export interface ExecutionPlanStep {
+  stepNo: number
+  id: string
+  title: string
+  action: string
+  url?: string | null
+  selector?: string | null
+  value?: string | null
+  secretRef?: string | null
+  operator?: string | null
+  expected?: string | null
+  timeoutMs: number
+}
+
+export interface ExecutionPlan {
+  versionId: string
+  status: TestCaseStatus
+  revision: number
+  planHash?: string | null
+  environment: { id: string; name: string; baseUrl: string }
+  steps: ExecutionPlanStep[]
+  warnings: Array<{ code: string; message: string; stepNo?: number | null }>
+  executable: boolean
+  source: 'AI' | 'CACHE' | 'RULE_BASED'
+}
+
 export interface TestCaseImportResponse {
   fileName: string
   format: string
@@ -112,6 +138,7 @@ export interface ExecutionActionResponse { execution: Execution; accepted: boole
 export interface ExecutionStepRun {
   id: string
   stepNo: number
+  planStepId?: string | null
   status: string
   action?: Record<string, unknown> | null
   assertion?: Record<string, unknown> | null
@@ -136,6 +163,16 @@ export interface ExecutionDetails {
   errorCode?: string | null
   steps: ExecutionStepRun[]
   artifacts: ExecutionArtifact[]
+  plan?: {
+    testCaseVersionId: string
+    planHash: string
+    planRevision: number
+    environmentId: string
+    baseUrl: string
+    plannedStepCount: number
+    actualStepCount: number
+    stepCountMatches: boolean
+  } | null
 }
 
 export interface ApiErrorBody {

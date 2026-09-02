@@ -1,12 +1,13 @@
 from uuid import UUID
 from uuid import uuid4
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import DomainError
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError
-from app.schemas.test_cases import ImportedTestCase, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval
+from app.modules.test_cases.execution_plan import ExecutionPlanError
+from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCase, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval
 from app.modules.test_cases.importer import MAX_UPLOAD_BYTES, import_test_case
 from app.modules.ai.service import StructureService
 
@@ -54,3 +55,26 @@ async def approve_test_case_version(version_id: UUID, request: Request, session:
     except TestCaseVersionRuleError as exc:
         status_code = 409 if exc.code == "TC_VERSION_NOT_REVIEWABLE" else 404
         raise DomainError(exc.code, exc.message, status_code) from None
+    except ExecutionPlanError as exc:
+        raise DomainError(
+            exc.code, exc.message, 422, retryable=False,
+            details={"stepNo": exc.step_no} if exc.step_no else {},
+        ) from None
+
+
+@version_router.get("/{version_id}/execution-plan", response_model=ExecutionPlanResponse)
+async def get_test_case_execution_plan(
+    version_id: UUID,
+    request: Request,
+    environment_id: UUID | None = Query(default=None, alias="environmentId"),
+    session: AsyncSession = Depends(get_session),
+) -> ExecutionPlanResponse:
+    settings = get_settings()
+    repository = SqlTestCaseRepository(
+        session, UUID(settings.default_organization_id), UUID(settings.default_project_id),
+        UUID(settings.default_user_id), UUID(request.state.request_id),
+    )
+    try:
+        return await repository.execution_plan(version_id, environment_id)
+    except TestCaseVersionRuleError as exc:
+        raise DomainError(exc.code, exc.message, 404) from None

@@ -8,6 +8,7 @@ from app.core.database import get_session
 from app.core.errors import DomainError
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
 from app.modules.executions.events import execution_event_stream
+from app.modules.test_cases.execution_plan import ExecutionPlanError
 from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionDetailsResponse, ExecutionResponse
 from app.workers.artifacts import ArtifactStore
 
@@ -35,6 +36,11 @@ async def create_execution(body: CreateExecutionRequest, request: Request, idemp
     except ExecutionRuleError as exc:
         status_code = 409 if exc.code in {"IDEMPOTENCY_CONFLICT", "TC_NOT_READY"} else 404 if exc.code.endswith("_NOT_FOUND") else 400
         raise DomainError(exc.code, exc.message, status_code) from None
+    except ExecutionPlanError as exc:
+        raise DomainError(
+            exc.code, exc.message, 422, retryable=False,
+            details={"stepNo": exc.step_no} if exc.step_no else {},
+        ) from None
 
 
 @router.get("/{execution_id}", response_model=ExecutionResponse)
