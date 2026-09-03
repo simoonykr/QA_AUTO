@@ -8,7 +8,7 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight, Trash2,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionDetails, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
+import type { AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, EnvironmentSummary, Execution, ExecutionDetails, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
@@ -348,6 +348,11 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [dirtyFields,setDirtyFields] = useState<Array<keyof TestCaseVersionStepPatch>>([])
   const [savingStep,setSavingStep] = useState(false)
   const [deletingStepId,setDeletingStepId] = useState<string | null>(null)
+  const [discoveryId,setDiscoveryId] = useState<string | null>(null)
+  const [discovery,setDiscovery] = useState<PageDiscovery | null>(null)
+  const [candidateSelections,setCandidateSelections] = useState<Record<string,string>>({})
+  const [discoveryStarting,setDiscoveryStarting] = useState(false)
+  const [discoveryApplying,setDiscoveryApplying] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   useEffect(()=>{
     if (stage!=='review') return
@@ -363,6 +368,23 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       setReviewPlan(null); setPlanError(error instanceof ApiError?error.body.message:'실행 계획을 불러오지 못했습니다.')
     }).finally(()=>setPlanLoading(false))
   },[stage,structured?.versionId,reviewEnvironmentId])
+  useEffect(()=>{
+    if (stage!=='review'||!structured?.versionId||!discoveryId) return
+    let active=true
+    let timer:number|undefined
+    const terminal=['COMPLETED','NEEDS_REVIEW','FAILED','CANCELLED']
+    const poll=async()=>{
+      try {
+        const result=await api.getPageDiscovery(structured.versionId,discoveryId)
+        if (!active) return
+        setDiscovery(result)
+        setCandidateSelections(current=>{const next={...current};result.steps.forEach(step=>{if(!next[step.stepId]&&step.selectedCandidateId)next[step.stepId]=step.selectedCandidateId});return next})
+        if (!terminal.includes(result.status)) timer=window.setTimeout(()=>void poll(),1500)
+      } catch (error) { if(active)onToast(error instanceof ApiError?error.body.message:'페이지 분석 상태를 확인하지 못했습니다.') }
+    }
+    void poll()
+    return()=>{active=false;if(timer)window.clearTimeout(timer)}
+  },[stage,structured?.versionId,discoveryId])
   const importFile = async (file?: File) => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
@@ -464,6 +486,27 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       else onToast(error instanceof ApiError?error.body.message:'단계를 삭제하지 못했습니다.')
     } finally { setDeletingStepId(null) }
   }
+  const startDiscovery = async () => {
+    if (!structured||!reviewEnvironmentId||discoveryStarting) return
+    setDiscoveryStarting(true); setDiscovery(null); setDiscoveryId(null); setCandidateSelections({})
+    try { const result=await api.startPageDiscovery(structured.versionId,reviewEnvironmentId);setDiscoveryId(result.discoveryId);onToast('페이지 분석을 시작했습니다. AI 호출 없이 실제 화면 요소를 검증합니다.') }
+    catch(error){onToast(error instanceof ApiError?error.body.message:'페이지 분석을 시작하지 못했습니다.')}
+    finally{setDiscoveryStarting(false)}
+  }
+  const applyDiscovery = async () => {
+    if (!structured||!discovery||!reviewEnvironmentId||discoveryApplying) return
+    const selections:DiscoverySelection[]=discovery.steps.map(step=>({stepId:step.stepId,candidateId:candidateSelections[step.stepId]??step.selectedCandidateId??''})).filter(item=>item.candidateId)
+    setDiscoveryApplying(true)
+    try {
+      const updated=await api.applyPageDiscovery(structured.versionId,discovery.discoveryId,selections,reviewEnvironmentId)
+      setReviewPlan(updated)
+      const byId=new Map(updated.steps.map(step=>[step.id,step]))
+      const next:StructuredTestCase={...structured,steps:structured.steps.map(step=>{const planStep=byId.get(step.id);return planStep?{...step,selector:planStep.selector,resolutionStatus:planStep.resolutionStatus}:step})}
+      setStructured(next);onStructured(next);setDiscoveryId(null);setDiscovery(null)
+      onToast(`페이지 분석 결과를 적용했습니다. revision ${updated.revision}`)
+    } catch(error){onToast(error instanceof ApiError?error.body.message:'페이지 분석 결과를 적용하지 못했습니다.')}
+    finally{setDiscoveryApplying(false)}
+  }
   const editTitle = (value:string) => { setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   const editRaw = (value:string) => { setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   return <section className="page author-page">
@@ -476,7 +519,8 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
         {stage==='split-review'&&splitReview&&<div className="review-empty split-review"><div><ListChecks/></div><h2>TC별 분리가 필요합니다.</h2><p>하나의 파일에서 여러 테스트 케이스가 감지되어 단일 실행 단계로 구조화하지 않았습니다.</p><div className="split-review-stats"><span><b>{splitReview.detectedTestCaseCount.toLocaleString()}개</b> 감지된 TC</span><span><b>{splitReview.rawTextLength.toLocaleString()}자</b> 원문 길이</span></div><div className="ambiguity"><AlertTriangle/><div><b>검토가 필요한 상태입니다.</b><p>현재 원문을 TC별로 분리한 뒤 각각 구조화해야 합니다. 이 결과는 승인하거나 실행할 수 없습니다.</p></div></div></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
         {(stage==='review'||stage==='ready')&&structured&&<><div className="section-head"><div><h2>구조화 검토</h2><p>서버가 검증한 실행 계획을 승인 전에 확인하고 수정하세요.</p></div><span className="confidence">신뢰도 <b>{Math.round(structured.confidence*100)}%</b></span></div>
-          {stage==='review'&&<div className="review-plan-status"><label>검증 환경<select value={reviewEnvironmentId} onChange={event=>setReviewEnvironmentId(event.target.value)} disabled={planLoading||savingStep}>{reviewEnvironments.map(environment=><option key={environment.id} value={environment.id}>{environment.name}</option>)}</select></label><div><span>revision <b>{reviewPlan?.revision??'-'}</b></span><span>plan hash <b>{reviewPlan?.planHash?.slice(0,12)??'-'}</b></span><span className={reviewPlan?.executable?'plan-ok':'plan-blocked'}>{planLoading?'검증 중':reviewPlan?.executable?'실행 가능':'수정 필요'}</span></div></div>}
+          {stage==='review'&&<div className="review-plan-status"><label>검증 환경<select value={reviewEnvironmentId} onChange={event=>{setReviewEnvironmentId(event.target.value);setDiscoveryId(null);setDiscovery(null);setCandidateSelections({})}} disabled={planLoading||savingStep||discoveryStarting||Boolean(discoveryId)}>{reviewEnvironments.map(environment=><option key={environment.id} value={environment.id}>{environment.name}</option>)}</select></label><div><span>revision <b>{reviewPlan?.revision??'-'}</b></span><span>plan hash <b>{reviewPlan?.planHash?.slice(0,12)??'-'}</b></span><span className={reviewPlan?.executable?'plan-ok':'plan-blocked'}>{planLoading?'검증 중':reviewPlan?.executable?'실행 가능':'수정 필요'}</span><button className="secondary discovery-start" onClick={()=>void startDiscovery()} disabled={!reviewEnvironmentId||discoveryStarting||Boolean(discoveryId)}>{discoveryStarting?<Activity className="spin"/>:<Search/>} 페이지 분석 시작</button></div></div>}
+          {stage==='review'&&discovery&&<div className="discovery-panel"><div className="discovery-head"><div><b>페이지 분석 · {discovery.status}</b><small>규칙 기반 후보 + Playwright 실제 검증 · AI 0회</small></div><span className={`resolution ${discovery.executable?'resolved':'needs-review'}`}>{discovery.executable?'후보 확인 완료':'검토 필요'}</span></div>{discovery.pages.map(page=><div className="discovery-page" key={page.fingerprint}><ExternalLink/><div><b>{page.title||'제목 없음'}</b><small>{page.url} · fingerprint {page.fingerprint.slice(0,12)} · iframe {page.iframeCount}{page.hasShadowDom?' · Shadow DOM':''}</small></div></div>)}{discovery.steps.map(step=><div className="discovery-step" key={step.stepId}><div className="discovery-step-title"><div><b>{step.targetDescription}</b><small>{step.stepId}</small></div><span className={`resolution ${step.resolutionStatus.toLowerCase()}`}>{step.resolutionStatus}</span></div>{step.candidates.length>0?<div className="candidate-list">{step.candidates.map(candidate=><label className={`${candidateSelections[step.stepId]===candidate.id?'selected':''} ${candidate.matchCount===1&&candidate.visible&&candidate.enabled?'valid':'invalid'}`} key={candidate.id}><input type="radio" name={`candidate-${step.stepId}`} value={candidate.id} checked={(candidateSelections[step.stepId]??step.selectedCandidateId)===candidate.id} onChange={()=>setCandidateSelections(current=>({...current,[step.stepId]:candidate.id}))} disabled={candidate.matchCount!==1||!candidate.visible||!candidate.enabled}/><span><b>{candidate.strategy} · {Math.round(candidate.confidence*100)}%</b><code>{candidate.selector}</code><small>일치 {candidate.matchCount} · {candidate.visible?'표시됨':'숨김'} · {candidate.enabled?'사용 가능':'비활성'}</small></span></label>)}</div>:<p className="discovery-empty">유효한 selector 후보를 찾지 못했습니다. 단계 편집 또는 재분석이 필요합니다.</p>}</div>)}{discovery.errorCode&&<div className="config-error"><AlertTriangle/><div><b>분석 실패</b><span>{discovery.errorCode}</span></div></div>}{['COMPLETED','NEEDS_REVIEW','FAILED','CANCELLED'].includes(discovery.status)&&<div className="discovery-actions"><button className="secondary" onClick={()=>{setDiscoveryId(null);setDiscovery(null);setCandidateSelections({})}}>닫기</button>{['COMPLETED','NEEDS_REVIEW'].includes(discovery.status)&&<button className="primary" onClick={()=>void applyDiscovery()} disabled={discoveryApplying||discovery.steps.some(step=>!(candidateSelections[step.stepId]??step.selectedCandidateId))}>{discoveryApplying?<Activity className="spin"/>:<Check/>} 분석 결과 적용</button>}</div>}</div>}
           {planError&&<div className="config-error"><AlertTriangle size={16}/><div><b>실행 계획 확인 실패</b><span>{planError}</span></div></div>}
           <div className="review-block"><label>전제조건 · {structured.preconditions.length}</label>{structured.preconditions.map(item=><div className="condition" key={item}><CheckCircle2/> {item}</div>)}</div>
           <div className="review-block"><label>실행 단계 · {(reviewPlan?.steps??structured.steps).length}</label>{(reviewPlan?.steps??structured.steps.map((step,index)=>({...step,stepNo:index+1,timeoutMs:step.timeoutMs??10000}))).map((step,i)=>{const warning=reviewPlan?.warnings.find(item=>item.stepId===step.id||item.stepNo===step.stepNo);return <div className={`structured-step ${warning?'invalid':''}`} key={step.id}><span>{step.stepNo??i+1}</span><div><b>{step.title}</b><small><em>{step.action.toUpperCase()}</em> {step.url||step.selector||('note' in step?step.note:'필수 값 확인 필요')}</small>{warning&&<p className="step-warning">{warning.message}{warning.missingFields.length>0&&` · 누락: ${warning.missingFields.join(', ')}`}</p>}</div>{stage==='review'?<div className="step-row-actions"><button onClick={()=>openStepEditor(step as ExecutionPlanStep)} aria-label={`${step.title} 단계 편집`} title="단계 편집" disabled={Boolean(deletingStepId)}><Settings/></button><button className="delete-step" onClick={()=>void deleteStep(step as ExecutionPlanStep)} aria-label={`${step.title} 단계 삭제`} title="단계 삭제" disabled={Boolean(deletingStepId)}>{deletingStepId===step.id?<Activity className="spin"/>:<Trash2/>}</button></div>:<button aria-label={`${step.title} 추가 메뉴`}><MoreHorizontal/></button>}</div>})}</div>

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPlan, ExecutionPolicy, LoginResponse, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPlan, ExecutionPolicy, LoginResponse, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -35,6 +35,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 const mockExecutionPlans = new Map<string,ExecutionPlan>()
 const mockPlanKey = (versionId:string,environmentId:string) => `${versionId}:${environmentId}`
+const mockDiscoveries = new Map<string,{polls:number;value:PageDiscovery}>()
 
 export const api = {
   subscribeExecution(id: string, onDetails: (details: ExecutionDetails) => void, onError: () => void): () => void {
@@ -168,6 +169,39 @@ export const api = {
       return structuredClone(updated)
     }
     return request(`/test-case-versions/${versionId}/steps/${encodeURIComponent(stepId)}?environmentId=${encodeURIComponent(environmentId)}`, { method:'DELETE' })
+  },
+
+  async startPageDiscovery(versionId:string,environmentId:string):Promise<DiscoveryStartResponse> {
+    if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/discover`, {method:'POST',body:JSON.stringify({environmentId,maxPages:1,maxAiCalls:0})})
+    const discoveryId=crypto.randomUUID()
+    const plan=await this.getExecutionPlan(versionId,environmentId)
+    const steps=plan.steps.filter(step=>['click','fill','assert'].includes(step.action)&&step.assertionType!=='url').map((step,index)=>({
+      stepId:step.id,targetDescription:step.targetDescription??step.title,resolutionStatus:'RESOLVED' as const,selectedCandidateId:`candidate-${index+1}`,
+      candidates:[{id:`candidate-${index+1}`,strategy:'ROLE_NAME' as const,selector:step.selector??`[data-testid="${step.id}"]`,matchCount:1,visible:true,enabled:true,confidence:.94}],
+    }))
+    mockDiscoveries.set(discoveryId,{polls:0,value:{discoveryId,status:'QUEUED',revision:plan.revision,pages:[],steps:[],warnings:[],executable:false,errorCode:null}})
+    window.setTimeout(()=>{const item=mockDiscoveries.get(discoveryId);if(item)item.value={...item.value,status:'COMPLETED',pages:[{url:plan.environment.baseUrl,title:'Mock 대상 페이지',fingerprint:'mock-page-fingerprint',iframeCount:0,hasShadowDom:false}],steps,executable:true}},900)
+    return {discoveryId,status:'QUEUED'}
+  },
+
+  async getPageDiscovery(versionId:string,discoveryId:string):Promise<PageDiscovery> {
+    if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/discoveries/${discoveryId}`)
+    const item=mockDiscoveries.get(discoveryId)
+    if (!item) throw new ApiError({code:'DISCOVERY_NOT_FOUND',message:'페이지 분석을 찾을 수 없습니다.',requestId:'mock',retryable:false},404)
+    item.polls+=1
+    if (item.value.status==='QUEUED'&&item.polls>1) item.value={...item.value,status:'SCANNING'}
+    return structuredClone(item.value)
+  },
+
+  async applyPageDiscovery(versionId:string,discoveryId:string,selections:DiscoverySelection[],environmentId:string):Promise<ExecutionPlan> {
+    if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/discoveries/${discoveryId}/apply`, {method:'POST',body:JSON.stringify({selections})})
+    const discovery=await this.getPageDiscovery(versionId,discoveryId)
+    const plan=await this.getExecutionPlan(versionId,environmentId)
+    const selected=new Map(selections.map(item=>[item.stepId,item.candidateId]))
+    const steps=plan.steps.map(step=>{const result=discovery.steps.find(item=>item.stepId===step.id);const candidate=result?.candidates.find(item=>item.id===(selected.get(step.id)??result.selectedCandidateId));return candidate?{...step,selector:candidate.selector,resolutionStatus:'RESOLVED' as const}:step})
+    const updated={...plan,revision:plan.revision+1,planHash:`mock-discovery-${Date.now()}`,steps,warnings:[],executable:true}
+    mockExecutionPlans.set(mockPlanKey(versionId,environmentId),updated)
+    return structuredClone(updated)
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {

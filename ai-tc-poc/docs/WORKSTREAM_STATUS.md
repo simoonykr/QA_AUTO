@@ -46,6 +46,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 서버 실행 계획의 `executable=true`일 때만 검토 승인 버튼을 활성화하고, 마스킹된 value는 사용자가 직접 변경하지 않는 한 PATCH body에서 제외
 - 구조화 검토 단계와 편집 패널에 삭제 버튼·확인 절차·중복 요청 방지를 추가하고 DELETE 응답의 재번호된 단계, revision, plan hash, warnings, executable을 즉시 반영
 - 단계 삭제의 `TC_STEP_NOT_FOUND`는 계획 새로고침으로 복구하고 `TC_VERSION_NOT_REVIEWABLE`은 승인 완료 버전 수정 불가로 구분 안내하며, Mock도 버전·환경별 연속 삭제와 전체 삭제 차단 상태를 재현
+- 구조화 검토 화면에 페이지 분석 시작, 상태 polling, 탐색 페이지 fingerprint, 단계별 selector 후보·검증 결과·신뢰도, 복수 후보 선택과 결과 적용 UI를 연결
+- 페이지 분석 요청은 현재 `maxPages=1`, `maxAiCalls=0`으로 고정하고 적용 응답의 steps·revision·planHash·warnings·executable을 승인 기준에 즉시 반영하며 Mock에도 동일 흐름을 구현
 
 백엔드에 요청:
 
@@ -169,6 +171,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 프론트 AI 정책 UI: 서버 정책 `0/1`에 따른 선택 제한 및 요청값 상한 적용 검증
 - 프론트 구조화 단계 편집: TypeScript 검사, 실제 API 프로덕션 빌드, Firebase Mock 빌드 통과
 - 프론트 구조화 단계 삭제: TypeScript 검사, 실제 API 프로덕션 빌드, Firebase Mock 빌드 통과
+- 프론트 페이지 분석·selector resolution: TypeScript 검사, 실제 API 프로덕션 빌드, Firebase Mock 빌드 통과
 - 최신 `main` `4b516d9` Temporary Staging 재배포: 프론트 Docker 프로덕션 빌드 통과, `/health` 200, 미인증 API 401, 기존 Quick Tunnel 유지, 외부 공개 포트는 frontend `8080`만 사용
 - HTTPS 성공 검증 Version `f0869071-9fdb-4f25-be56-3580f65c67bd`, Execution `8e61b8d7-d612-406d-9aca-545c8b5e12a0`: plan hash `613541ba457b545e9003f2654247a87c07df58283295642129289c98d0387694`, 계획/실제 4단계 및 `planStepId` 일치, 최종 `PASS`
 - HTTPS 실패 검증 Execution `8fb52bc6-207b-44ba-b63b-c4441387e9ea`: 최종 `FAIL`, `ASSERTION_FAILED`, 실패 PNG Artifact `8ca2274f-7dff-459e-9ceb-c6e249361139` 및 PNG signature 확인

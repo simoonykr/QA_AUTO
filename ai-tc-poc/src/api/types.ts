@@ -2,6 +2,8 @@ export type TestCaseStatus = 'DRAFT' | 'REVIEW_REQUIRED' | 'READY' | 'ARCHIVED'
 export type ExecutionStatus = 'QUEUED' | 'PROVISIONING' | 'RUNNING' | 'WAITING_APPROVAL' | 'CANCEL_REQUESTED' | 'PASS' | 'FAIL' | 'BLOCKED' | 'NEEDS_REVIEW' | 'CANCELLED' | 'SYSTEM_ERROR'
 export type ActionType = 'navigate' | 'click' | 'fill' | 'select' | 'press' | 'scroll' | 'wait' | 'upload'
 export type AssertionType = 'url' | 'element' | 'text' | 'attribute' | 'count' | 'network' | 'visual_change'
+export type ResolutionStatus = 'UNRESOLVED' | 'RESOLVING' | 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND' | 'STALE'
+export type DiscoveryStatus = 'QUEUED' | 'PROVISIONING' | 'SCANNING' | 'MAPPING' | 'VALIDATING' | 'COMPLETED' | 'NEEDS_REVIEW' | 'FAILED' | 'CANCELLED'
 export type UserRole = 'OWNER' | 'QA' | 'VIEWER'
 export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
 
@@ -55,6 +57,9 @@ export interface StructuredStep {
   expected?: string | null
   assertionType?: 'url' | 'text' | 'element' | null
   timeoutMs?: number | null
+  targetDescription?: string | null
+  selectorHint?: Record<string,string> | null
+  resolutionStatus?: ResolutionStatus | null
 }
 
 export interface StructuredTestCase {
@@ -92,6 +97,8 @@ export interface ExecutionPlanStep {
   expected?: string | null
   assertionType?: 'url' | 'text' | 'element' | null
   timeoutMs: number
+  targetDescription?: string | null
+  resolutionStatus?: ResolutionStatus | null
 }
 
 export interface ExecutionPlan {
@@ -115,6 +122,38 @@ export interface TestCaseVersionStepPatch {
   secretRef?: string | null
   assertionType?: 'url' | 'text' | 'element' | null
 }
+
+export interface SelectorCandidate {
+  id: string
+  strategy: 'DATA_TESTID' | 'ROLE_NAME' | 'LABEL' | 'PLACEHOLDER' | 'ID_NAME' | 'LINK_URL' | 'VISIBLE_TEXT' | 'CSS'
+  selector: string
+  matchCount: number
+  visible: boolean
+  enabled: boolean
+  confidence: number
+}
+
+export interface DiscoveryStepResult {
+  stepId: string
+  targetDescription: string
+  resolutionStatus: ResolutionStatus
+  selectedCandidateId?: string | null
+  candidates: SelectorCandidate[]
+}
+
+export interface PageDiscovery {
+  discoveryId: string
+  status: DiscoveryStatus
+  revision: number
+  pages: Array<{url:string;title:string;fingerprint:string;iframeCount:number;hasShadowDom:boolean}>
+  steps: DiscoveryStepResult[]
+  warnings: ExecutionPlan['warnings']
+  executable: boolean
+  errorCode?: string | null
+}
+
+export interface DiscoveryStartResponse { discoveryId:string; status:'QUEUED' }
+export interface DiscoverySelection { stepId:string; candidateId:string }
 
 export interface TestCaseImportResponse {
   fileName: string
