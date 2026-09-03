@@ -3,7 +3,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse, urlunparse
 from uuid import UUID, uuid4
 
 from playwright.async_api import Error as PlaywrightError
@@ -332,6 +332,14 @@ def _sanitize_discovery_elements(elements: list[dict]) -> list[dict]:
     return safe
 
 
+def _safe_discovery_url(base_url: str, href: str, allowed_domains: list[str]) -> str | None:
+    candidate = urljoin(base_url, href)
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.hostname not in allowed_domains:
+        return None
+    return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", "", ""))
+
+
 def _candidate_for_element(element: dict, candidate_id: str) -> dict | None:
     if element.get("dataTestId"):
         strategy, selector, confidence = "DATA_TESTID", f'[data-testid="{_safe_quote(element["dataTestId"])}"]', 1.0
@@ -397,6 +405,30 @@ async def discover(discovery_id: UUID) -> None:
                 }))""")
                 elements = _sanitize_discovery_elements(elements)
                 fingerprint = hashlib.sha256(json.dumps({"url": page_url, "title": title, "elements": elements}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                pages = [{"url": page_url, "title": title, "fingerprint": fingerprint,
+                          "iframeCount": iframe_count, "hasShadowDom": has_shadow_dom}]
+                max_pages = int((discovery.settings or {}).get("maxPages") or 1)
+                hrefs = await page.locator("a[href]").evaluate_all("els => els.slice(0,100).map(el => el.getAttribute('href') || '')")
+                page_urls = []
+                for href in hrefs:
+                    candidate_url = _safe_discovery_url(page_url, href, environment.allowed_domains)
+                    if candidate_url and candidate_url not in {page_url, *page_urls}:
+                        page_urls.append(candidate_url)
+                    if len(page_urls) >= max_pages - 1:
+                        break
+                for candidate_url in page_urls:
+                    await page.goto(candidate_url, wait_until="domcontentloaded", timeout=20_000)
+                    _assert_allowed_url(page.url, environment.allowed_domains)
+                    final_url = _safe_discovery_url(candidate_url, page.url, environment.allowed_domains) or candidate_url
+                    candidate_title = await page.title()
+                    candidate_signature = await page.locator("button,a,input,select,textarea,[role]").evaluate_all(
+                        "els => els.slice(0,500).map(el => [el.tagName,el.getAttribute('role')||'',el.getAttribute('aria-label')||'',el.id||'',el.getAttribute('name')||''])"
+                    )
+                    candidate_fingerprint = hashlib.sha256(json.dumps({"url": final_url, "title": candidate_title, "elements": candidate_signature}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                    pages.append({"url": final_url, "title": candidate_title, "fingerprint": candidate_fingerprint,
+                                  "iframeCount": len(page.frames) - 1,
+                                  "hasShadowDom": await page.locator("*").evaluate_all("els => els.some(el => !!el.shadowRoot)")})
+                await page.goto(page_url, wait_until="domcontentloaded", timeout=20_000)
                 async with SessionFactory() as session:
                     current = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
                     current.status = "MAPPING"
@@ -435,11 +467,24 @@ async def discover(discovery_id: UUID) -> None:
         executable = all(item["resolutionStatus"] == "RESOLVED" for item in step_results)
         async with SessionFactory() as session:
             discovery = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
+            previous = await session.scalar(
+                select(PageDiscovery).where(
+                    PageDiscovery.test_case_version_id == discovery.test_case_version_id,
+                    PageDiscovery.environment_id == discovery.environment_id,
+                    PageDiscovery.id != discovery.id,
+                    PageDiscovery.status.in_(["COMPLETED", "NEEDS_REVIEW"]),
+                ).order_by(PageDiscovery.ended_at.desc()).with_for_update()
+            )
+            if previous and (previous.result or {}).get("fingerprint") != fingerprint:
+                previous_result = dict(previous.result or {})
+                previous_result["steps"] = [{**step, "resolutionStatus": "STALE", "selectedCandidateId": None} for step in previous_result.get("steps") or []]
+                previous_result["executable"] = False
+                previous.result = previous_result
+                previous.status = "NEEDS_REVIEW"
             discovery.status = "COMPLETED" if executable else "NEEDS_REVIEW"
             discovery.result = {
                 "revision": int((version.structured_spec or {}).get("planRevision") or 1),
-                "pages": [{"url": page_url, "title": title, "fingerprint": fingerprint,
-                           "iframeCount": iframe_count, "hasShadowDom": has_shadow_dom}],
+                "pages": pages,
                 "steps": step_results, "warnings": [],
                 "executable": executable, "fingerprint": fingerprint, "model": None,
                 "promptVersion": "rule-based-v1", "aiUsage": {"source": "RULE_BASED", "callCount": 0},

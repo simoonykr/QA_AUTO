@@ -4,9 +4,9 @@ from uuid import UUID, uuid4
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AuditEvent, Environment, Project, TestCase, TestCaseVersion
+from app.db.models import AuditEvent, Environment, Execution, ExecutionStatus, Project, TestCase, TestCaseVersion
 from app.modules.test_cases.execution_plan import ExecutionPlanError, preview_execution_steps, validate_execution_plan
-from app.schemas.test_cases import ExecutionPlanResponse, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
+from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCaseItem, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
 
 
 class TestCaseVersionRuleError(Exception):
@@ -33,22 +33,38 @@ class SqlTestCaseRepository:
         )
         rows = (await self.session.execute(
             select(TestCase, latest_version.label("status"))
-            .where(TestCase.organization_id == self.organization_id)
+            .where(
+                TestCase.organization_id == self.organization_id,
+                *([TestCase.project_id == self.project_id] if self.project_id else []),
+            )
             .order_by(desc(TestCase.created_at))
         )).all()
-        return [
-            TestCaseSummary(
+        summaries = []
+        terminal = [
+            ExecutionStatus.PASS, ExecutionStatus.FAIL, ExecutionStatus.BLOCKED, ExecutionStatus.NEEDS_REVIEW,
+            ExecutionStatus.CANCELLED, ExecutionStatus.SYSTEM_ERROR,
+        ]
+        for item, status in rows:
+            execution_rows = (await self.session.execute(
+                select(Execution.status, Execution.ended_at, Execution.queued_at)
+                .join(TestCaseVersion, TestCaseVersion.id == Execution.test_case_version_id)
+                .where(TestCaseVersion.test_case_id == item.id, Execution.organization_id == self.organization_id)
+                .order_by(Execution.queued_at.desc())
+            )).all()
+            completed = [row for row in execution_rows if row.status in terminal]
+            pass_rate = round(sum(1 for row in completed if row.status == ExecutionStatus.PASS) * 100 / len(completed)) if completed else 0
+            last_at = (execution_rows[0].ended_at or execution_rows[0].queued_at).isoformat() if execution_rows else "실행 기록 없음"
+            summaries.append(TestCaseSummary(
                 id=item.display_id,
                 title=item.title,
                 group=item.group_name,
                 status=status or "DRAFT",
-                passRate=0,
-                lastExecutedAt="실행 기록 없음",
-            )
-            for item, status in rows
-        ]
+                passRate=pass_rate,
+                lastExecutedAt=last_at,
+            ))
+        return summaries
 
-    async def save_structured(self, body: StructureRequest, result: StructuredTestCase) -> StructuredTestCase:
+    async def save_structured(self, body: StructureRequest, result: StructuredTestCase, imported: ImportedTestCaseItem | None = None) -> StructuredTestCase:
         if not self.project_id:
             raise TestCaseVersionRuleError("PROJECT_NOT_FOUND", "프로젝트 정보를 찾을 수 없습니다.")
         project = await self.session.scalar(select(Project).where(
@@ -64,7 +80,7 @@ class SqlTestCaseRepository:
             id=test_case_id,
             organization_id=self.organization_id,
             project_id=self.project_id,
-            display_id=f"TC-{str(test_case_id)[:8].upper()}",
+            display_id=imported.externalId if imported and imported.externalId else f"TC-{str(test_case_id)[:8].upper()}",
             title=body.title,
             group_name="Imported",
             created_at=now,
@@ -77,6 +93,12 @@ class SqlTestCaseRepository:
         structured_spec["schemaVersion"] = 1
         structured_spec["planRevision"] = 1
         structured_spec["source"] = result.aiUsage.source
+        if imported:
+            structured_spec["importSource"] = {
+                "externalId": imported.externalId,
+                "depth1": imported.depth1, "depth2": imported.depth2, "depth3": imported.depth3,
+                "sourceUrl": imported.sourceUrl, "auditFields": imported.auditFields,
+            }
         version = TestCaseVersion(
             id=version_id,
             organization_id=self.organization_id,
@@ -201,6 +223,8 @@ class SqlTestCaseRepository:
                 steps=plan.public_steps,
                 executable=True,
                 source=plan.source,
+                automationStatus=plan.automation_status,
+                automationReason=plan.automation_reason,
             )
         except ExecutionPlanError as exc:
             return ExecutionPlanResponse(
@@ -216,6 +240,8 @@ class SqlTestCaseRepository:
                 }],
                 executable=False,
                 source=str((version.structured_spec or {}).get("source") or "RULE_BASED"),
+                automationStatus=str((version.structured_spec or {}).get("automationStatus") or "MANUAL_REVIEW_REQUIRED"),
+                automationReason=str((version.structured_spec or {}).get("automationReason") or "실행 가능성을 검토해야 합니다."),
             )
 
     async def _environment(self, environment_id: UUID | None) -> Environment:

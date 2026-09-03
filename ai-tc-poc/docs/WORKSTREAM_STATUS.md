@@ -50,6 +50,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 단계 삭제의 `TC_STEP_NOT_FOUND`는 계획 새로고침으로 복구하고 `TC_VERSION_NOT_REVIEWABLE`은 승인 완료 버전 수정 불가로 구분 안내하며, Mock도 버전·환경별 연속 삭제와 전체 삭제 차단 상태를 재현
 - 구조화 검토 화면에 페이지 분석 시작, 상태 polling, 탐색 페이지 fingerprint, 단계별 selector 후보·검증 결과·신뢰도, 복수 후보 선택과 결과 적용 UI를 연결
 - 페이지 분석 요청은 현재 `maxPages=1`, `maxAiCalls=0`으로 고정하고 적용 응답의 steps·revision·planHash·warnings·executable을 승인 기준에 즉시 반영하며 Mock에도 동일 흐름을 구현
+- XLSX 가져오기 응답의 21개 TC를 목록으로 표시하고 사용자가 선택한 한 건만 독립 구조화하는 UI/API 연결
+- 구조화 결과에 자동화 가능성 상태와 사유를 표시하고 실제 실행 이력 API로 대시보드 최근 실행·집계를 표시
 
 백엔드에 요청:
 
@@ -113,6 +115,12 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 승인 전 `discover → 상태 조회 → 후보 선택/apply` API를 추가하고 적용 시 revision·plan hash·fingerprint·감사 로그 갱신
 - Playwright Worker가 허용 환경 URL을 읽기 전용으로 탐색하고 정제된 접근성·상호작용 요소만 수집하여 selector 후보의 개수·표시·활성 상태를 실제 검증
 - `UNRESOLVED`·`AMBIGUOUS`·`NOT_FOUND`·`STALE` 단계가 남으면 실행 계획과 승인을 차단하도록 서버 검증 강화
+- XLSX 셀 reference를 기준으로 빈 셀을 보존하며 헤더별 필드를 파싱하고 `testCases[]` 독립 객체 반환
+- KakaoGames 원본 21건을 `KG-WEB-001~021`로 분리하고 Result·BTS·Comment는 감사 필드에만 보관하여 AI 입력에서 제외
+- 선택 TC 구조화 API로 외부 TC ID와 계층·출처·감사 데이터를 TestCaseVersion에 연결
+- 자동화 가능성을 4개 상태로 판정하고 위험 업무 변경은 `UNSUPPORTED`로 승인·실행 차단
+- 페이지 분석 `maxPages` 범위의 허용 도메인 GET 탐색, iframe·Shadow DOM 메타데이터, fingerprint 변경 시 이전 분석 `STALE` 처리 추가
+- 전체/TC별 실행 이력 API와 실제 TC 성공률·마지막 실행 집계 추가
 
 프론트엔드에 요청:
 
@@ -136,10 +144,13 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 가입·승인·사용자 역할 API
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
-- 프론트 페이지 분석 진행 상태·후보 선택·적용 UI 연결 (`AI_PAGE_DISCOVERY_REQUIREMENTS.md` 기준)
 - 규칙 기반 Playwright 후보 검증 통합 확인 후 OpenAI 의미 매핑을 TC당 최대 1회·일일 예산 내에서 활성화
+- 다중 선택·일괄 구조화/승인은 단일 TC 전체 흐름 실환경 검증 후 확장
 
 ## 최근 검증
+
+- 최신 자연어 QA 요구사항 회귀: 백엔드 `57 passed`, 프론트 실제 API 프로덕션 Docker 빌드 통과, AI 호출 0
+- 실제 `KakaoGames_AI_Automation.xlsx`: 21건, 첫 ID `KG-WEB-001`, 마지막 ID `KG-WEB-021`; AI 입력에 `Not Test`/`Source:` 없음, 감사 필드 보존 확인
 
 - 페이지 분석 API·구조화/실행 차단·민감정보 마스킹 회귀 포함 백엔드 단위 테스트 `55 passed` (Docker 일회성 테스트 컨테이너, AI 호출 0)
 

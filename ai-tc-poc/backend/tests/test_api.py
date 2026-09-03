@@ -17,7 +17,7 @@ from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 from app.schemas.resources import EnvironmentSummary, TestAccountSummary
-from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport, _sanitize_discovery_elements
+from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport, _safe_discovery_url, _sanitize_discovery_elements
 from app.workers.step_executor import StepDefinitionError, execute_step
 
 
@@ -34,7 +34,7 @@ class FakeTestCaseRepository:
     async def list(self):
         return [TestCaseSummary(id="TC-142", title="회원가입", group="Authentication", status="READY", passRate=96, lastExecutedAt="12분 전")]
 
-    async def save_structured(self, _body, result):
+    async def save_structured(self, _body, result, _imported=None):
         self.versions[result.versionId] = "REVIEW_REQUIRED"
         return result
 
@@ -88,6 +88,16 @@ class FakeExecutionRepository:
 
     async def get(self, execution_id):
         return next((item for item in self.ids.values() if item.id == str(execution_id)), None)
+
+    async def list(self, status=None, test_case_display_id=None, limit=50, offset=0):
+        items = [{
+            "id": item.id, "testCaseId": test_case_display_id or "TC-142", "testCaseTitle": "회원가입",
+            "testCaseVersionId": item.testCaseVersionId, "status": item.status, "errorCode": None,
+            "plannedStepCount": 1, "actualStepCount": 1, "queuedAt": item.queuedAt,
+            "startedAt": item.startedAt, "endedAt": item.endedAt, "durationMs": None,
+            "artifactCount": 0, "parentExecutionId": item.parentExecutionId,
+        } for item in list(self.ids.values())[offset:offset + limit] if not status or item.status == status]
+        return {"items": items, "total": len(items)}
 
     async def details(self, execution_id):
         item = await self.get(execution_id)
@@ -193,6 +203,7 @@ def isolate_database(monkeypatch):
     app.dependency_overrides[get_session] = fake_session
     monkeypatch.setattr("app.modules.test_cases.router.SqlTestCaseRepository", FakeTestCaseRepository)
     monkeypatch.setattr("app.modules.executions.router.SqlExecutionRepository", FakeExecutionRepository)
+    monkeypatch.setattr("app.modules.test_cases.router.SqlExecutionRepository", FakeExecutionRepository)
     monkeypatch.setattr("app.modules.resources.router.SqlResourceRepository", FakeResourceRepository)
     monkeypatch.setattr("app.modules.discoveries.router.DiscoveryRepository", FakeDiscoveryRepository)
     FakeExecutionRepository.ids.clear()
@@ -310,6 +321,21 @@ def test_each_structure_creates_a_unique_review_version_and_unknown_approval_is_
     assert unknown.json()["code"] == "TC_VERSION_NOT_FOUND"
 
 
+def test_selected_import_item_is_structured_independently() -> None:
+    response = client.post("/api/v1/test-case-versions/imported/structure", json={"testCase": {
+        "externalId": "KG-WEB-019", "title": "전체게임 > 필터 > PC 선택",
+        "depth1": "전체게임", "depth2": "필터", "depth3": "PC 선택",
+        "precondition": "전체게임 영역 노출", "steps": ["#PC 클릭", "목록 갱신 확인"],
+        "expected": "#PC가 활성화되고 PC 게임만 표시된다", "sourceUrl": "https://kakaogames.com/",
+        "rawText": "TC ID: KG-WEB-019\n제목: 전체게임 > 필터 > PC 선택\n단계 1: #PC 클릭\n기대결과: #PC가 활성화되고 PC 게임만 표시된다\n대상 URL: https://kakaogames.com/",
+        "auditFields": {"Result(AOS)": "Not Test", "Comment": "Source: https://kakaogames.com/"},
+    }})
+    assert response.status_code == 200
+    assert response.json()["status"] == "REVIEW_REQUIRED"
+    assert response.json()["automationStatus"] in {"AUTOMATABLE", "PARTIALLY_AUTOMATABLE"}
+    assert "Not Test" not in " ".join(step["note"] for step in response.json()["steps"])
+
+
 def test_execution_plan_endpoint_returns_server_validated_contract() -> None:
     response = client.get(
         "/api/v1/test-case-versions/00000000-0000-0000-0000-000000000501/execution-plan",
@@ -348,6 +374,8 @@ def test_page_discovery_sanitizes_personal_text_and_sensitive_links() -> None:
     ])
     assert result[0]["name"] == "***@*** ***-****-****"
     assert result[0]["href"] == ""
+    assert _safe_discovery_url("https://example.test/start", "/next?token=secret#part", ["example.test"]) == "https://example.test/next"
+    assert _safe_discovery_url("https://example.test/start", "https://evil.test/", ["example.test"]) is None
 
 
 def test_patch_review_step_returns_recalculated_plan() -> None:
@@ -411,6 +439,8 @@ def test_import_txt_test_case() -> None:
         "title": "login",
         "rawText": "로그인 페이지 접속\n아이디와 비밀번호 입력\n대시보드 확인",
         "warnings": [],
+        "detectedTestCaseCount": 0,
+        "testCases": [],
     }
 
 
@@ -457,7 +487,8 @@ def test_import_xlsx_test_case() -> None:
         files={"file": ("login.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert response.status_code == 200
-    assert response.json()["rawText"] == "로그인 | 대시보드 노출"
+    assert response.json()["testCases"][0]["steps"] == ["로그인"]
+    assert response.json()["testCases"][0]["expected"] == "대시보드 노출"
 
 
 def test_import_xlsx_excludes_report_metadata_before_tc_table() -> None:
@@ -538,7 +569,9 @@ def test_import_xlsx_excludes_repeated_headers_numbers_and_status_source_rows() 
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["rawText"] == "TC-001 | 사이트 접속 | 로그인 화면\nTC-002 | 메뉴 클릭 | 메뉴 노출"
+    assert [item["externalId"] for item in body["testCases"]] == ["TC-001", "TC-002"]
+    assert "Not Test" not in body["rawText"]
+    assert "Source:" not in body["rawText"]
     assert body["warnings"] == [
         "XLSX_METADATA_ROWS_EXCLUDED:0", "XLSX_TEST_CASES_DETECTED:2", "XLSX_NON_TC_ROWS_EXCLUDED:3",
     ]
@@ -548,8 +581,8 @@ def test_import_xlsx_preserves_tc_rows_with_not_test_result_and_source_comment()
     workbook = BytesIO()
     rows = [
         ["", "ID", "", "DEPTH1", "DEPTH2", "DEPTH3", "Precondition", "Step", "Expected Result", "Result(AOS)", "Result(IOS)", "BTS ID", "Comment"],
-        ["KG-WEB-001", "", "공통", "접속", "HTTPS 접속", "인터넷 연결", "1. 사이트 접속", "메인 화면 노출", "Not Test", "Not Test", "", "Source: https://example.test/"],
-        ["KG-WEB-002", "", "공통", "접속", "제목 확인", "페이지 접속", "1. 제목 확인", "정상 제목 노출", "Not Test", "Not Test", "", "Source: https://example.test/"],
+        ["", "KG-WEB-001", "", "공통", "접속", "HTTPS 접속", "인터넷 연결", "1. 사이트 접속", "메인 화면 노출", "Not Test", "Not Test", "", "Source: https://example.test/"],
+        ["", "KG-WEB-002", "", "공통", "접속", "제목 확인", "페이지 접속", "1. 제목 확인", "정상 제목 노출", "Not Test", "Not Test", "", "Source: https://example.test/"],
     ]
     row_xml = "".join(
         "<row>" + "".join(f'<c t="inlineStr"><is><t>{cell}</t></is></c>' for cell in row) + "</row>"
@@ -578,9 +611,10 @@ def test_import_xlsx_preserves_tc_rows_with_not_test_result_and_source_comment()
     )
     assert response.status_code == 200
     body = response.json()
-    assert "KG-WEB-001" in body["rawText"]
-    assert "Not Test" in body["rawText"]
-    assert "Source: https://example.test/" in body["rawText"]
+    assert [item["externalId"] for item in body["testCases"]] == ["KG-WEB-001", "KG-WEB-002"]
+    assert "Not Test" not in body["rawText"]
+    assert "Source:" not in body["rawText"]
+    assert any("Not Test" in value for value in body["testCases"][0]["auditFields"].values())
     assert body["warnings"] == ["XLSX_METADATA_ROWS_EXCLUDED:0", "XLSX_TEST_CASES_DETECTED:2"]
 
 
@@ -663,6 +697,22 @@ def test_execution_get_and_cancel() -> None:
     assert fetched.json()["status"] == "RUNNING"
     assert cancelled.status_code == 202
     assert cancelled.json()["execution"]["status"] == "CANCEL_REQUESTED"
+
+
+def test_execution_history_list_and_test_case_filter() -> None:
+    execution = ExecutionResponse(
+        id="00000000-0000-0000-0000-000000000701", status="PASS",
+        testCaseVersionId="00000000-0000-0000-0000-000000000501", queuedAt=datetime.now(UTC),
+    )
+    FakeExecutionRepository.ids["history"] = execution
+    all_items = client.get("/api/v1/executions", params={"status": "PASS"})
+    tc_items = client.get("/api/v1/test-cases/KG-WEB-019/executions")
+    invalid = client.get("/api/v1/executions", params={"status": "UNKNOWN"})
+    assert all_items.status_code == tc_items.status_code == 200
+    assert all_items.json()["total"] == 1
+    assert tc_items.json()["items"][0]["testCaseId"] == "KG-WEB-019"
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "INVALID_EXECUTION_STATUS"
 
 
 def test_execution_details_exposes_steps_and_artifacts() -> None:

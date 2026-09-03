@@ -2,7 +2,7 @@ import hashlib
 import json
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +11,8 @@ from app.db.models import (
     StepRun, TestAccount, TestCase, TestCaseVersion,
 )
 from app.schemas.executions import (
-    ArtifactResponse, CreateExecutionRequest, ExecutionDetailsResponse, ExecutionPlanComparison, ExecutionResponse, StepRunResponse,
+    ArtifactResponse, CreateExecutionRequest, ExecutionDetailsResponse, ExecutionListItem, ExecutionListResponse,
+    ExecutionPlanComparison, ExecutionResponse, StepRunResponse,
 )
 from app.modules.test_cases.execution_plan import ValidatedExecutionPlan, validate_execution_plan
 
@@ -76,6 +77,38 @@ class SqlExecutionRepository:
             raise
         await self.session.refresh(execution)
         return self._response(execution)
+
+    async def list(self, status: str | None = None, test_case_display_id: str | None = None, limit: int = 50, offset: int = 0) -> ExecutionListResponse:
+        filters = [Execution.organization_id == self.organization_id, Execution.project_id == self.project_id]
+        if status:
+            filters.append(Execution.status == status)
+        if test_case_display_id:
+            filters.append(TestCase.display_id == test_case_display_id)
+        base = (
+            select(Execution, TestCase)
+            .join(TestCaseVersion, TestCaseVersion.id == Execution.test_case_version_id)
+            .join(TestCase, TestCase.id == TestCaseVersion.test_case_id)
+            .where(*filters)
+        )
+        total = int(await self.session.scalar(select(func.count()).select_from(base.subquery())) or 0)
+        rows = (await self.session.execute(base.order_by(Execution.queued_at.desc()).limit(limit).offset(offset))).all()
+        items = []
+        for execution, test_case in rows:
+            actual_count = int(await self.session.scalar(select(func.count(StepRun.id)).where(StepRun.execution_id == execution.id)) or 0)
+            artifact_count = int(await self.session.scalar(select(func.count(Artifact.id)).where(Artifact.execution_id == execution.id)) or 0)
+            snapshot = (execution.settings or {}).get("executionPlan") or {}
+            duration_ms = None
+            if execution.started_at and execution.ended_at:
+                duration_ms = max(0, int((execution.ended_at - execution.started_at).total_seconds() * 1000))
+            items.append(ExecutionListItem(
+                id=str(execution.id), testCaseId=test_case.display_id, testCaseTitle=test_case.title,
+                testCaseVersionId=str(execution.test_case_version_id), status=execution.status.value,
+                errorCode=execution.error_code, plannedStepCount=int(snapshot.get("stepCount") or 0),
+                actualStepCount=actual_count, queuedAt=execution.queued_at, startedAt=execution.started_at,
+                endedAt=execution.ended_at, durationMs=duration_ms, artifactCount=artifact_count,
+                parentExecutionId=str(execution.parent_execution_id) if execution.parent_execution_id else None,
+            ))
+        return ExecutionListResponse(items=items, total=total)
 
     async def get(self, execution_id: UUID) -> Execution | None:
         return await self.session.scalar(

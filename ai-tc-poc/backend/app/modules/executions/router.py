@@ -1,15 +1,16 @@
 from uuid import UUID
 from io import BytesIO
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_session
 from app.core.errors import DomainError
+from app.db.models import ExecutionStatus
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
 from app.modules.executions.events import execution_event_stream
 from app.modules.test_cases.execution_plan import ExecutionPlanError
-from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionDetailsResponse, ExecutionResponse
+from app.schemas.executions import CreateExecutionRequest, ExecutionActionResponse, ExecutionDetailsResponse, ExecutionListResponse, ExecutionResponse
 from app.workers.artifacts import ArtifactStore
 
 
@@ -41,6 +42,20 @@ async def create_execution(body: CreateExecutionRequest, request: Request, idemp
             exc.code, exc.message, 422, retryable=False,
             details={"stepNo": exc.step_no, "stepId": exc.step_id, "missingFields": exc.missing_fields},
         ) from None
+
+
+@router.get("", response_model=ExecutionListResponse)
+async def list_executions(
+    request: Request,
+    execution_status: str | None = Query(default=None, alias="status"),
+    test_case_id: str | None = Query(default=None, alias="testCaseId"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    session: AsyncSession = Depends(get_session),
+) -> ExecutionListResponse:
+    if execution_status and execution_status not in {item.value for item in ExecutionStatus}:
+        raise DomainError("INVALID_EXECUTION_STATUS", "지원하지 않는 실행 상태입니다.", 422)
+    return await repository_for(session, request).list(execution_status, test_case_id, limit, offset)
 
 
 @router.get("/{execution_id}", response_model=ExecutionResponse)

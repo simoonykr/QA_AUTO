@@ -163,7 +163,12 @@ assertion 검증 규칙:
 - 요청: `multipart/form-data`의 `file` 필드
 - 확장자: `.txt`, `.csv`, `.xlsx`, `.docx`
 - 파일 크기: 최대 10MB
-- 응답: `{ fileName, format, title, rawText, warnings }`
+- 응답: `{ fileName, format, title, rawText, warnings, detectedTestCaseCount, testCases }`
+- XLSX의 `testCases[]` 항목: `externalId`, `title`, `depth1~3`, `precondition`, `steps[]`, `expected`, `sourceUrl`, `rawText`, `auditFields`
+- `rawText`와 각 항목의 `rawText`에는 구조화에 필요한 ID·계층·전제조건·Step·Expected Result·대상 URL만 포함한다.
+- Result(AOS/IOS), BTS ID, Comment, `Not Test`, `Source:` 원문은 `auditFields`에만 보관하고 AI 구조화 입력에서는 제외한다.
+- `POST /api/v1/test-case-versions/imported/structure`: `{ testCase: testCases[n] }`를 받아 선택한 TC 하나만 독립 TestCase·TestCaseVersion으로 저장하고 구조화 결과를 반환한다.
+- 구조화·계획 응답은 `automationStatus`(`AUTOMATABLE|PARTIALLY_AUTOMATABLE|MANUAL_REVIEW_REQUIRED|UNSUPPORTED`)와 `automationReason`을 반환한다. `UNSUPPORTED`는 승인·실행할 수 없다.
 - 프론트는 응답의 `title`, `rawText`를 편집기에 반영한 뒤 기존 구조화 API를 호출
 - 오류 코드: `UNSUPPORTED_FILE_TYPE`(415), `FILE_TOO_LARGE`(413), `EMPTY_TEST_CASE_FILE`(422), `UNSUPPORTED_TEXT_ENCODING`(422), `INVALID_DOCUMENT`(422), `EXTRACTED_TEXT_TOO_LARGE`(413)
 - 파싱은 서버에서 결정적으로 수행하며 AI API를 호출하지 않음
@@ -184,6 +189,10 @@ assertion 검증 규칙:
 - `steps`: `stepNo`, `status`, `action`, `assertion`, `errorCode`, 시작·종료 시각
 - `artifacts`: 증적 종류, MinIO object key, SHA-256, 크기, 생성 시각
 - 프론트는 기존 상태 polling을 유지하면서 실행 모니터/결과 화면에서 상세 endpoint를 추가 호출할 수 있음
+- `GET /api/v1/executions?status=&testCaseId=&limit=&offset=`: 실행 이력 `{ items, total }` 반환
+- `GET /api/v1/test-cases/{testCaseId}/executions`: 해당 TC 실행 이력 반환
+- 이력 항목은 TC ID·제목, version ID, 상태·오류, 계획/실제 단계 수, 시각·duration, 증적 수, 재시도 부모 ID를 포함한다.
+- `GET /api/v1/test-cases`의 `passRate`, `lastExecutedAt`은 실제 종료 Execution 집계를 사용한다.
 
 실시간·증적 계약:
 

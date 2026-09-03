@@ -175,6 +175,7 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         }
         step.update(_execution_fields(segment, action))
         step["targetDescription"] = segment[:300]
+        step["actionIntent"] = action
         hint_values = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
         hint_text = hint_values[-1] if hint_values else segment[:120]
         step["selectorHint"] = {"text": hint_text}
@@ -189,6 +190,7 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         steps[-1]["action"] = "assert"
     if len(segments) > 20:
         assumptions.append(f"원문의 {len(segments)}개 항목 중 앞 20개만 구조화했습니다. 나머지 항목은 검토가 필요합니다.")
+    automation_status, automation_reason = _automation_assessment(body.rawText)
     return StructuredTestCase(
         versionId=str(version_id or uuid4()), status="REVIEW_REQUIRED", title=body.title,
         preconditions=list(dict.fromkeys(preconditions)),
@@ -196,6 +198,8 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         assertions=assertions,
         assumptions=assumptions,
         confidence=0.68,
+        automationStatus=automation_status,
+        automationReason=automation_reason,
         aiUsage=AiUsageSummary(source="RULE_BASED", callCount=0, inputTokens=0, outputTokens=0, costUsd="0.00000000", dailySpentUsd="0.00000000", dailyBudgetUsd=money(budget)),
     )
 
@@ -204,7 +208,11 @@ def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> Str
     assumptions = list(result.assumptions)
     steps = []
     for step in result.steps:
-        updated = step
+        updated = step.model_copy(update={
+            "actionIntent": step.actionIntent or step.action,
+            "targetDescription": step.targetDescription or step.title or step.note,
+            "selectorHint": step.selectorHint or {"text": step.title or step.note},
+        })
         if step.selector and step.selector not in raw_text:
             assumptions.append(f"{step.id}: 원문 근거가 없는 selector를 제거했습니다. 승인 전에 selector를 입력해 주세요.")
             updated = step.model_copy(update={"selector": None})
@@ -213,7 +221,22 @@ def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> Str
         if updated.action in {"fill", "click", "assert"} and updated.assertionType != "url" and not updated.selector:
             assumptions.append(f"{updated.id}: selector가 없어 승인 전에 검토·수정이 필요합니다.")
         steps.append(updated)
-    return result.model_copy(update={"steps": steps, "assumptions": list(dict.fromkeys(assumptions))})
+    automation_status, automation_reason = _automation_assessment(raw_text)
+    return result.model_copy(update={
+        "steps": steps, "assumptions": list(dict.fromkeys(assumptions)),
+        "automationStatus": automation_status, "automationReason": automation_reason,
+    })
+
+
+def _automation_assessment(raw_text: str) -> tuple[str, str]:
+    lowered = raw_text.lower()
+    subjective = any(keyword in lowered for keyword in ("자연스럽", "적절", "보기 좋", "매끄럽", "이상 없", "디자인"))
+    risky = any(keyword in lowered for keyword in ("결제 완료", "회원가입 완료", "삭제", "게시", "파일 업로드"))
+    if risky:
+        return "UNSUPPORTED", "결제·가입·삭제·게시·업로드와 같은 실제 업무 변경은 자동 탐색·실행 대상에서 제외합니다."
+    if subjective:
+        return "PARTIALLY_AUTOMATABLE", "주관적·시각적 기대 결과는 일부 수동 검토가 필요합니다."
+    return "AUTOMATABLE", "페이지 분석으로 대상 요소가 해결되면 자동 실행할 수 있습니다."
 
 
 def detect_test_case_count(raw_text: str) -> int:

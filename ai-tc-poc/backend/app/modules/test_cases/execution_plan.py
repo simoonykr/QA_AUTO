@@ -28,6 +28,8 @@ class ValidatedExecutionPlan:
     source: str
     environment: dict[str, str]
     steps: list[dict[str, Any]]
+    automation_status: str
+    automation_reason: str
 
     @property
     def public_steps(self) -> list[dict[str, Any]]:
@@ -39,6 +41,8 @@ class ValidatedExecutionPlan:
 
 def validate_execution_plan(version: TestCaseVersion, environment: Environment) -> ValidatedExecutionPlan:
     spec = version.structured_spec or {}
+    if spec.get("automationStatus") == "UNSUPPORTED":
+        raise ExecutionPlanError("AUTOMATION_UNSUPPORTED", str(spec.get("automationReason") or "자동 실행을 지원하지 않는 테스트입니다."))
     source_steps = spec.get("steps")
     if not isinstance(source_steps, list) or not source_steps:
         raise ExecutionPlanError("EXECUTION_PLAN_INVALID", "실행할 구조화 단계가 없습니다.")
@@ -106,6 +110,8 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
         source=str(spec.get("source") or "RULE_BASED"),
         environment={"id": str(environment.id), "name": environment.name, "baseUrl": environment.base_url},
         steps=normalized,
+        automation_status=str(spec.get("automationStatus") or "MANUAL_REVIEW_REQUIRED"),
+        automation_reason=str(spec.get("automationReason") or "실행 가능성을 검토해야 합니다."),
     )
 
 

@@ -81,3 +81,25 @@ class ExecutionDetailsResponse(BaseModel):
     steps: list[StepRunResponse]
     artifacts: list[ArtifactResponse]
     plan: ExecutionPlanComparison | None = None
+
+
+class ExecutionListItem(BaseModel):
+    id: str
+    testCaseId: str
+    testCaseTitle: str
+    testCaseVersionId: str
+    status: ExecutionStatusValue
+    errorCode: str | None = None
+    plannedStepCount: int = 0
+    actualStepCount: int = 0
+    queuedAt: datetime
+    startedAt: datetime | None = None
+    endedAt: datetime | None = None
+    durationMs: int | None = None
+    artifactCount: int = 0
+    parentExecutionId: str | None = None
+
+
+class ExecutionListResponse(BaseModel):
+    items: list[ExecutionListItem]
+    total: int = Field(ge=0)

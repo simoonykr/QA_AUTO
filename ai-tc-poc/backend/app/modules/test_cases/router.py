@@ -7,7 +7,9 @@ from app.core.database import get_session
 from app.core.errors import DomainError
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError
 from app.modules.test_cases.execution_plan import ExecutionPlanError
-from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCase, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
+from app.modules.executions.repository import SqlExecutionRepository
+from app.schemas.executions import ExecutionListResponse
+from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCase, SelectedImportStructureRequest, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
 from app.modules.test_cases.importer import MAX_UPLOAD_BYTES, import_test_case
 from app.modules.ai.service import StructureService
 
@@ -18,8 +20,19 @@ version_router = APIRouter(prefix="/test-case-versions", tags=["test-cases"])
 
 @router.get("", response_model=list[TestCaseSummary])
 async def list_test_cases(session: AsyncSession = Depends(get_session)) -> list[TestCaseSummary]:
-    repository = SqlTestCaseRepository(session, UUID(get_settings().default_organization_id))
+    settings = get_settings()
+    repository = SqlTestCaseRepository(session, UUID(settings.default_organization_id), UUID(settings.default_project_id))
     return await repository.list()
+
+
+@router.get("/{test_case_id}/executions", response_model=ExecutionListResponse)
+async def list_test_case_executions(test_case_id: str, request: Request, session: AsyncSession = Depends(get_session)) -> ExecutionListResponse:
+    settings = get_settings()
+    repository = SqlExecutionRepository(
+        session, UUID(settings.default_organization_id), UUID(settings.default_project_id),
+        UUID(settings.default_user_id), UUID(request.state.request_id),
+    )
+    return await repository.list(test_case_display_id=test_case_id)
 
 
 @router.post("/import", response_model=ImportedTestCase)
@@ -39,6 +52,21 @@ async def structure_test_case(body: StructureRequest, request: Request, session:
     )
     try:
         return await repository.save_structured(body, structured)
+    except TestCaseVersionRuleError as exc:
+        raise DomainError(exc.code, exc.message, 404) from None
+
+
+@version_router.post("/imported/structure", response_model=StructuredTestCase)
+async def structure_imported_test_case(body: SelectedImportStructureRequest, request: Request, session: AsyncSession = Depends(get_session)) -> StructuredTestCase:
+    settings = get_settings()
+    structure_request = StructureRequest(title=body.testCase.title, rawText=body.testCase.rawText)
+    structured = await StructureService(session, settings).structure(structure_request, uuid4())
+    repository = SqlTestCaseRepository(
+        session, UUID(settings.default_organization_id), UUID(settings.default_project_id),
+        UUID(settings.default_user_id), UUID(request.state.request_id),
+    )
+    try:
+        return await repository.save_structured(structure_request, structured, body.testCase)
     except TestCaseVersionRuleError as exc:
         raise DomainError(exc.code, exc.message, 404) from None
 

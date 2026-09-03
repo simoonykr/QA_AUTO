@@ -60,6 +60,7 @@ export interface StructuredStep {
   targetDescription?: string | null
   selectorHint?: Record<string,string> | null
   resolutionStatus?: ResolutionStatus | null
+  actionIntent?: string | null
 }
 
 export interface StructuredTestCase {
@@ -80,6 +81,8 @@ export interface StructuredTestCase {
     dailySpentUsd: string
     dailyBudgetUsd: string
   }
+  automationStatus: 'AUTOMATABLE' | 'PARTIALLY_AUTOMATABLE' | 'MANUAL_REVIEW_REQUIRED' | 'UNSUPPORTED'
+  automationReason: string
 }
 
 export interface TestCaseVersionApproval { versionId: string; status: 'READY' }
@@ -111,6 +114,8 @@ export interface ExecutionPlan {
   warnings: Array<{ code: string; message: string; stepNo?: number | null; stepId?: string | null; missingFields: string[] }>
   executable: boolean
   source: 'AI' | 'CACHE' | 'RULE_BASED'
+  automationStatus: StructuredTestCase['automationStatus']
+  automationReason: string
 }
 
 export interface TestCaseVersionStepPatch {
@@ -161,7 +166,30 @@ export interface TestCaseImportResponse {
   title: string
   rawText: string
   warnings: string[]
+  detectedTestCaseCount: number
+  testCases: ImportedTestCaseItem[]
 }
+
+export interface ImportedTestCaseItem {
+  externalId?: string | null
+  title: string
+  depth1?: string | null
+  depth2?: string | null
+  depth3?: string | null
+  precondition?: string | null
+  steps: string[]
+  expected?: string | null
+  sourceUrl?: string | null
+  rawText: string
+  auditFields: Record<string,string>
+}
+
+export interface ExecutionHistoryItem {
+  id:string; testCaseId:string; testCaseTitle:string; testCaseVersionId:string; status:ExecutionStatus
+  errorCode?:string|null; plannedStepCount:number; actualStepCount:number; queuedAt:string
+  startedAt?:string|null; endedAt?:string|null; durationMs?:number|null; artifactCount:number; parentExecutionId?:string|null
+}
+export interface ExecutionHistoryResponse { items:ExecutionHistoryItem[]; total:number }
 
 export interface CreateExecutionRequest {
   testCaseVersionId: string

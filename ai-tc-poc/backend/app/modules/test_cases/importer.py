@@ -8,7 +8,7 @@ from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 from app.core.errors import DomainError
-from app.schemas.test_cases import ImportedTestCase
+from app.schemas.test_cases import ImportedTestCase, ImportedTestCaseItem
 
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -70,7 +70,7 @@ def _normalize_header(value: str) -> str:
 
 def _is_tc_header(row: list[str]) -> bool:
     headers = {_normalize_header(value) for value in row}
-    id_headers = {"tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}
+    id_headers = {"id", "tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}
     step_headers = {"step", "steps", "teststep", "teststeps", "단계", "테스트단계"}
     expected_headers = {"expectedresult", "expected", "기대결과", "예상결과"}
     return bool(headers & expected_headers) and bool(headers & (id_headers | step_headers))
@@ -112,10 +112,92 @@ def _is_xlsx_non_tc_row(row: list[str], step_columns: list[int], expected_column
     return has_status and has_source
 
 
-def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str]]:
+def _header_index(headers: list[str], aliases: set[str]) -> int | None:
+    return next((index for index, value in enumerate(headers) if value in aliases), None)
+
+
+def _cell(row: list[str], index: int | None) -> str:
+    return row[index].strip() if index is not None and index < len(row) else ""
+
+
+def _split_lines(value: str) -> list[str]:
+    return [part.strip() for part in re.split(r"[\r\n]+", value) if part.strip()]
+
+
+def _item_raw_text(item: dict) -> str:
+    lines = []
+    if item.get("externalId"):
+        lines.append(f"TC ID: {item['externalId']}")
+    if item.get("title"):
+        lines.append(f"제목: {item['title']}")
+    if item.get("precondition"):
+        lines.append(f"전제조건: {item['precondition']}")
+    lines.extend(f"단계 {index}: {step}" for index, step in enumerate(item.get("steps") or [], start=1))
+    if item.get("expected"):
+        lines.append(f"기대결과: {item['expected']}")
+    if item.get("sourceUrl"):
+        lines.append(f"대상 URL: {item['sourceUrl']}")
+    return "\n".join(lines)
+
+
+def _parse_tc_items(header: list[str], content_rows: list[list[str]]) -> list[ImportedTestCaseItem]:
+    headers = [_normalize_header(value) for value in header]
+    indices = {
+        "id": _header_index(headers, {"id", "tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}),
+        "depth1": _header_index(headers, {"depth1", "대분류", "1depth"}),
+        "depth2": _header_index(headers, {"depth2", "중분류", "2depth"}),
+        "depth3": _header_index(headers, {"depth3", "소분류", "3depth"}),
+        "precondition": _header_index(headers, {"precondition", "preconditions", "사전조건", "전제조건"}),
+        "steps": _header_index(headers, {"step", "steps", "teststep", "teststeps", "단계", "테스트단계"}),
+        "expected": _header_index(headers, {"expectedresult", "expected", "기대결과", "예상결과"}),
+    }
+    audit_indices = {
+        header[index]: index for index, normalized in enumerate(headers)
+        if normalized in {"resultaos", "resultios", "result", "btsid", "comment", "비고", "결과"}
+    }
+    items: list[dict] = []
+    current: dict | None = None
+    for row in content_rows:
+        external_id = _cell(row, indices["id"])
+        if not _looks_like_tc_id(external_id):
+            external_id = next((value.strip() for value in row if _looks_like_tc_id(value)), "")
+        starts_item = bool(external_id and _looks_like_tc_id(external_id))
+        if starts_item or current is None:
+            depth = [_cell(row, indices[key]) for key in ("depth1", "depth2", "depth3")]
+            title = " > ".join(value for value in depth if value) or external_id or "가져온 테스트 케이스"
+            current = {
+                "externalId": external_id or None, "title": title,
+                "depth1": depth[0] or None, "depth2": depth[1] or None, "depth3": depth[2] or None,
+                "precondition": _cell(row, indices["precondition"]) or None,
+                "steps": _split_lines(_cell(row, indices["steps"])),
+                "expectedParts": _split_lines(_cell(row, indices["expected"])),
+                "auditFields": {name: _cell(row, index) for name, index in audit_indices.items() if _cell(row, index)},
+            }
+            items.append(current)
+        else:
+            current["steps"].extend(_split_lines(_cell(row, indices["steps"])))
+            current["expectedParts"].extend(_split_lines(_cell(row, indices["expected"])))
+            for name, index in audit_indices.items():
+                value = _cell(row, index)
+                if value:
+                    current["auditFields"][name] = "\n".join(filter(None, [current["auditFields"].get(name), value]))
+        comment_text = "\n".join(current["auditFields"].values())
+        source_match = re.search(r"https?://[^\s|)]+", comment_text)
+        current["sourceUrl"] = source_match.group(0).rstrip(".,") if source_match else current.get("sourceUrl")
+    results = []
+    for item in items:
+        item["expected"] = "\n".join(dict.fromkeys(item.pop("expectedParts"))) or None
+        item["steps"] = list(dict.fromkeys(item["steps"]))
+        raw_text = _item_raw_text(item)
+        if raw_text:
+            results.append(ImportedTestCaseItem(**item, rawText=raw_text))
+    return results
+
+
+def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str], list[ImportedTestCaseItem]]:
     header_index = next((index for index, row in enumerate(rows) if _is_tc_header(row)), None)
     if header_index is None:
-        return _clean([" | ".join(value for value in row if value) for row in rows]), []
+        return _clean([" | ".join(value for value in row if value) for row in rows]), [], []
     tc_rows = rows[header_index:]
     normalized_header = [_normalize_header(value) for value in tc_rows[0]]
     step_headers = {"step", "steps", "teststep", "teststeps", "단계", "테스트단계"}
@@ -132,10 +214,20 @@ def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str]]:
     excluded_content_count = len(tc_rows) - 1 - len(content_rows)
     if excluded_content_count:
         warnings.append(f"XLSX_NON_TC_ROWS_EXCLUDED:{excluded_content_count}")
-    return _clean([" | ".join(value for value in row if value) for row in content_rows]), warnings
+    items = _parse_tc_items(tc_rows[0], content_rows)
+    safe_raw_text = _clean([item.rawText for item in items]) if items else _clean([" | ".join(value for value in row if value) for row in content_rows])
+    return safe_raw_text, warnings, items
 
 
-def _parse_xlsx(data: bytes) -> tuple[str, list[str]]:
+def _xlsx_column_index(reference: str) -> int:
+    letters = "".join(character for character in reference.upper() if character.isalpha())
+    value = 0
+    for character in letters:
+        value = value * 26 + ord(character) - ord("A") + 1
+    return max(0, value - 1)
+
+
+def _parse_xlsx(data: bytes) -> tuple[str, list[str], list[ImportedTestCaseItem]]:
     main_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     rel_ns = "http://schemas.openxmlformats.org/package/2006/relationships"
     doc_rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -168,7 +260,10 @@ def _parse_xlsx(data: bytes) -> tuple[str, list[str]]:
                         value = shared[int(value_node.text or "0")]
                     else:
                         value = value_node.text or ""
-                    values.append(value.strip())
+                    column_index = _xlsx_column_index(cell.attrib.get("r", "")) if cell.attrib.get("r") else len(values)
+                    if len(values) <= column_index:
+                        values.extend([""] * (column_index + 1 - len(values)))
+                    values[column_index] = value.strip()
                 if any(values):
                     rows.append(values)
     return _prepare_xlsx_rows(rows)
@@ -197,7 +292,7 @@ def import_test_case(filename: str, data: bytes) -> ImportedTestCase:
         elif extension == ".docx":
             raw_text = _parse_docx(data)
         else:
-            raw_text, warnings = _parse_xlsx(data)
+            raw_text, warnings, test_cases = _parse_xlsx(data)
     except (BadZipFile, KeyError, ElementTree.ParseError, IndexError, ValueError):
         raise DomainError("INVALID_DOCUMENT", "손상되었거나 지원하지 않는 문서 구조입니다.", 422) from None
 
@@ -207,4 +302,6 @@ def import_test_case(filename: str, data: bytes) -> ImportedTestCase:
         title=Path(safe_name).stem[:200] or "가져온 테스트 케이스",
         rawText=raw_text,
         warnings=warnings if extension == ".xlsx" else [],
+        detectedTestCaseCount=len(test_cases) if extension == ".xlsx" else 0,
+        testCases=test_cases if extension == ".xlsx" else [],
     )

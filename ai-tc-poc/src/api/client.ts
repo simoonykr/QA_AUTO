@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionPlan, ExecutionPolicy, LoginResponse, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ImportedTestCaseItem, LoginResponse, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -93,7 +93,7 @@ export const api = {
     if (!['txt','csv'].includes(extension)) throw new ApiError({ code: 'MOCK_BINARY_IMPORT_UNAVAILABLE', message: 'XLSX/DOCX 가져오기는 실제 백엔드가 연결된 통합 스테이징에서 사용할 수 있습니다.', requestId: 'mock', retryable: false }, 400)
     const rawText = await file.text()
     if (!rawText.trim()) throw new ApiError({ code: 'EMPTY_TEST_CASE_FILE', message: '파일에서 테스트 케이스 내용을 찾지 못했습니다.', requestId: 'mock', retryable: false }, 422)
-    return { fileName: file.name, format: extension.toUpperCase(), title: file.name.replace(/\.[^.]+$/, ''), rawText, warnings: [] }
+    return { fileName: file.name, format: extension.toUpperCase(), title: file.name.replace(/\.[^.]+$/, ''), rawText, warnings: [], detectedTestCaseCount:0, testCases:[] }
   },
 
   async listEnvironments(): Promise<EnvironmentSummary[]> {
@@ -125,7 +125,19 @@ export const api = {
       assumptions: rawText.includes('안전한 비밀번호') ? ['test_password 변수를 사용합니다.'] : [],
       confidence: 0.94,
       aiUsage: { source: 'RULE_BASED', callCount: 0, inputTokens: 0, outputTokens: 0, costUsd: '0', dailySpentUsd: '0', dailyBudgetUsd: '0' },
+      automationStatus:'AUTOMATABLE', automationReason:'페이지 분석 후 자동 실행할 수 있습니다.',
     }
+  },
+
+  async structureImportedTestCase(testCase:ImportedTestCaseItem):Promise<StructuredTestCase> {
+    if (!USE_MOCK_API) return request('/test-case-versions/imported/structure',{method:'POST',body:JSON.stringify({testCase})})
+    return this.structureTestCase(testCase.title,testCase.rawText)
+  },
+
+  async listExecutions(status?:string,testCaseId?:string):Promise<ExecutionHistoryResponse> {
+    const query=new URLSearchParams();if(status)query.set('status',status);if(testCaseId)query.set('testCaseId',testCaseId)
+    if (!USE_MOCK_API) return request(`/executions${query.size?`?${query}`:''}`)
+    return {items:[],total:0}
   },
 
   async approveTestCaseVersion(versionId: string): Promise<TestCaseVersionApproval> {
@@ -142,7 +154,7 @@ export const api = {
       versionId, status: 'READY', revision: 1, planHash: 'mock-plan-hash',
       environment: { id: environmentId, name: 'Staging', baseUrl: 'https://staging.storefront.test' },
       steps: mockSteps.map((step,index)=>({stepNo:index+1,id:step.id,title:step.title,action:step.action,url:step.url,selector:step.selector,value:step.value?'***':null,operator:step.operator,expected:step.expected,timeoutMs:step.timeoutMs??10000})),
-      warnings: [], executable: true, source: 'RULE_BASED',
+      warnings: [], executable: true, source: 'RULE_BASED', automationStatus:'AUTOMATABLE', automationReason:'페이지 분석 후 자동 실행할 수 있습니다.',
     }
     mockExecutionPlans.set(key,plan)
     return structuredClone(plan)

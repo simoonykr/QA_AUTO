@@ -26,6 +26,26 @@ class ImportedTestCase(BaseModel):
     title: str
     rawText: str
     warnings: list[str] = Field(default_factory=list)
+    detectedTestCaseCount: int = Field(default=0, ge=0)
+    testCases: list["ImportedTestCaseItem"] = Field(default_factory=list)
+
+
+class ImportedTestCaseItem(BaseModel):
+    externalId: str | None = None
+    title: str
+    depth1: str | None = None
+    depth2: str | None = None
+    depth3: str | None = None
+    precondition: str | None = None
+    steps: list[str] = Field(default_factory=list)
+    expected: str | None = None
+    sourceUrl: str | None = None
+    rawText: str
+    auditFields: dict[str, str] = Field(default_factory=dict)
+
+
+class SelectedImportStructureRequest(BaseModel):
+    testCase: ImportedTestCaseItem
 
 
 class StructuredStep(BaseModel):
@@ -44,6 +64,7 @@ class StructuredStep(BaseModel):
     targetDescription: str | None = None
     selectorHint: dict[str, str] = Field(default_factory=dict)
     resolutionStatus: Literal["UNRESOLVED", "RESOLVING", "RESOLVED", "AMBIGUOUS", "NOT_FOUND", "STALE"] | None = None
+    actionIntent: str | None = None
 
 
 class AssertionSpec(BaseModel):
@@ -73,6 +94,8 @@ class StructuredTestCase(BaseModel):
     assumptions: list[str]
     confidence: float = Field(ge=0, le=1)
     aiUsage: AiUsageSummary
+    automationStatus: Literal["AUTOMATABLE", "PARTIALLY_AUTOMATABLE", "MANUAL_REVIEW_REQUIRED", "UNSUPPORTED"] = "MANUAL_REVIEW_REQUIRED"
+    automationReason: str = "실행 가능성을 검토해야 합니다."
 
 
 class TestCaseVersionApproval(BaseModel):
@@ -132,6 +155,8 @@ class ExecutionPlanResponse(BaseModel):
     warnings: list[ExecutionPlanWarning] = Field(default_factory=list)
     executable: bool
     source: Literal["AI", "CACHE", "RULE_BASED"]
+    automationStatus: Literal["AUTOMATABLE", "PARTIALLY_AUTOMATABLE", "MANUAL_REVIEW_REQUIRED", "UNSUPPORTED"] = "MANUAL_REVIEW_REQUIRED"
+    automationReason: str = "실행 가능성을 검토해야 합니다."
 
 
 DiscoveryStatus = Literal["QUEUED", "PROVISIONING", "SCANNING", "MAPPING", "VALIDATING", "COMPLETED", "NEEDS_REVIEW", "FAILED", "CANCELLED"]
