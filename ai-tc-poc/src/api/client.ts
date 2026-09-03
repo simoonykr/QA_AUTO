@@ -134,8 +134,8 @@ export const api = {
     return this.structureTestCase(testCase.title,testCase.rawText)
   },
 
-  async listExecutions(status?:string,testCaseId?:string):Promise<ExecutionHistoryResponse> {
-    const query=new URLSearchParams();if(status)query.set('status',status);if(testCaseId)query.set('testCaseId',testCaseId)
+  async listExecutions(status?:string,testCaseId?:string,limit=50,offset=0):Promise<ExecutionHistoryResponse> {
+    const query=new URLSearchParams({limit:String(limit),offset:String(offset)});if(status)query.set('status',status);if(testCaseId)query.set('testCaseId',testCaseId)
     if (!USE_MOCK_API) return request(`/executions${query.size?`?${query}`:''}`)
     return {items:[],total:0}
   },

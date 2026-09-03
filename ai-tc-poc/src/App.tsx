@@ -10,7 +10,7 @@ import {
 import { api, apiConfig, ApiError } from './api/client'
 import type { AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, EnvironmentSummary, Execution, ExecutionDetails, ExecutionHistoryItem, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, ImportedTestCaseItem, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
 
-type View = 'dashboard' | 'cases' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
+type View = 'dashboard' | 'cases' | 'history' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
 type AuthorStage = 'draft' | 'structuring' | 'split-review' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
@@ -152,6 +152,12 @@ function App() {
     }
     startRun()
   }
+  const openHistoryExecution = async (item:ExecutionHistoryItem) => {
+    try {
+      const details=await api.getExecutionDetails(item.id)
+      setExecution(details.execution);setExecutionDetails(details);setView('result')
+    } catch (error) { toast(error instanceof ApiError ? error.body.message : '실행 상세를 불러오지 못했습니다.') }
+  }
 
   const toast = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2200) }
 
@@ -186,6 +192,7 @@ function App() {
           <Nav active={view === 'dashboard'} icon={<LayoutDashboard/>} label="대시보드" onClick={() => setView('dashboard')}/>
           <Nav active={view === 'cases'} icon={<ListChecks/>} label="테스트 케이스" badge="24" onClick={() => setView('cases')}/>
           <Nav active={view === 'run'} icon={<Activity/>} label="실행 모니터" badge="3" onClick={() => setView('run')}/>
+          <Nav active={view === 'history'} icon={<Clock3/>} label="실행 이력" onClick={() => setView('history')}/>
           <p className="nav-label spaced">Manage</p>
           <Nav active={view === 'environments'} icon={<TerminalSquare/>} label="실행 환경" onClick={() => setView('environments')}/>
           <Nav active={view === 'accounts'} icon={<Users/>} label="계정 및 데이터" onClick={() => setView('accounts')}/>
@@ -209,6 +216,7 @@ function App() {
 
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setActiveVersionId(null); setActiveStructured(null); setAuthorStage('draft'); setView('author')}}/>}
+        {view === 'history' && <ExecutionHistoryPage onOpen={openHistoryExecution}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onVersion={setActiveVersionId} onStructured={setActiveStructured} onToast={toast}/>}
         {view === 'configure' && activeVersionId && <RunConfigure versionId={activeVersionId} onBack={() => setView('author')} onStart={request=>{setPendingExecution(request);setView('plan')}} starting={startingRun}/>}
         {view === 'plan' && activeStructured && pendingExecution && <ExecutionPlanPreview structured={activeStructured} request={pendingExecution} onBack={()=>setView('configure')} onConfirm={()=>void createRun(pendingExecution)} starting={startingRun}/>}
@@ -283,6 +291,30 @@ function Dashboard({onRun, onCases}: {onRun: () => void; onCases: () => void}) {
 
 function Metric({icon,label,value,delta,tone}: {icon: React.ReactNode; label:string; value:string; delta:string; tone:string}) { return <article className="metric"><div className={`metric-icon ${tone}`}>{icon}</div><div><p>{label}</p><strong>{value}</strong><small className={tone}>{delta}</small></div></article> }
 function StatusIcon({type}: {type:'pass'|'running'|'fail'}) { return <span className={`status-icon ${type}`}>{type==='pass'?<Check/>:type==='fail'?<XCircle/>:<Activity/>}</span> }
+
+const HISTORY_PAGE_SIZE=20
+function ExecutionHistoryPage({onOpen}:{onOpen:(item:ExecutionHistoryItem)=>Promise<void>}) {
+  const [status,setStatus]=useState('ALL')
+  const [testCaseId,setTestCaseId]=useState('')
+  const [appliedTestCaseId,setAppliedTestCaseId]=useState('')
+  const [offset,setOffset]=useState(0)
+  const [result,setResult]=useState<{items:ExecutionHistoryItem[];total:number}>({items:[],total:0})
+  const [loading,setLoading]=useState(true)
+  const [error,setError]=useState('')
+  const load=()=>{setLoading(true);setError('');api.listExecutions(status==='ALL'?undefined:status,appliedTestCaseId||undefined,HISTORY_PAGE_SIZE,offset).then(setResult).catch(err=>{setResult({items:[],total:0});setError(err instanceof ApiError?err.body.message:'실행 이력을 불러오지 못했습니다.')}).finally(()=>setLoading(false))}
+  useEffect(load,[status,appliedTestCaseId,offset])
+  const applySearch=(event:React.FormEvent)=>{event.preventDefault();setOffset(0);setAppliedTestCaseId(testCaseId.trim())}
+  const page=Math.floor(offset/HISTORY_PAGE_SIZE)+1
+  const pages=Math.max(1,Math.ceil(result.total/HISTORY_PAGE_SIZE))
+  return <section className="page">
+    <div className="page-heading compact"><div><p className="eyebrow">EXECUTION HISTORY</p><h1>실행 이력</h1><p>저장된 실행 결과를 상태와 테스트 케이스별로 조회합니다.</p></div><button className="secondary" onClick={load} disabled={loading}><RefreshCw className={loading?'spin':''} size={14}/> 새로고침</button></div>
+    <form className="toolbar" onSubmit={applySearch}><div className="search"><Search size={17}/><input value={testCaseId} onChange={event=>setTestCaseId(event.target.value)} placeholder="테스트 케이스 ID 검색"/></div><Select value={status} setValue={value=>{setStatus(value);setOffset(0)}} options={['ALL','QUEUED','PROVISIONING','RUNNING','PASS','FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR']}/><button className="secondary" type="submit">조회</button></form>
+    <article className="panel table-panel history-table"><table><thead><tr><th>테스트 케이스</th><th>상태</th><th>단계</th><th>실행 시각</th><th>소요 시간</th><th>증적</th><th/></tr></thead><tbody>{result.items.map(item=>{const tone=item.status==='PASS'?'pass':['QUEUED','PROVISIONING','RUNNING'].includes(item.status)?'running':'fail';return <tr key={item.id}><td><span className={`status-icon ${tone}`}><Activity/></span><span><b>{item.testCaseTitle}</b><small>{item.testCaseId} · {item.id}</small></span></td><td><span className={`pill ${tone}`}>{item.status}</span>{item.errorCode&&<small>{item.errorCode}</small>}</td><td>{item.actualStepCount} / {item.plannedStepCount}</td><td>{new Date(item.queuedAt).toLocaleString('ko-KR')}</td><td>{item.durationMs==null?'-':`${Math.round(item.durationMs/1000)}s`}</td><td>{item.artifactCount}개</td><td><button className="row-play" onClick={()=>void onOpen(item)} aria-label={`${item.testCaseTitle} 실행 상세`}><Eye size={14}/></button></td></tr>})}</tbody></table>
+      {loading&&<div className="empty-table"><Activity className="spin" size={16}/> 실행 이력을 불러오는 중입니다.</div>}{!loading&&error&&<div className="empty-table error-text">{error}</div>}{!loading&&!error&&result.items.length===0&&<div className="empty-table">조건에 맞는 실행 이력이 없습니다.</div>}
+      <div className="history-pagination"><span>전체 {result.total}건 · {page}/{pages} 페이지</span><div><button className="secondary" disabled={offset===0||loading} onClick={()=>setOffset(Math.max(0,offset-HISTORY_PAGE_SIZE))}>이전</button><button className="secondary" disabled={offset+HISTORY_PAGE_SIZE>=result.total||loading} onClick={()=>setOffset(offset+HISTORY_PAGE_SIZE)}>다음</button></div></div>
+    </article>
+  </section>
+}
 
 function prepareStructureRawText(rawText:string):{rawText:string;excludedLineCount:number;excludedResultColumns:number} {
   const lines=rawText.split(/\r?\n/)
@@ -531,7 +563,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
         {stage==='split-review'&&splitReview&&<div className="review-empty split-review"><div><ListChecks/></div><h2>TC별 분리가 필요합니다.</h2><p>하나의 파일에서 여러 테스트 케이스가 감지되어 단일 실행 단계로 구조화하지 않았습니다.</p><div className="split-review-stats"><span><b>{splitReview.detectedTestCaseCount.toLocaleString()}개</b> 감지된 TC</span><span><b>{splitReview.rawTextLength.toLocaleString()}자</b> 원문 길이</span></div><div className="ambiguity"><AlertTriangle/><div><b>검토가 필요한 상태입니다.</b><p>현재 원문을 TC별로 분리한 뒤 각각 구조화해야 합니다. 이 결과는 승인하거나 실행할 수 없습니다.</p></div></div></div>}
         {stage==='structuring'&&<div className="review-empty"><div className="pulse"><WandSparkles/></div><h2>TC 구조를 분석하는 중입니다.</h2><p>단계와 검증 조건을 안전한 실행 명령으로 변환하고 있습니다.</p><div className="skeleton-lines"><i/><i/><i/><i/></div></div>}
         {(stage==='review'||stage==='ready')&&structured&&<><div className="section-head"><div><h2>구조화 검토</h2><p>서버가 검증한 실행 계획을 승인 전에 확인하고 수정하세요.</p></div><span className="confidence">신뢰도 <b>{Math.round(structured.confidence*100)}%</b></span></div>
-          <div className={`automation-assessment ${structured.automationStatus.toLowerCase()}`}><ShieldCheck/><div><b>{structured.automationStatus.replaceAll('_',' ')}</b><p>{structured.automationReason}</p></div></div>
+          <div className={`automation-assessment ${structured.automationStatus.toLowerCase()}`}><ShieldCheck/><div><b>{structured.automationStatus.replace(/_/g,' ')}</b><p>{structured.automationReason}</p></div></div>
           {stage==='review'&&<div className="review-plan-status"><label>검증 환경<select value={reviewEnvironmentId} onChange={event=>{setReviewEnvironmentId(event.target.value);setDiscoveryId(null);setDiscovery(null);setCandidateSelections({})}} disabled={planLoading||savingStep||discoveryStarting||Boolean(discoveryId)}>{reviewEnvironments.map(environment=><option key={environment.id} value={environment.id}>{environment.name}</option>)}</select></label><div><span>revision <b>{reviewPlan?.revision??'-'}</b></span><span>plan hash <b>{reviewPlan?.planHash?.slice(0,12)??'-'}</b></span><span className={reviewPlan?.executable?'plan-ok':'plan-blocked'}>{planLoading?'검증 중':reviewPlan?.executable?'실행 가능':'수정 필요'}</span><button className="secondary discovery-start" onClick={()=>void startDiscovery()} disabled={!reviewEnvironmentId||discoveryStarting||Boolean(discoveryId)}>{discoveryStarting?<Activity className="spin"/>:<Search/>} 페이지 분석 시작</button></div></div>}
           {stage==='review'&&discovery&&<div className="discovery-panel"><div className="discovery-head"><div><b>페이지 분석 · {discovery.status}</b><small>규칙 기반 후보 + Playwright 실제 검증 · AI 0회</small></div><span className={`resolution ${discovery.executable?'resolved':'needs-review'}`}>{discovery.executable?'후보 확인 완료':'검토 필요'}</span></div>{discovery.pages.map(page=><div className="discovery-page" key={page.fingerprint}><ExternalLink/><div><b>{page.title||'제목 없음'}</b><small>{page.url} · fingerprint {page.fingerprint.slice(0,12)} · iframe {page.iframeCount}{page.hasShadowDom?' · Shadow DOM':''}</small></div></div>)}{discovery.steps.map(step=><div className="discovery-step" key={step.stepId}><div className="discovery-step-title"><div><b>{step.targetDescription}</b><small>{step.stepId}</small></div><span className={`resolution ${step.resolutionStatus.toLowerCase()}`}>{step.resolutionStatus}</span></div>{step.candidates.length>0?<div className="candidate-list">{step.candidates.map(candidate=><label className={`${candidateSelections[step.stepId]===candidate.id?'selected':''} ${candidate.matchCount===1&&candidate.visible&&candidate.enabled?'valid':'invalid'}`} key={candidate.id}><input type="radio" name={`candidate-${step.stepId}`} value={candidate.id} checked={(candidateSelections[step.stepId]??step.selectedCandidateId)===candidate.id} onChange={()=>setCandidateSelections(current=>({...current,[step.stepId]:candidate.id}))} disabled={candidate.matchCount!==1||!candidate.visible||!candidate.enabled}/><span><b>{candidate.strategy} · {Math.round(candidate.confidence*100)}%</b><code>{candidate.selector}</code><small>일치 {candidate.matchCount} · {candidate.visible?'표시됨':'숨김'} · {candidate.enabled?'사용 가능':'비활성'}</small></span></label>)}</div>:<p className="discovery-empty">유효한 selector 후보를 찾지 못했습니다. 단계 편집 또는 재분석이 필요합니다.</p>}</div>)}{discovery.errorCode&&<div className="config-error"><AlertTriangle/><div><b>분석 실패</b><span>{discovery.errorCode}</span></div></div>}{['COMPLETED','NEEDS_REVIEW','FAILED','CANCELLED'].includes(discovery.status)&&<div className="discovery-actions"><button className="secondary" onClick={()=>{setDiscoveryId(null);setDiscovery(null);setCandidateSelections({})}}>닫기</button>{['COMPLETED','NEEDS_REVIEW'].includes(discovery.status)&&<button className="primary" onClick={()=>void applyDiscovery()} disabled={discoveryApplying||discovery.steps.some(step=>!(candidateSelections[step.stepId]??step.selectedCandidateId))}>{discoveryApplying?<Activity className="spin"/>:<Check/>} 분석 결과 적용</button>}</div>}</div>}
           {planError&&<div className="config-error"><AlertTriangle size={16}/><div><b>실행 계획 확인 실패</b><span>{planError}</span></div></div>}

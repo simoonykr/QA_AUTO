@@ -52,6 +52,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 페이지 분석 요청은 현재 `maxPages=1`, `maxAiCalls=0`으로 고정하고 적용 응답의 steps·revision·planHash·warnings·executable을 승인 기준에 즉시 반영하며 Mock에도 동일 흐름을 구현
 - XLSX 가져오기 응답의 21개 TC를 목록으로 표시하고 사용자가 선택한 한 건만 독립 구조화하는 UI/API 연결
 - 구조화 결과에 자동화 가능성 상태와 사유를 표시하고 실제 실행 이력 API로 대시보드 최근 실행·집계를 표시
+- 실행 이력 전용 화면을 실제 `/executions` API에 연결하고 상태·TC ID 필터, 20건 페이지 이동, 단계·오류·증적 요약 및 실행 상세 진입 구현
 
 백엔드에 요청:
 
@@ -153,6 +154,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 ## 최근 검증
 
 - OpenAI 화면 요소 의미 매핑 포함 백엔드 전체 테스트 `60 passed` (`3 warnings`); Fake Gateway만 사용하여 실제 OpenAI 호출 `0회`
+- 프론트 실행 이력 UI: `git diff --check` 통과. TypeScript·Vite 프로세스가 현재 Windows 환경에서 접근 위반(`3221225477`)으로 종료되어 타입 검사와 프로덕션 번들 검증은 환경 정상화 후 재확인 필요
 
 - 최신 자연어 QA 요구사항 회귀: 백엔드 `57 passed`, 프론트 실제 API 프로덕션 Docker 빌드 통과, AI 호출 0
 - 실제 `KakaoGames_AI_Automation.xlsx`: 21건, 첫 ID `KG-WEB-001`, 마지막 ID `KG-WEB-021`; AI 입력에 `Not Test`/`Source:` 없음, 감사 필드 보존 확인
