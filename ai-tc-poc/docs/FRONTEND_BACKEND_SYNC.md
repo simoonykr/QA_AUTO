@@ -162,6 +162,7 @@ assertion 검증 규칙:
 - XLSX는 `TC ID/Test Steps/Expected Result` 또는 `단계/기대결과` 헤더를 TC 테이블 시작으로 탐지하고 그 이전 결과 집계·보고서 메타데이터 행을 `rawText`에서 제외한다. 개별 TC의 `Expected Result` 열은 유지한다.
 - XLSX 응답 `warnings`에는 `XLSX_METADATA_ROWS_EXCLUDED:{행수}`, `XLSX_TEST_CASES_DETECTED:{건수}`가 포함된다.
 - TC 테이블 내부에서 헤더가 반복되거나 숫자만 있는 행, `Not Test`와 `Source:`가 함께 있는 보고 행을 제외하면 `XLSX_NON_TC_ROWS_EXCLUDED:{행수}` warning을 추가한다.
+- 단, 정상 TC ID가 있거나 Step과 Expected Result 데이터가 존재하는 행은 Result=`Not Test`, Comment=`Source:`를 포함해도 TC 원문으로 보존한다. 보고 행 제외는 상태·출처 문자열만으로 결정하지 않는다.
 - 구조화 selector는 원문에 정확한 근거가 있을 때만 유지한다. 원문에 없는 AI selector는 제거되고 `assumptions`에 승인 전 수정 필요 사유가 추가된다.
 - 실제 OpenAI 응답인 경우에만 `aiUsage.source=AI`, `callCount=1`이다. 캐시는 `CACHE/0`, AI 비활성 규칙 기반은 `RULE_BASED/0`이다.
 

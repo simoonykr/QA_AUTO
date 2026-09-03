@@ -101,6 +101,7 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - XLSX TC 헤더 이전 결과 집계·보고서 메타데이터를 제외하고 Expected Result를 보존하며 제외 행 수·감지 TC 수 warning 반환
 - 승인 전 `DELETE /test-case-versions/{versionId}/steps/{stepId}`로 불필요한 구조화 단계를 삭제하고 단계 번호·revision·plan hash를 재계산하는 API 추가
 - XLSX 구조화 입력에서 TC 헤더, 숫자만 있는 행, 반복 `Not Test/Source` 보고 행을 제외하고 실제 필터 결과를 기준으로 TC 수를 계산
+- XLSX 정상 행의 TC ID 또는 Step·Expected Result를 우선 판별해 Result=`Not Test`, Comment=`Source:`가 있어도 보존하도록 보완
 
 프론트엔드에 요청:
 
@@ -128,7 +129,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 ## 최근 검증
 
 - 백엔드: `48 passed` (`3 warnings`), 프론트 배포 Dockerfile 프로덕션 빌드 통과
-- 백엔드 단계 삭제·XLSX 오탐 회귀: `50 passed` (`3 warnings`)
+- 백엔드 단계 삭제·XLSX 오탐 회귀: `51 passed` (`3 warnings`)
+- 실제 `KakaoGames_AI_Automation.xlsx` 검증: 메타데이터 9행 제외, `KG-WEB-001`~`KG-WEB-021` 고유 TC 21건 보존, `XLSX_TEST_CASES_DETECTED:21`
 - 구조화 회귀: 정확히 9,613자 원문 보존, 102건 다중 TC 감지, AI 호출 전 `MULTIPLE_TEST_CASES_REVIEW_REQUIRED` 차단 확인
 - AI 사용량 계약: 실제 Gateway 결과 `AI/1`, 캐시 `CACHE/0`, AI 비활성 원문 기반 결과 `RULE_BASED/0`
 - 영속 버전 통합: Version `787dc8b2-cecf-4ae4-b438-9786a7a65e2f`, 승인 전 `TC_NOT_READY`(409), 승인 `READY`

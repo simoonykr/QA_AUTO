@@ -76,7 +76,23 @@ def _is_tc_header(row: list[str]) -> bool:
     return bool(headers & expected_headers) and bool(headers & (id_headers | step_headers))
 
 
-def _is_xlsx_non_tc_row(row: list[str]) -> bool:
+def _looks_like_tc_id(value: str) -> bool:
+    return bool(re.fullmatch(r"(?i)(?=.*\d)[a-z0-9]+(?:[-_][a-z0-9]+)+", value.strip()))
+
+
+def _has_nearby_value(row: list[str], columns: list[int]) -> bool:
+    candidates = {index + offset for index in columns for offset in (-1, 0, 1) if index + offset >= 0}
+    ignored = {"pass", "fail", "na", "block", "blocked", "nottest", "미실행"}
+    return any(
+        index < len(row)
+        and row[index].strip()
+        and _normalize_header(row[index]) not in ignored
+        and not row[index].strip().lower().startswith(("source:", "source："))
+        for index in candidates
+    )
+
+
+def _is_xlsx_non_tc_row(row: list[str], step_columns: list[int], expected_columns: list[int]) -> bool:
     values = [value.strip() for value in row if value and value.strip()]
     if not values or _is_tc_header(values):
         return True
@@ -86,6 +102,10 @@ def _is_xlsx_non_tc_row(row: list[str]) -> bool:
     metadata_labels = {"담당자", "브라우저", "buildversion", "빌드버전", "확인일", "작성일"}
     if normalized[0] in metadata_labels and len(values) <= 3:
         return True
+    has_tc_id = any(_looks_like_tc_id(value) for value in values)
+    has_step_and_expected = _has_nearby_value(row, step_columns) and _has_nearby_value(row, expected_columns)
+    if has_tc_id or has_step_and_expected:
+        return False
     statuses = {"pass", "fail", "na", "block", "blocked", "nottest", "미실행"}
     has_status = any(value in statuses for value in normalized)
     has_source = any(value.lower().startswith("source:") or value.lower().startswith("source：") for value in values)
@@ -98,13 +118,13 @@ def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str]]:
         return _clean([" | ".join(value for value in row if value) for row in rows]), []
     tc_rows = rows[header_index:]
     normalized_header = [_normalize_header(value) for value in tc_rows[0]]
-    id_headers = {"tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}
-    id_column = next((index for index, value in enumerate(normalized_header) if value in id_headers), None)
-    content_rows = [row for row in tc_rows[1:] if not _is_xlsx_non_tc_row(row)]
-    if id_column is None:
-        detected_count = len(content_rows)
-    else:
-        detected_count = sum(1 for row in content_rows if len(row) > id_column and row[id_column].strip())
+    step_headers = {"step", "steps", "teststep", "teststeps", "단계", "테스트단계"}
+    expected_headers = {"expectedresult", "expected", "기대결과", "예상결과"}
+    step_columns = [index for index, value in enumerate(normalized_header) if value in step_headers]
+    expected_columns = [index for index, value in enumerate(normalized_header) if value in expected_headers]
+    content_rows = [row for row in tc_rows[1:] if not _is_xlsx_non_tc_row(row, step_columns, expected_columns)]
+    detected_ids = {value.strip().lower() for row in content_rows for value in row if _looks_like_tc_id(value)}
+    detected_count = len(detected_ids) if detected_ids else len(content_rows)
     warnings = [
         f"XLSX_METADATA_ROWS_EXCLUDED:{header_index}",
         f"XLSX_TEST_CASES_DETECTED:{detected_count}",

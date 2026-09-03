@@ -486,6 +486,46 @@ def test_import_xlsx_excludes_repeated_headers_numbers_and_status_source_rows() 
     ]
 
 
+def test_import_xlsx_preserves_tc_rows_with_not_test_result_and_source_comment() -> None:
+    workbook = BytesIO()
+    rows = [
+        ["", "ID", "", "DEPTH1", "DEPTH2", "DEPTH3", "Precondition", "Step", "Expected Result", "Result(AOS)", "Result(IOS)", "BTS ID", "Comment"],
+        ["KG-WEB-001", "", "공통", "접속", "HTTPS 접속", "인터넷 연결", "1. 사이트 접속", "메인 화면 노출", "Not Test", "Not Test", "", "Source: https://example.test/"],
+        ["KG-WEB-002", "", "공통", "접속", "제목 확인", "페이지 접속", "1. 제목 확인", "정상 제목 노출", "Not Test", "Not Test", "", "Source: https://example.test/"],
+    ]
+    row_xml = "".join(
+        "<row>" + "".join(f'<c t="inlineStr"><is><t>{cell}</t></is></c>' for cell in row) + "</row>"
+        for row in rows
+    )
+    with ZipFile(workbook, "w") as archive:
+        archive.writestr(
+            "xl/workbook.xml",
+            '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<sheets><sheet name="TC" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/worksheets/sheet1.xml",
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+            f'{row_xml}</sheetData></worksheet>',
+        )
+    response = client.post(
+        "/api/v1/test-cases/import",
+        files={"file": ("kakao-like.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "KG-WEB-001" in body["rawText"]
+    assert "Not Test" in body["rawText"]
+    assert "Source: https://example.test/" in body["rawText"]
+    assert body["warnings"] == ["XLSX_METADATA_ROWS_EXCLUDED:0", "XLSX_TEST_CASES_DETECTED:2"]
+
+
 def test_import_rejects_unsupported_or_large_file() -> None:
     unsupported = client.post("/api/v1/test-cases/import", files={"file": ("case.pdf", b"pdf", "application/pdf")})
     too_large = client.post("/api/v1/test-cases/import", files={"file": ("case.txt", b"x" * (10 * 1024 * 1024 + 1), "text/plain")})
