@@ -197,4 +197,3 @@ GET /api/v1/executions/{executionId}/details
 6. TC별 저장·승인·실행
 7. 실행 이력 목록·상세 API와 프론트 UI
 8. 단일 TC 전체 흐름 검증 후 일괄 분석 확대
-
