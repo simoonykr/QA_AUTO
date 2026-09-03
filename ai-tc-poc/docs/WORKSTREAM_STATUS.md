@@ -8,6 +8,8 @@
 
 Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worker와 연결된 로그인 가능 통합 데모로 전환한다. 실제 AI API 호출은 통합 구조가 안정될 때까지 사용하지 않는다.
 
+자연어 TC를 실행 가능한 계획으로 만들기 위한 다음 설계는 [`AI_PAGE_DISCOVERY_REQUIREMENTS.md`](AI_PAGE_DISCOVERY_REQUIREMENTS.md)를 기준으로 한다. QA에게 selector 작성을 요구하지 않고 AI 구조화와 Playwright 페이지 탐색·후보 검증을 분리한다.
+
 ## 환경 운영 합의
 
 - `Local`: 현재 개발 PC의 Docker 통합 환경이다. `http://localhost:8080`은 해당 PC에서만 사용한다.
