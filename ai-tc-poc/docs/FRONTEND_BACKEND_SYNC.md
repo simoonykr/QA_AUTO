@@ -144,6 +144,9 @@ assertion 검증 규칙:
 - `POST /api/v1/test-case-versions/{versionId}/discoveries/{discoveryId}/apply`: `{ selections: [{ stepId, candidateId }] }`; 선택된 실제 검증 selector를 저장하고 revision·planHash를 재계산한 `ExecutionPlanResponse`를 반환한다.
 - 페이지 수집 데이터는 상호작용 요소의 접근성 이름·label·placeholder·안정 ID 등으로 제한하며 input 값, 쿠키, 비밀번호, 토큰, 개인정보와 전체 HTML은 저장하거나 AI에 전달하지 않는다.
 - 현재 통합 검증 기본값은 `maxAiCalls=0`이며 규칙 기반 후보를 Playwright로 검증한다. AI 기반 의미 매핑을 활성화할 때도 TC당 최대 1회와 일일 예산 원장을 그대로 적용한다.
+- OpenAI 의미 매핑 Gateway/서비스는 구현되어 있다. 입력은 단계의 `action`, `targetDescription`, `selectorHint`와 정제된 페이지 요소 메타데이터뿐이며, 모델은 서버가 부여한 `elementId`만 반환할 수 있다. 서버는 미등록 step/element ID를 폐기한다.
+- 동일 의미 매핑 입력은 모델·prompt version을 포함한 hash로 캐시하며 캐시 응답은 `CACHE/0회`, 실제 응답만 `AI/1회`로 기록한다. 테스트는 Fake Gateway만 사용해 네트워크 호출을 0회로 유지한다.
+- Worker의 자동 AI 의미 매핑 호출은 아직 연결하지 않았다. 별도 통합 승인 전에는 페이지 분석 요청을 계속 `maxAiCalls=0`으로 보내고 규칙 기반 Playwright 검증을 사용한다.
 
 완료된 연동:
 

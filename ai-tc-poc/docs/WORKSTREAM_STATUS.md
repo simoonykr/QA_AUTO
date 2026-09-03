@@ -121,6 +121,9 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 자동화 가능성을 4개 상태로 판정하고 위험 업무 변경은 `UNSUPPORTED`로 승인·실행 차단
 - 페이지 분석 `maxPages` 범위의 허용 도메인 GET 탐색, iframe·Shadow DOM 메타데이터, fingerprint 변경 시 이전 분석 `STALE` 처리 추가
 - 전체/TC별 실행 이력 API와 실제 TC 성공률·마지막 실행 집계 추가
+- OpenAI 화면 요소 의미 매핑 Gateway와 비용 원장·fingerprint 입력 캐시를 구현하고, AI가 서버가 부여한 element ID만 선택하도록 응답을 제한
+- AI 의미 매핑 입력을 action·targetDescription·selectorHint와 정제된 요소 메타데이터로 한정하고 selector·입력값·HTML·비밀정보를 전달하지 않도록 보호
+- AI가 반환한 알 수 없는 step/element ID를 폐기하는 화이트리스트 검증과 AI 비활성 시 네트워크 0회 fail-closed 회귀 테스트 추가
 
 프론트엔드에 요청:
 
@@ -144,10 +147,12 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 가입·승인·사용자 역할 API
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
-- 규칙 기반 Playwright 후보 검증 통합 확인 후 OpenAI 의미 매핑을 TC당 최대 1회·일일 예산 내에서 활성화
+- OpenAI 의미 매핑의 Worker 자동 호출은 비활성 상태로 유지하며, 별도 통합 승인 후 명시적 기능 플래그·TC당 최대 1회·일일 예산 내에서 연결
 - 다중 선택·일괄 구조화/승인은 단일 TC 전체 흐름 실환경 검증 후 확장
 
 ## 최근 검증
+
+- OpenAI 화면 요소 의미 매핑 포함 백엔드 전체 테스트 `60 passed` (`3 warnings`); Fake Gateway만 사용하여 실제 OpenAI 호출 `0회`
 
 - 최신 자연어 QA 요구사항 회귀: 백엔드 `57 passed`, 프론트 실제 API 프로덕션 Docker 빌드 통과, AI 호출 0
 - 실제 `KakaoGames_AI_Automation.xlsx`: 21건, 첫 ID `KG-WEB-001`, 마지막 ID `KG-WEB-021`; AI 입력에 `Not Test`/`Source:` 없음, 감사 필드 보존 확인

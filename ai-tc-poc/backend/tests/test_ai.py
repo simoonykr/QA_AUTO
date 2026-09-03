@@ -1,11 +1,13 @@
 from decimal import Decimal
 from types import SimpleNamespace
+from uuid import UUID
 
 import pytest
 
 from app.core.config import Settings
 from app.core.errors import DomainError
 from app.modules.ai.gateway import GatewayResult
+from app.modules.ai.discovery import DiscoveryMappingService, PROMPT_VERSION
 from app.modules.ai.service import StructureService, detect_test_case_count, rule_based_structure
 from app.schemas.test_cases import StructureRequest
 
@@ -49,6 +51,21 @@ class FakeGateway:
     async def structure(self, *_args):
         self.calls += 1
         return GatewayResult(AI_DATA, 100, 50, "resp-test")
+
+
+class FakeDiscoveryGateway:
+    def __init__(self):
+        self.calls = 0
+        self.steps = None
+        self.elements = None
+
+    async def map_discovery(self, steps, elements):
+        self.calls += 1
+        self.steps, self.elements = steps, elements
+        return GatewayResult({"mappings": [
+            {"stepId": "step-1", "candidateIds": ["element-2", "invented-selector"]},
+            {"stepId": "unknown-step", "candidateIds": ["element-1"]},
+        ]}, 80, 20, "resp-discovery")
 
 
 def ai_settings(**updates):
@@ -124,4 +141,53 @@ async def test_daily_budget_blocks_before_gateway_call() -> None:
     with pytest.raises(DomainError, match="예산") as raised:
         await StructureService(session, ai_settings(), gateway).structure(BODY)
     assert raised.value.code == "AI_DAILY_BUDGET_EXCEEDED"
+    assert gateway.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_discovery_mapping_uses_only_server_owned_ids_and_records_usage() -> None:
+    session = FakeSession([None, Decimal("0")])
+    gateway = FakeDiscoveryGateway()
+    result = await DiscoveryMappingService(session, ai_settings(), gateway).map(
+        UUID("00000000-0000-0000-0000-000000000001"),
+        [{"id": "step-1", "action": "click", "targetDescription": "PC 필터", "selectorHint": {"role": "button"}, "value": "secret"}],
+        [
+            {"elementId": "element-1", "role": "button", "name": "모바일"},
+            {"elementId": "element-2", "role": "button", "name": "PC", "selector": "#must-not-leak"},
+        ],
+    )
+    assert gateway.calls == 1
+    assert gateway.steps == [{"stepId": "step-1", "action": "click", "targetDescription": "PC 필터", "selectorHint": {"role": "button"}}]
+    assert gateway.elements[1]["elementId"] == "element-2"
+    assert "selector" not in gateway.elements[1]
+    assert result["mappings"] == [{"stepId": "step-1", "candidateIds": ["element-2"]}]
+    assert result["promptVersion"] == PROMPT_VERSION
+    assert result["aiUsage"]["source"] == "AI"
+    assert result["aiUsage"]["callCount"] == 1
+    assert session.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_discovery_mapping_cache_keeps_openai_call_at_zero() -> None:
+    cached = SimpleNamespace(structured_result={"mappings": [{"stepId": "step-1", "candidateIds": ["element-1"]}]})
+    session = FakeSession([cached, Decimal("0.125")])
+    gateway = FakeDiscoveryGateway()
+    result = await DiscoveryMappingService(session, ai_settings(), gateway).map(
+        UUID("00000000-0000-0000-0000-000000000001"),
+        [{"id": "step-1", "action": "click", "targetDescription": "필터"}],
+        [{"elementId": "element-1", "role": "button", "name": "필터"}],
+    )
+    assert gateway.calls == 0
+    assert result["aiUsage"]["source"] == "CACHE"
+    assert result["aiUsage"]["callCount"] == 0
+
+
+@pytest.mark.asyncio
+async def test_discovery_mapping_is_fail_closed_when_ai_is_disabled() -> None:
+    gateway = FakeDiscoveryGateway()
+    with pytest.raises(DomainError) as raised:
+        await DiscoveryMappingService(FakeSession([]), Settings(), gateway).map(
+            UUID("00000000-0000-0000-0000-000000000001"), [], []
+        )
+    assert raised.value.code == "AI_NOT_AVAILABLE"
     assert gateway.calls == 0

@@ -58,6 +58,59 @@ class OpenAIGateway:
         except (KeyError, StopIteration, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise DomainError("AI_RESPONSE_INVALID", "AI 구조화 응답을 검증하지 못했습니다.", 502, retryable=False) from exc
 
+    async def map_discovery(self, steps: list[dict], elements: list[dict]) -> GatewayResult:
+        """Map test intent to server-owned element IDs without allowing selector invention."""
+        return await self._request_json(
+            instructions=(
+                "Match each QA step to zero or more page element IDs by meaning. "
+                "Use only elementId values present in the input. Never create selectors, values, "
+                "credentials, or actions. Return an empty candidateIds list when uncertain."
+            ),
+            input_data={"steps": steps, "elements": elements},
+            schema_name="page_element_mapping",
+            schema=_DISCOVERY_MAPPING_SCHEMA,
+        )
+
+    async def _request_json(self, *, instructions: str, input_data: dict, schema_name: str, schema: dict) -> GatewayResult:
+        key = self.settings.openai_api_key.get_secret_value() if self.settings.openai_api_key else ""
+        payload = {
+            "model": self.settings.openai_model,
+            "store": False,
+            "max_output_tokens": self.settings.ai_max_output_tokens,
+            "instructions": instructions,
+            "input": json.dumps(input_data, ensure_ascii=False, separators=(",", ":")),
+            "text": {"format": {"type": "json_schema", "name": schema_name, "strict": True, "schema": schema}},
+        }
+        return await self._send(payload, key)
+
+    async def _send(self, payload: dict, key: str) -> GatewayResult:
+        try:
+            async with httpx.AsyncClient(timeout=self.settings.openai_timeout_seconds) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json=payload,
+                )
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise DomainError("AI_TIMEOUT", "AI 요청 시간이 초과되었습니다.", 504, retryable=True) from exc
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            raise DomainError("AI_UPSTREAM_ERROR", "AI 서비스를 호출하지 못했습니다.", 502, retryable=status >= 500, details={"upstreamStatus": status}) from exc
+        except httpx.HTTPError as exc:
+            raise DomainError("AI_UPSTREAM_ERROR", "AI 서비스에 연결하지 못했습니다.", 502, retryable=True) from exc
+        body = response.json()
+        try:
+            output_text = next(
+                content["text"]
+                for item in body["output"] if item.get("type") == "message"
+                for content in item.get("content", []) if content.get("type") == "output_text"
+            )
+            usage = body["usage"]
+            return GatewayResult(json.loads(output_text), int(usage["input_tokens"]), int(usage["output_tokens"]), body.get("id"))
+        except (KeyError, StopIteration, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise DomainError("AI_RESPONSE_INVALID", "AI 응답을 검증하지 못했습니다.", 502, retryable=False) from exc
+
 
 _OUTPUT_SCHEMA = {
     "type": "object",
@@ -88,4 +141,25 @@ _OUTPUT_SCHEMA = {
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
     },
     "required": ["preconditions", "steps", "assertions", "assumptions", "confidence"],
+}
+
+
+_DISCOVERY_MAPPING_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "mappings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "stepId": {"type": "string"},
+                    "candidateIds": {"type": "array", "maxItems": 5, "items": {"type": "string"}},
+                },
+                "required": ["stepId", "candidateIds"],
+            },
+        }
+    },
+    "required": ["mappings"],
 }
