@@ -33,6 +33,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+const mockExecutionPlans = new Map<string,ExecutionPlan>()
+const mockPlanKey = (versionId:string,environmentId:string) => `${versionId}:${environmentId}`
 
 export const api = {
   subscribeExecution(id: string, onDetails: (details: ExecutionDetails) => void, onError: () => void): () => void {
@@ -132,23 +134,40 @@ export const api = {
 
   async getExecutionPlan(versionId: string, environmentId: string): Promise<ExecutionPlan> {
     if (!USE_MOCK_API) return request(`/test-case-versions/${versionId}/execution-plan?environmentId=${encodeURIComponent(environmentId)}`)
-    const structured = await this.structureTestCase('Mock execution plan', '페이지에 접속하고 결과를 확인한다.')
-    return {
+    const key=mockPlanKey(versionId,environmentId)
+    const existing=mockExecutionPlans.get(key)
+    if (existing) return structuredClone(existing)
+    const plan:ExecutionPlan={
       versionId, status: 'READY', revision: 1, planHash: 'mock-plan-hash',
       environment: { id: environmentId, name: 'Staging', baseUrl: 'https://staging.storefront.test' },
-      steps: structured.steps.map((step,index)=>({stepNo:index+1,id:step.id,title:step.title,action:step.action as 'navigate'|'fill'|'click'|'assert',url:step.url,selector:step.selector,value:step.value?'***':null,operator:step.operator,expected:step.expected,timeoutMs:step.timeoutMs??10000})),
-      warnings: [], executable: true, source: structured.aiUsage.source,
+      steps: mockSteps.map((step,index)=>({stepNo:index+1,id:step.id,title:step.title,action:step.action,url:step.url,selector:step.selector,value:step.value?'***':null,operator:step.operator,expected:step.expected,timeoutMs:step.timeoutMs??10000})),
+      warnings: [], executable: true, source: 'RULE_BASED',
     }
+    mockExecutionPlans.set(key,plan)
+    return structuredClone(plan)
   },
 
   async updateTestCaseVersionStep(versionId: string, stepId: string, environmentId: string, patch: TestCaseVersionStepPatch): Promise<ExecutionPlan> {
     if (USE_MOCK_API) {
       const plan=await this.getExecutionPlan(versionId,environmentId)
-      return {...plan,revision:plan.revision+1,planHash:`mock-plan-${Date.now()}`,steps:plan.steps.map(step=>step.id===stepId?{...step,...patch}:step),warnings:[],executable:true}
+      const updated={...plan,revision:plan.revision+1,planHash:`mock-plan-${Date.now()}`,steps:plan.steps.map(step=>step.id===stepId?{...step,...patch}:step),warnings:[],executable:true}
+      mockExecutionPlans.set(mockPlanKey(versionId,environmentId),updated)
+      return structuredClone(updated)
     }
     return request(`/test-case-versions/${versionId}/steps/${encodeURIComponent(stepId)}?environmentId=${encodeURIComponent(environmentId)}`, {
       method: 'PATCH', body: JSON.stringify(patch),
     })
+  },
+
+  async deleteTestCaseVersionStep(versionId: string, stepId: string, environmentId: string): Promise<ExecutionPlan> {
+    if (USE_MOCK_API) {
+      const plan=await this.getExecutionPlan(versionId,environmentId)
+      const steps=plan.steps.filter(step=>step.id!==stepId).map((step,index)=>({...step,stepNo:index+1}))
+      const updated:ExecutionPlan={...plan,revision:plan.revision+1,planHash:steps.length?`mock-plan-${Date.now()}`:null,steps,warnings:steps.length?[]:[{code:'EXECUTION_PLAN_INVALID',message:'실행 단계가 비어 있습니다.',missingFields:[]}],executable:steps.length>0}
+      mockExecutionPlans.set(mockPlanKey(versionId,environmentId),updated)
+      return structuredClone(updated)
+    }
+    return request(`/test-case-versions/${versionId}/steps/${encodeURIComponent(stepId)}?environmentId=${encodeURIComponent(environmentId)}`, { method:'DELETE' })
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {
