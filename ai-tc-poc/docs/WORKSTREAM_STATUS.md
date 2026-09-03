@@ -10,6 +10,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 
 자연어 TC를 실행 가능한 계획으로 만들기 위한 다음 설계는 [`AI_PAGE_DISCOVERY_REQUIREMENTS.md`](AI_PAGE_DISCOVERY_REQUIREMENTS.md)를 기준으로 한다. QA에게 selector 작성을 요구하지 않고 AI 구조화와 Playwright 페이지 탐색·후보 검증을 분리한다.
 
+QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설계, 잘못된 계획 방어와 실행 이력 요구사항은 [`QA_NATURAL_LANGUAGE_AUTOMATION_REQUIREMENTS.md`](QA_NATURAL_LANGUAGE_AUTOMATION_REQUIREMENTS.md)를 공통 기준으로 사용한다.
+
 ## 환경 운영 합의
 
 - `Local`: 현재 개발 PC의 Docker 통합 환경이다. `http://localhost:8080`은 해당 PC에서만 사용한다.
