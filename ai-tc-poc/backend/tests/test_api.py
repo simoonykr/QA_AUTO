@@ -17,7 +17,7 @@ from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
 from app.schemas.test_cases import TestCaseSummary
 from app.schemas.resources import EnvironmentSummary, TestAccountSummary
-from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport
+from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport, _sanitize_discovery_elements
 from app.workers.step_executor import StepDefinitionError, execute_step
 
 
@@ -160,12 +160,41 @@ class FakeResourceRepository:
         )]
 
 
+class FakeDiscoveryRepository:
+    discovery_id = UUID("00000000-0000-0000-0000-000000000411")
+
+    def __init__(self, *_args):
+        pass
+
+    async def start(self, version_id, body, ai_ready):
+        return {"discoveryId": str(self.discovery_id), "status": "QUEUED"}
+
+    async def get(self, version_id, discovery_id):
+        return {
+            "discoveryId": str(discovery_id), "status": "NEEDS_REVIEW", "revision": 1,
+            "pages": [{"url": "http://demo-target", "title": "Demo", "fingerprint": "f" * 64,
+                       "iframeCount": 0, "hasShadowDom": False}],
+            "steps": [{"stepId": "step-2", "targetDescription": "제출 버튼", "resolutionStatus": "AMBIGUOUS",
+                       "selectedCandidateId": None, "candidates": [
+                           {"id": "candidate-1", "strategy": "ROLE_NAME", "selector": "role=button[name=\"제출\"]",
+                            "matchCount": 2, "visible": True, "enabled": True, "confidence": 0.95}]}],
+            "warnings": [], "executable": False,
+        }
+
+    async def apply(self, version_id, discovery_id, body):
+        plan = await FakeTestCaseRepository().execution_plan(version_id)
+        plan["revision"] = 2
+        plan["planHash"] = "c" * 64
+        return plan
+
+
 @pytest.fixture(autouse=True)
 def isolate_database(monkeypatch):
     app.dependency_overrides[get_session] = fake_session
     monkeypatch.setattr("app.modules.test_cases.router.SqlTestCaseRepository", FakeTestCaseRepository)
     monkeypatch.setattr("app.modules.executions.router.SqlExecutionRepository", FakeExecutionRepository)
     monkeypatch.setattr("app.modules.resources.router.SqlResourceRepository", FakeResourceRepository)
+    monkeypatch.setattr("app.modules.discoveries.router.DiscoveryRepository", FakeDiscoveryRepository)
     FakeExecutionRepository.ids.clear()
     FakeTestCaseRepository.versions.clear()
     yield
@@ -290,6 +319,35 @@ def test_execution_plan_endpoint_returns_server_validated_contract() -> None:
     assert response.json()["executable"] is True
     assert response.json()["steps"][0]["stepNo"] == 1
     assert response.json()["planHash"] == "a" * 64
+
+
+def test_page_discovery_start_status_and_apply_contract() -> None:
+    version_id = "00000000-0000-0000-0000-000000000501"
+    started = client.post(f"/api/v1/test-case-versions/{version_id}/discover", json={
+        "environmentId": "00000000-0000-0000-0000-000000000301", "maxPages": 1, "maxAiCalls": 0,
+    })
+    assert started.status_code == 202
+    discovery_id = started.json()["discoveryId"]
+    status = client.get(f"/api/v1/test-case-versions/{version_id}/discoveries/{discovery_id}")
+    assert status.status_code == 200
+    assert status.json()["status"] == "NEEDS_REVIEW"
+    assert status.json()["steps"][0]["resolutionStatus"] == "AMBIGUOUS"
+    assert status.json()["pages"][0]["fingerprint"] == "f" * 64
+    applied = client.post(
+        f"/api/v1/test-case-versions/{version_id}/discoveries/{discovery_id}/apply",
+        json={"selections": [{"stepId": "step-2", "candidateId": "candidate-1"}]},
+    )
+    assert applied.status_code == 200
+    assert applied.json()["revision"] == 2
+    assert applied.json()["planHash"] == "c" * 64
+
+
+def test_page_discovery_sanitizes_personal_text_and_sensitive_links() -> None:
+    result = _sanitize_discovery_elements([
+        {"name": "qa@example.com 010-1234-5678", "href": "/account?token=secret", "placeholder": ""},
+    ])
+    assert result[0]["name"] == "***@*** ***-****-****"
+    assert result[0]["href"] == ""
 
 
 def test_patch_review_step_returns_recalculated_plan() -> None:
@@ -694,7 +752,7 @@ def test_execution_request_digest_is_stable() -> None:
 
 
 def test_required_database_models_are_registered() -> None:
-    assert len(Base.metadata.tables) == 15
+    assert len(Base.metadata.tables) == 16
 
 
 def test_execution_resource_ids_require_real_uuids() -> None:
@@ -801,6 +859,23 @@ def test_text_assertion_error_includes_step_and_missing_field() -> None:
     assert raised.value.step_no == 1
     assert raised.value.step_id == "result-check"
     assert raised.value.missing_fields == ["selector"]
+
+
+def test_unresolved_intent_blocks_execution_plan_before_discovery() -> None:
+    with pytest.raises(ExecutionPlanError) as raised:
+        validate_execution_plan(_plan_version([
+            {"id": "step-1", "title": "PC 필터 선택", "action": "click", "targetDescription": "PC 필터 버튼", "resolutionStatus": "UNRESOLVED"},
+        ]), _plan_environment())
+    assert raised.value.code == "SELECTOR_RESOLUTION_REQUIRED"
+    assert raised.value.step_id == "step-1"
+
+
+def test_resolved_intent_is_included_in_execution_plan() -> None:
+    plan = validate_execution_plan(_plan_version([
+        {"id": "step-1", "title": "PC 필터 선택", "action": "click", "targetDescription": "PC 필터 버튼", "selectorHint": {"role": "button", "name": "#PC"}, "selector": "role=button[name=\"#PC\"]", "resolutionStatus": "RESOLVED"},
+    ]), _plan_environment())
+    assert plan.steps[0]["targetDescription"] == "PC 필터 버튼"
+    assert plan.steps[0]["resolutionStatus"] == "RESOLVED"
 
 
 @pytest.mark.parametrize(("step","code"), [

@@ -63,7 +63,15 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
             "expected": source.get("expected"),
             "assertionType": source.get("assertionType"),
             "timeoutMs": int(source.get("timeoutMs") or 10_000),
+            "targetDescription": source.get("targetDescription"),
+            "selectorHint": source.get("selectorHint") or {},
+            "resolutionStatus": source.get("resolutionStatus"),
         }
+        if action in {"fill", "click", "assert"} and step.get("resolutionStatus") in {"UNRESOLVED", "RESOLVING", "AMBIGUOUS", "NOT_FOUND", "STALE"}:
+            raise ExecutionPlanError(
+                "SELECTOR_RESOLUTION_REQUIRED", "페이지 분석으로 화면 요소를 확정해야 합니다.",
+                step_no=step_no, step_id=step["id"], missing_fields=["selector"],
+            )
         if action == "navigate":
             step["url"] = step["url"] or environment.base_url
             _validate_target_url(step["url"], environment.allowed_domains, step_no)
@@ -121,6 +129,9 @@ def preview_execution_steps(version: TestCaseVersion, environment: Environment) 
             "expected": source.get("expected"),
             "assertionType": source.get("assertionType") or ("url" if action == "assert" and source.get("url") and not source.get("selector") else ("text" if action == "assert" else None)),
             "timeoutMs": int(source.get("timeoutMs") or 10_000),
+            "targetDescription": source.get("targetDescription"),
+            "selectorHint": source.get("selectorHint") or {},
+            "resolutionStatus": source.get("resolutionStatus"),
         })
     return preview
 

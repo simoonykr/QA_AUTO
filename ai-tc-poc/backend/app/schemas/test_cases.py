@@ -41,6 +41,9 @@ class StructuredStep(BaseModel):
     expected: str | None = None
     assertionType: Literal["url", "text", "element"] | None = None
     timeoutMs: int | None = Field(default=None, ge=100, le=60_000)
+    targetDescription: str | None = None
+    selectorHint: dict[str, str] = Field(default_factory=dict)
+    resolutionStatus: Literal["UNRESOLVED", "RESOLVING", "RESOLVED", "AMBIGUOUS", "NOT_FOUND", "STALE"] | None = None
 
 
 class AssertionSpec(BaseModel):
@@ -106,6 +109,9 @@ class ExecutionPlanStep(BaseModel):
     expected: str | None = None
     assertionType: Literal["url", "text", "element"] | None = None
     timeoutMs: int
+    targetDescription: str | None = None
+    selectorHint: dict[str, str] = Field(default_factory=dict)
+    resolutionStatus: Literal["UNRESOLVED", "RESOLVING", "RESOLVED", "AMBIGUOUS", "NOT_FOUND", "STALE"] | None = None
 
 
 class ExecutionPlanWarning(BaseModel):
@@ -126,3 +132,63 @@ class ExecutionPlanResponse(BaseModel):
     warnings: list[ExecutionPlanWarning] = Field(default_factory=list)
     executable: bool
     source: Literal["AI", "CACHE", "RULE_BASED"]
+
+
+DiscoveryStatus = Literal["QUEUED", "PROVISIONING", "SCANNING", "MAPPING", "VALIDATING", "COMPLETED", "NEEDS_REVIEW", "FAILED", "CANCELLED"]
+
+
+class DiscoveryStartRequest(BaseModel):
+    environmentId: UUID
+    maxPages: int = Field(default=1, ge=1, le=3)
+    maxAiCalls: int = Field(default=0, ge=0, le=1)
+
+
+class DiscoveryStartResponse(BaseModel):
+    discoveryId: UUID
+    status: Literal["QUEUED"]
+
+
+class SelectorCandidate(BaseModel):
+    id: str
+    strategy: Literal["DATA_TESTID", "ROLE_NAME", "LABEL", "PLACEHOLDER", "ID_NAME", "LINK_URL", "VISIBLE_TEXT", "CSS"]
+    selector: str
+    matchCount: int = Field(ge=0)
+    visible: bool
+    enabled: bool
+    confidence: float = Field(ge=0, le=1)
+
+
+class DiscoveryStepResult(BaseModel):
+    stepId: str
+    targetDescription: str
+    resolutionStatus: Literal["UNRESOLVED", "RESOLVING", "RESOLVED", "AMBIGUOUS", "NOT_FOUND", "STALE"]
+    selectedCandidateId: str | None = None
+    candidates: list[SelectorCandidate] = Field(default_factory=list)
+
+
+class DiscoveryPage(BaseModel):
+    url: str
+    title: str
+    fingerprint: str
+    iframeCount: int = Field(default=0, ge=0)
+    hasShadowDom: bool = False
+
+
+class DiscoveryResponse(BaseModel):
+    discoveryId: UUID
+    status: DiscoveryStatus
+    revision: int
+    pages: list[DiscoveryPage] = Field(default_factory=list)
+    steps: list[DiscoveryStepResult] = Field(default_factory=list)
+    warnings: list[ExecutionPlanWarning] = Field(default_factory=list)
+    executable: bool = False
+    errorCode: str | None = None
+
+
+class DiscoverySelection(BaseModel):
+    stepId: str
+    candidateId: str
+
+
+class DiscoveryApplyRequest(BaseModel):
+    selections: list[DiscoverySelection] = Field(default_factory=list)

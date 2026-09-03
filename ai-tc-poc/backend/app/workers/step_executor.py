@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from playwright.async_api import Page, expect
+import re
 
 
 class StepDefinitionError(Exception):
@@ -46,7 +47,7 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
         return StepResult(action={"type": "assert", "url": page.url}, assertion=assertion)
 
     selector = _required(step, "selector")
-    locator = page.locator(selector)
+    locator = selector_locator(page, selector)
     if action_type == "fill":
         value = str(_required(step, "value"))
         await locator.fill(value, timeout=timeout)
@@ -69,3 +70,19 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
         return StepResult(action={"type": "assert", "selector": selector}, assertion=assertion)
 
     raise StepDefinitionError(f"지원하지 않는 action입니다: {action_type}")
+
+
+def selector_locator(page: Page, selector: str):
+    role_match = re.fullmatch(r'role=([^\[]+)\[name="(.*)"\]', selector)
+    if role_match:
+        return page.get_by_role(role_match.group(1), name=role_match.group(2), exact=True)
+    text_match = re.fullmatch(r'text="(.*)"', selector)
+    if text_match:
+        return page.get_by_text(text_match.group(1), exact=True)
+    label_match = re.fullmatch(r'label="(.*)"', selector)
+    if label_match:
+        return page.get_by_label(label_match.group(1), exact=True)
+    placeholder_match = re.fullmatch(r'placeholder="(.*)"', selector)
+    if placeholder_match:
+        return page.get_by_placeholder(placeholder_match.group(1), exact=True)
+    return page.locator(selector)

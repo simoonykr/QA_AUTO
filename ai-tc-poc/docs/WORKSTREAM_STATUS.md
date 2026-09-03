@@ -104,6 +104,11 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 승인 전 `DELETE /test-case-versions/{versionId}/steps/{stepId}`로 불필요한 구조화 단계를 삭제하고 단계 번호·revision·plan hash를 재계산하는 API 추가
 - XLSX 구조화 입력에서 TC 헤더, 숫자만 있는 행, 반복 `Not Test/Source` 보고 행을 제외하고 실제 필터 결과를 기준으로 TC 수를 계산
 - XLSX 정상 행의 TC ID 또는 Step·Expected Result를 우선 판별해 Result=`Not Test`, Comment=`Source:`가 있어도 보존하도록 보완
+- 자연어 구조화 단계에 `targetDescription`·`selectorHint`·selector 해결 상태를 추가하고 원문 근거 없는 selector를 `UNRESOLVED`로 유지
+- 페이지 분석 작업·상태·결과를 저장하는 `page_discoveries` migration과 조직·프로젝트 범위 API 추가
+- 승인 전 `discover → 상태 조회 → 후보 선택/apply` API를 추가하고 적용 시 revision·plan hash·fingerprint·감사 로그 갱신
+- Playwright Worker가 허용 환경 URL을 읽기 전용으로 탐색하고 정제된 접근성·상호작용 요소만 수집하여 selector 후보의 개수·표시·활성 상태를 실제 검증
+- `UNRESOLVED`·`AMBIGUOUS`·`NOT_FOUND`·`STALE` 단계가 남으면 실행 계획과 승인을 차단하도록 서버 검증 강화
 
 프론트엔드에 요청:
 
@@ -127,8 +132,12 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 - 가입·승인·사용자 역할 API
 - 다중 TC 파일의 서버 자동 분리 API/UX 설계(현재는 명확한 검토 상태 반환)
 - 프론트에서 검증 Execution/Artifact를 사용해 단계 상세·실패 PNG 화면 교차 확인
+- 프론트 페이지 분석 진행 상태·후보 선택·적용 UI 연결 (`AI_PAGE_DISCOVERY_REQUIREMENTS.md` 기준)
+- 규칙 기반 Playwright 후보 검증 통합 확인 후 OpenAI 의미 매핑을 TC당 최대 1회·일일 예산 내에서 활성화
 
 ## 최근 검증
+
+- 페이지 분석 API·구조화/실행 차단·민감정보 마스킹 회귀 포함 백엔드 단위 테스트 `55 passed` (Docker 일회성 테스트 컨테이너, AI 호출 0)
 
 - 백엔드: `48 passed` (`3 warnings`), 프론트 배포 Dockerfile 프로덕션 빌드 통과
 - 백엔드 단계 삭제·XLSX 오탐 회귀: `51 passed` (`3 warnings`)

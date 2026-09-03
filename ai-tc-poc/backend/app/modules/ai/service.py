@@ -174,6 +174,14 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
             "timeoutMs": 10_000,
         }
         step.update(_execution_fields(segment, action))
+        step["targetDescription"] = segment[:300]
+        hint_values = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
+        hint_text = hint_values[-1] if hint_values else segment[:120]
+        step["selectorHint"] = {"text": hint_text}
+        if action == "navigate" or (action == "assert" and step.get("url")):
+            step["resolutionStatus"] = "RESOLVED"
+        else:
+            step["resolutionStatus"] = "RESOLVED" if step.get("selector") else "UNRESOLVED"
         steps.append(step)
     if not assertions:
         expected = segments[-1]
@@ -200,6 +208,8 @@ def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> Str
         if step.selector and step.selector not in raw_text:
             assumptions.append(f"{step.id}: 원문 근거가 없는 selector를 제거했습니다. 승인 전에 selector를 입력해 주세요.")
             updated = step.model_copy(update={"selector": None})
+        if updated.action in {"fill", "click", "assert"} and updated.assertionType != "url":
+            updated = updated.model_copy(update={"resolutionStatus": "RESOLVED" if updated.selector else "UNRESOLVED"})
         if updated.action in {"fill", "click", "assert"} and updated.assertionType != "url" and not updated.selector:
             assumptions.append(f"{updated.id}: selector가 없어 승인 전에 검토·수정이 필요합니다.")
         steps.append(updated)

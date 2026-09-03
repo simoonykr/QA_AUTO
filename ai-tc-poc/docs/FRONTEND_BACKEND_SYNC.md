@@ -134,6 +134,17 @@ assertion 검증 규칙:
 
 ## 백엔드 담당자 확인 요청
 
+## 페이지 분석·selector 해결 계약
+
+- 구조화 단계는 `targetDescription`, `selectorHint`, `resolutionStatus`를 반환한다. 원문 근거가 없는 selector는 저장하지 않으며 초기 상태는 `UNRESOLVED`이다.
+- `POST /api/v1/test-case-versions/{versionId}/discover`: `{ environmentId, maxPages: 1..3, maxAiCalls: 0..1 }`, HTTP 202 `{ discoveryId, status: "QUEUED" }`
+- `GET /api/v1/test-case-versions/{versionId}/discoveries/{discoveryId}`: `QUEUED → PROVISIONING → SCANNING → MAPPING → VALIDATING → COMPLETED|NEEDS_REVIEW|FAILED` 상태와 페이지 fingerprint, 단계별 후보를 반환한다.
+- 후보는 `DATA_TESTID`, `ROLE_NAME`, `LABEL`, `PLACEHOLDER`, `ID_NAME`, `LINK_URL`, `VISIBLE_TEXT`, `CSS` 전략과 `matchCount`, `visible`, `enabled`, `confidence`를 포함한다.
+- 단계 상태는 `UNRESOLVED`, `RESOLVING`, `RESOLVED`, `AMBIGUOUS`, `NOT_FOUND`, `STALE`이다. 모든 실행 대상 단계가 `RESOLVED`가 아니면 `executable=false`이며 승인을 차단한다.
+- `POST /api/v1/test-case-versions/{versionId}/discoveries/{discoveryId}/apply`: `{ selections: [{ stepId, candidateId }] }`; 선택된 실제 검증 selector를 저장하고 revision·planHash를 재계산한 `ExecutionPlanResponse`를 반환한다.
+- 페이지 수집 데이터는 상호작용 요소의 접근성 이름·label·placeholder·안정 ID 등으로 제한하며 input 값, 쿠키, 비밀번호, 토큰, 개인정보와 전체 HTML은 저장하거나 AI에 전달하지 않는다.
+- 현재 통합 검증 기본값은 `maxAiCalls=0`이며 규칙 기반 후보를 Playwright로 검증한다. AI 기반 의미 매핑을 활성화할 때도 TC당 최대 1회와 일일 예산 원장을 그대로 적용한다.
+
 완료된 연동:
 
 - `GET /executions/{executionId}`: 프론트 2초 polling 연결

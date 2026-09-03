@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import re
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
@@ -14,9 +15,9 @@ from sqlalchemy import func, select, update
 
 from app.core.config import get_settings
 from app.core.database import SessionFactory
-from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, StepRun, TestCase, TestCaseVersion
+from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, PageDiscovery, StepRun, TestCase, TestCaseVersion
 from app.workers.artifacts import ArtifactStore, StoredArtifact
-from app.workers.step_executor import StepDefinitionError, execute_step
+from app.workers.step_executor import StepDefinitionError, execute_step, selector_locator
 from app.modules.test_cases.execution_plan import ExecutionPlanError, validate_execution_plan
 
 
@@ -308,6 +309,156 @@ async def _ensure_consumer_group(redis: Redis) -> None:
             raise
 
 
+def _safe_quote(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _sanitize_discovery_text(value: object) -> str:
+    text = str(value or "")[:160]
+    text = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "***@***", text, flags=re.IGNORECASE)
+    return re.sub(r"(?<!\d)(?:01[016789][- ]?\d{3,4}[- ]?\d{4})(?!\d)", "***-****-****", text)
+
+
+def _sanitize_discovery_elements(elements: list[dict]) -> list[dict]:
+    safe = []
+    for source in elements:
+        item = {key: _sanitize_discovery_text(value) for key, value in source.items()}
+        href = item.get("href", "")
+        if href.lower().startswith(("mailto:", "tel:", "javascript:", "data:")) or "?" in href:
+            item["href"] = ""
+        elif "#" in href:
+            item["href"] = href.split("#", 1)[0]
+        safe.append(item)
+    return safe
+
+
+def _candidate_for_element(element: dict, candidate_id: str) -> dict | None:
+    if element.get("dataTestId"):
+        strategy, selector, confidence = "DATA_TESTID", f'[data-testid="{_safe_quote(element["dataTestId"])}"]', 1.0
+    elif element.get("role") and element.get("name"):
+        strategy, selector, confidence = "ROLE_NAME", f'role={element["role"]}[name="{_safe_quote(element["name"])}"]', 0.95
+    elif element.get("label"):
+        strategy, selector, confidence = "LABEL", f'label="{_safe_quote(element["label"])}"', 0.92
+    elif element.get("placeholder"):
+        strategy, selector, confidence = "PLACEHOLDER", f'placeholder="{_safe_quote(element["placeholder"])}"', 0.9
+    elif element.get("id"):
+        strategy, selector, confidence = "ID_NAME", f'#{_safe_quote(element["id"])}', 0.88
+    elif element.get("htmlName"):
+        strategy, selector, confidence = "ID_NAME", f'[name="{_safe_quote(element["htmlName"])}"]', 0.85
+    elif element.get("href"):
+        strategy, selector, confidence = "LINK_URL", f'a[href="{_safe_quote(element["href"])}"]', 0.82
+    elif element.get("name"):
+        strategy, selector, confidence = "VISIBLE_TEXT", f'text="{_safe_quote(element["name"])}"', 0.75
+    else:
+        return None
+    return {"id": candidate_id, "strategy": strategy, "selector": selector, "matchCount": 0, "visible": False, "enabled": False, "confidence": confidence}
+
+
+async def discover(discovery_id: UUID) -> None:
+    async with SessionFactory() as session:
+        discovery = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
+        if not discovery or discovery.status != "QUEUED":
+            return
+        discovery.status, discovery.started_at = "PROVISIONING", datetime.now(UTC)
+        await session.commit()
+    try:
+        async with SessionFactory() as session:
+            discovery = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id))
+            environment = await session.scalar(select(Environment).where(
+                Environment.id == discovery.environment_id, Environment.organization_id == discovery.organization_id,
+                Environment.project_id == discovery.project_id,
+            ))
+            version = await session.scalar(select(TestCaseVersion).where(
+                TestCaseVersion.id == discovery.test_case_version_id, TestCaseVersion.organization_id == discovery.organization_id,
+            ))
+            if not environment or not version or version.status != "REVIEW_REQUIRED":
+                raise WorkerExecutionError("DISCOVERY_RESOURCE_INVALID", "페이지 분석 대상 정보를 찾을 수 없습니다.")
+            _assert_allowed_url(environment.base_url, environment.allowed_domains)
+            discovery.status = "SCANNING"
+            await session.commit()
+            source_steps = (version.structured_spec or {}).get("steps") or []
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                context = await browser.new_context(viewport={"width": 1440, "height": 900})
+                page = await context.new_page()
+                await page.goto(environment.base_url, wait_until="domcontentloaded", timeout=30_000)
+                _assert_allowed_url(page.url, environment.allowed_domains)
+                page_url = page.url
+                title = await page.title()
+                iframe_count = len(page.frames) - 1
+                has_shadow_dom = await page.locator("*").evaluate_all("els => els.some(el => !!el.shadowRoot)")
+                elements = await page.locator("button,a,input,select,textarea,[role]").evaluate_all("""els => els.slice(0, 500).map(el => ({
+                  tag: el.tagName.toLowerCase(), role: el.getAttribute('role') || ({BUTTON:'button',A:'link',INPUT:'textbox',SELECT:'combobox',TEXTAREA:'textbox'}[el.tagName] || ''),
+                  name: (el.getAttribute('aria-label') || el.innerText || el.textContent || '').trim().slice(0, 160),
+                  label: el.labels && el.labels[0] ? (el.labels[0].innerText || '').trim().slice(0,160) : '',
+                  placeholder: el.getAttribute('placeholder') || '', dataTestId: el.getAttribute('data-testid') || '',
+                  id: el.id || '', htmlName: el.getAttribute('name') || '', href: el.getAttribute('href') || ''
+                }))""")
+                elements = _sanitize_discovery_elements(elements)
+                fingerprint = hashlib.sha256(json.dumps({"url": page_url, "title": title, "elements": elements}, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+                async with SessionFactory() as session:
+                    current = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
+                    current.status = "MAPPING"
+                    await session.commit()
+                step_results = []
+                for step in source_steps:
+                    if step.get("action") not in {"fill", "click", "assert"} or step.get("assertionType") == "url":
+                        continue
+                    description = str(step.get("targetDescription") or step.get("title") or "")
+                    hints = step.get("selectorHint") or {}
+                    terms = [str(value).strip().lower().lstrip("#") for value in [*hints.values(), description] if value]
+                    matched = [element for element in elements if any(term and (term in str(element.get("name", "")).lower().lstrip("#") or str(element.get("name", "")).lower().lstrip("#") in term) for term in terms)]
+                    candidates = []
+                    for index, element in enumerate(matched[:5], start=1):
+                        candidate = _candidate_for_element(element, f"candidate-{index}")
+                        if not candidate:
+                            continue
+                        locator = selector_locator(page, candidate["selector"])
+                        candidate["matchCount"] = await locator.count()
+                        if candidate["matchCount"]:
+                            candidate["visible"] = await locator.first.is_visible()
+                            candidate["enabled"] = await locator.first.is_enabled()
+                        candidates.append(candidate)
+                    valid = [candidate for candidate in candidates if candidate["matchCount"] == 1 and candidate["visible"] and candidate["enabled"]]
+                    status = "RESOLVED" if len(valid) == 1 else ("AMBIGUOUS" if len(valid) > 1 else "NOT_FOUND")
+                    step_results.append({
+                        "stepId": str(step.get("id")), "targetDescription": description, "resolutionStatus": status,
+                        "selectedCandidateId": valid[0]["id"] if len(valid) == 1 else None, "candidates": candidates,
+                    })
+                async with SessionFactory() as session:
+                    current = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
+                    current.status = "VALIDATING"
+                    await session.commit()
+            finally:
+                await browser.close()
+        executable = all(item["resolutionStatus"] == "RESOLVED" for item in step_results)
+        async with SessionFactory() as session:
+            discovery = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
+            discovery.status = "COMPLETED" if executable else "NEEDS_REVIEW"
+            discovery.result = {
+                "revision": int((version.structured_spec or {}).get("planRevision") or 1),
+                "pages": [{"url": page_url, "title": title, "fingerprint": fingerprint,
+                           "iframeCount": iframe_count, "hasShadowDom": has_shadow_dom}],
+                "steps": step_results, "warnings": [],
+                "executable": executable, "fingerprint": fingerprint, "model": None,
+                "promptVersion": "rule-based-v1", "aiUsage": {"source": "RULE_BASED", "callCount": 0},
+            }
+            discovery.ended_at = datetime.now(UTC)
+            session.add(AuditEvent(
+                organization_id=discovery.organization_id, action="page_discovery.completed", resource_type="page_discovery",
+                resource_id=str(discovery.id), request_id=uuid4(), metadata_json={"status": discovery.status, "elementCount": len(elements)},
+            ))
+            await session.commit()
+    except Exception as exc:
+        logger.exception("page discovery failed", extra={"discovery_id": str(discovery_id)})
+        async with SessionFactory() as session:
+            item = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
+            if item:
+                item.status, item.error_code, item.ended_at = "FAILED", getattr(exc, "code", "DISCOVERY_FAILED"), datetime.now(UTC)
+                await session.commit()
+
+
 async def run() -> None:
     logging.basicConfig(level=logging.INFO)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
@@ -327,6 +478,9 @@ async def run() -> None:
                         if fields.get("event_type") == "execution.requested":
                             payload = json.loads(fields.get("payload", "{}"))
                             await execute(UUID(payload.get("executionId") or fields["aggregate_id"]))
+                        elif fields.get("event_type") == "page_discovery.requested":
+                            payload = json.loads(fields.get("payload", "{}"))
+                            await discover(UUID(payload.get("discoveryId") or fields["aggregate_id"]))
                     except Exception:
                         logger.exception("execution message failed", extra={"message_id": message_id})
                     finally:

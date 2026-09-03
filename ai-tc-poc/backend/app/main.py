@@ -10,6 +10,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.auth.service import COOKIE_NAME, validate_demo_auth_config, verify_session
 from app.modules.resources.router import router as resource_router
 from app.modules.test_cases.router import router as test_case_router, version_router
+from app.modules.discoveries.router import router as discovery_router
 
 
 settings = get_settings()
@@ -57,6 +58,7 @@ async def health() -> dict[str, str]:
 
 app.include_router(test_case_router, prefix="/api/v1")
 app.include_router(version_router, prefix="/api/v1")
+app.include_router(discovery_router, prefix="/api/v1")
 app.include_router(execution_router, prefix="/api/v1")
 app.include_router(resource_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
