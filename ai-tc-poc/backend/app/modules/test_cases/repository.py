@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AuditEvent, Environment, Execution, ExecutionStatus, Project, TestCase, TestCaseVersion
@@ -74,17 +75,25 @@ class SqlTestCaseRepository:
         if not project:
             raise TestCaseVersionRuleError("PROJECT_NOT_FOUND", "프로젝트 정보를 찾을 수 없습니다.")
         now = datetime.now(UTC)
-        test_case_id = uuid4()
         version_id = UUID(result.versionId)
-        test_case = TestCase(
-            id=test_case_id,
-            organization_id=self.organization_id,
-            project_id=self.project_id,
-            display_id=imported.externalId if imported and imported.externalId else f"TC-{str(test_case_id)[:8].upper()}",
-            title=body.title,
-            group_name="Imported",
-            created_at=now,
-        )
+        external_id = imported.externalId.strip() if imported and imported.externalId else None
+        test_case = await self._imported_test_case(external_id, lock=True) if external_id else None
+        reused = test_case is not None
+        if test_case:
+            test_case.title = body.title
+            version_no = await self._next_version_no(test_case.id)
+        else:
+            test_case_id = uuid4()
+            test_case = TestCase(
+                id=test_case_id,
+                organization_id=self.organization_id,
+                project_id=self.project_id,
+                display_id=external_id or f"TC-{str(test_case_id)[:8].upper()}",
+                title=body.title,
+                group_name="Imported",
+                created_at=now,
+            )
+            version_no = 1
         structured_spec = result.model_dump(
             mode="json",
             exclude={"versionId", "status", "title", "aiUsage"},
@@ -102,18 +111,66 @@ class SqlTestCaseRepository:
         version = TestCaseVersion(
             id=version_id,
             organization_id=self.organization_id,
-            test_case_id=test_case_id,
-            version_no=1,
+            test_case_id=test_case.id,
+            version_no=version_no,
             raw_text=body.rawText,
             structured_spec=structured_spec,
             status="REVIEW_REQUIRED",
             created_at=now,
         )
-        self.session.add(test_case)
+        if not reused:
+            self.session.add(test_case)
         self.session.add(version)
-        self.session.add(self._audit("test_case_version.structured", version_id, {"status": "REVIEW_REQUIRED"}))
-        await self.session.commit()
+        self.session.add(self._audit("test_case_version.structured", version_id, {
+            "status": "REVIEW_REQUIRED", "testCaseId": str(test_case.id),
+            "displayId": test_case.display_id, "versionNo": version_no, "reusedTestCase": reused,
+        }))
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if not external_id or reused:
+                raise TestCaseVersionRuleError("TC_VERSION_CONFLICT", "동일 테스트 케이스 버전이 동시에 생성되었습니다.") from exc
+            test_case = await self._imported_test_case(external_id, lock=True)
+            if not test_case:
+                raise TestCaseVersionRuleError("TC_IMPORT_CONFLICT", "가져온 테스트 케이스를 저장하지 못했습니다.") from exc
+            test_case.title = body.title
+            version_no = await self._next_version_no(test_case.id)
+            version = TestCaseVersion(
+                id=version_id, organization_id=self.organization_id, test_case_id=test_case.id,
+                version_no=version_no, raw_text=body.rawText, structured_spec=structured_spec,
+                status="REVIEW_REQUIRED", created_at=now,
+            )
+            self.session.add(version)
+            self.session.add(self._audit("test_case_version.structured", version_id, {
+                "status": "REVIEW_REQUIRED", "testCaseId": str(test_case.id),
+                "displayId": test_case.display_id, "versionNo": version_no, "reusedTestCase": True,
+            }))
+            try:
+                await self.session.commit()
+            except IntegrityError as retry_exc:
+                await self.session.rollback()
+                raise TestCaseVersionRuleError("TC_VERSION_CONFLICT", "동일 테스트 케이스 버전이 동시에 생성되었습니다.") from retry_exc
         return result.model_copy(update={"status": "REVIEW_REQUIRED"})
+
+    async def _imported_test_case(self, external_id: str | None, lock: bool = False) -> TestCase | None:
+        if not external_id:
+            return None
+        statement = select(TestCase).where(
+            TestCase.organization_id == self.organization_id,
+            TestCase.project_id == self.project_id,
+            TestCase.display_id == external_id,
+        )
+        if lock:
+            statement = statement.with_for_update()
+        return await self.session.scalar(statement)
+
+    async def _next_version_no(self, test_case_id: UUID) -> int:
+        latest = await self.session.scalar(select(func.max(TestCaseVersion.version_no)).where(
+            TestCaseVersion.organization_id == self.organization_id,
+            TestCaseVersion.test_case_id == test_case_id,
+        ))
+        return int(latest or 0) + 1
 
     async def approve(self, version_id: UUID) -> TestCaseVersionApproval:
         version = await self.session.scalar(

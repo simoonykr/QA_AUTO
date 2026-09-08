@@ -125,6 +125,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - OpenAI 화면 요소 의미 매핑 Gateway와 비용 원장·fingerprint 입력 캐시를 구현하고, AI가 서버가 부여한 element ID만 선택하도록 응답을 제한
 - AI 의미 매핑 입력을 action·targetDescription·selectorHint와 정제된 요소 메타데이터로 한정하고 selector·입력값·HTML·비밀정보를 전달하지 않도록 보호
 - AI가 반환한 알 수 없는 step/element ID를 폐기하는 화이트리스트 검증과 AI 비활성 시 네트워크 0회 fail-closed 회귀 테스트 추가
+- 동일 프로젝트의 imported externalId를 다시 구조화하면 기존 TestCase를 행 잠금으로 재사용하고 다음 versionNo의 REVIEW_REQUIRED 버전을 생성하도록 중복 저장 오류 수정
 
 프론트엔드에 요청:
 
@@ -152,6 +153,11 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 다중 선택·일괄 구조화/승인은 단일 TC 전체 흐름 실환경 검증 후 확장
 
 ## 최근 검증
+
+- 2026-09-08 imported TC 재구조화 수정: 정식 백엔드 테스트 `63 passed`, 의존성/수집 경고 4건, 실제 OpenAI 호출 0회. 기존 TC 재사용 및 최초 생성 경쟁 재시도·최종 충돌 처리를 검증했다. 이전 `71 passed` 집계에는 OneDrive 테스트 복사본이 포함되어 이번에는 정식 `test_api.py`, `test_ai.py`만 실행했다.
+- Temporary Staging 배포·DB 연동 재검증 대기: 현재 PC의 Docker Desktop이 `sailor-ingest.sock` 접근 오류로 엔진 시작에 실패한다. 복구 후 `.env.public`과 `compose.public-demo.yml`로 API를 반영하고 KG-WEB-001 반복 구조화를 확인해야 한다.
+
+- KG-WEB-001 반복 구조화 저장 회귀: 기존 TestCase 재사용, versionNo 3→4, 신규 TestCase 0건 확인
 
 - OpenAI 화면 요소 의미 매핑 포함 백엔드 전체 테스트 `60 passed` (`3 warnings`); Fake Gateway만 사용하여 실제 OpenAI 호출 `0회`
 - 프론트 실행 이력 UI: `git diff --check` 통과. TypeScript·Vite 프로세스가 현재 Windows 환경에서 접근 위반(`3221225477`)으로 종료되어 타입 검사와 프로덕션 번들 검증은 환경 정상화 후 재확인 필요

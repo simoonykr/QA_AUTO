@@ -8,14 +8,15 @@ import pytest
 
 from app.core.database import get_session
 from app.core.config import Settings, get_settings
-from app.db.models import Base
+from app.db.models import Base, TestCase as DbTestCase, TestCaseVersion as DbTestCaseVersion
 from app.main import app
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError as VersionRuleError
+from app.modules.ai.service import rule_based_structure
 from app.modules.test_cases.execution_plan import ExecutionPlanError, validate_execution_plan
 from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
-from app.schemas.test_cases import TestCaseSummary
+from app.schemas.test_cases import ImportedTestCaseItem, StructureRequest, TestCaseSummary
 from app.schemas.resources import EnvironmentSummary, TestAccountSummary
 from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport, _safe_discovery_url, _sanitize_discovery_elements
 from app.workers.step_executor import StepDefinitionError, execute_step
@@ -817,6 +818,96 @@ class CaptureScalarSession:
     async def scalar(self, statement):
         self.statements.append(statement)
         return None
+
+
+class SaveStructuredSession:
+    def __init__(self, scalars):
+        self.scalars = list(scalars)
+        self.added = []
+        self.commits = 0
+        self.rollbacks = 0
+
+    async def scalar(self, _statement):
+        return self.scalars.pop(0)
+
+    def add(self, item):
+        self.added.append(item)
+
+    async def commit(self):
+        self.commits += 1
+
+    async def rollback(self):
+        self.rollbacks += 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_retry", [False, True])
+async def test_imported_creation_race_retries_existing_case(fail_retry):
+    from sqlalchemy.exc import IntegrityError
+
+    org = UUID("00000000-0000-0000-0000-000000000001")
+    project = UUID("00000000-0000-0000-0000-000000000201")
+    existing = DbTestCase(id=UUID("00000000-0000-0000-0000-000000000401"),
+                          display_id="KG-WEB-001", title="Existing")
+
+    class RaceSession(SaveStructuredSession):
+        async def commit(self):
+            self.commits += 1
+            if self.commits == 1 or fail_retry:
+                raise IntegrityError("insert", {}, Exception("duplicate"))
+
+        async def rollback(self):
+            await super().rollback()
+            self.added.clear()
+
+    session = RaceSession([object(), None, existing, 1])
+    body = StructureRequest(title="HTTPS", rawText="HTTPS 페이지에 접속되는지 확인한다.")
+    imported = ImportedTestCaseItem(externalId="KG-WEB-001", title=body.title, rawText=body.rawText)
+    repository = SqlTestCaseRepository(session, org, project)
+    if fail_retry:
+        with pytest.raises(VersionRuleError) as error:
+            await repository.save_structured(body, rule_based_structure(body), imported)
+        assert error.value.code == "TC_VERSION_CONFLICT"
+        assert session.rollbacks == 2
+    else:
+        await repository.save_structured(body, rule_based_structure(body), imported)
+        versions = [item for item in session.added if isinstance(item, DbTestCaseVersion)]
+        assert len(versions) == 1
+        assert versions[0].test_case_id == existing.id
+        assert versions[0].version_no == 2
+        assert session.rollbacks == 1
+    assert session.commits == 2
+
+
+@pytest.mark.asyncio
+async def test_imported_structure_reuses_test_case_and_creates_next_version() -> None:
+    organization_id = UUID("00000000-0000-0000-0000-000000000001")
+    project_id = UUID("00000000-0000-0000-0000-000000000201")
+    test_case_id = UUID("00000000-0000-0000-0000-000000000401")
+    existing = DbTestCase(
+        id=test_case_id, organization_id=organization_id, project_id=project_id,
+        display_id="KG-WEB-001", title="이전 제목", group_name="Imported", created_at=datetime.now(UTC),
+    )
+    session = SaveStructuredSession([SimpleNamespace(id=project_id), existing, 3])
+    repository = SqlTestCaseRepository(session, organization_id, project_id)
+    body = StructureRequest(title="공통 > 접속 > HTTPS 접속", rawText="카카오게임즈 HTTPS 페이지에 접속되는지 확인한다.")
+    imported = ImportedTestCaseItem(
+        externalId="KG-WEB-001", title=body.title, rawText=body.rawText,
+    )
+    result = rule_based_structure(body)
+
+    saved = await repository.save_structured(body, result, imported)
+
+    versions = [item for item in session.added if isinstance(item, DbTestCaseVersion)]
+    new_test_cases = [item for item in session.added if isinstance(item, DbTestCase)]
+    assert new_test_cases == []
+    assert len(versions) == 1
+    assert versions[0].test_case_id == test_case_id
+    assert versions[0].version_no == 4
+    assert existing.title == body.title
+    assert saved.status == "REVIEW_REQUIRED"
+    assert session.commits == 1
+    assert session.rollbacks == 0
 
 
 @pytest.mark.asyncio

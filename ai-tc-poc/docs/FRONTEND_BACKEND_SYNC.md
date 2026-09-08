@@ -171,6 +171,7 @@ assertion 검증 규칙:
 - `rawText`와 각 항목의 `rawText`에는 구조화에 필요한 ID·계층·전제조건·Step·Expected Result·대상 URL만 포함한다.
 - Result(AOS/IOS), BTS ID, Comment, `Not Test`, `Source:` 원문은 `auditFields`에만 보관하고 AI 구조화 입력에서는 제외한다.
 - `POST /api/v1/test-case-versions/imported/structure`: `{ testCase: testCases[n] }`를 받아 선택한 TC 하나만 독립 TestCase·TestCaseVersion으로 저장하고 구조화 결과를 반환한다.
+- 같은 프로젝트에서 동일한 `externalId`를 다시 구조화하면 기존 TestCase를 재사용하고 다음 `versionNo`의 새 `REVIEW_REQUIRED` TestCaseVersion을 만든다. 최초 생성 경쟁 또는 버전 충돌이 해소되지 않으면 표준 `TC_IMPORT_CONFLICT`/`TC_VERSION_CONFLICT`를 HTTP 409로 반환한다.
 - 구조화·계획 응답은 `automationStatus`(`AUTOMATABLE|PARTIALLY_AUTOMATABLE|MANUAL_REVIEW_REQUIRED|UNSUPPORTED`)와 `automationReason`을 반환한다. `UNSUPPORTED`는 승인·실행할 수 없다.
 - 프론트는 응답의 `title`, `rawText`를 편집기에 반영한 뒤 기존 구조화 API를 호출
 - 오류 코드: `UNSUPPORTED_FILE_TYPE`(415), `FILE_TOO_LARGE`(413), `EMPTY_TEST_CASE_FILE`(422), `UNSUPPORTED_TEXT_ENCODING`(422), `INVALID_DOCUMENT`(422), `EXTRACTED_TEXT_TOO_LARGE`(413)

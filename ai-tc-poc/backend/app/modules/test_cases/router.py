@@ -53,7 +53,7 @@ async def structure_test_case(body: StructureRequest, request: Request, session:
     try:
         return await repository.save_structured(body, structured)
     except TestCaseVersionRuleError as exc:
-        raise DomainError(exc.code, exc.message, 404) from None
+        raise DomainError(exc.code, exc.message, 409 if exc.code.endswith("CONFLICT") else 404) from None
 
 
 @version_router.post("/imported/structure", response_model=StructuredTestCase)
@@ -68,7 +68,7 @@ async def structure_imported_test_case(body: SelectedImportStructureRequest, req
     try:
         return await repository.save_structured(structure_request, structured, body.testCase)
     except TestCaseVersionRuleError as exc:
-        raise DomainError(exc.code, exc.message, 404) from None
+        raise DomainError(exc.code, exc.message, 409 if exc.code.endswith("CONFLICT") else 404) from None
 
 
 @version_router.post("/{version_id}/approve", response_model=TestCaseVersionApproval)
