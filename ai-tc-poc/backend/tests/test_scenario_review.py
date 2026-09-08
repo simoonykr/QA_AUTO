@@ -140,6 +140,63 @@ def test_tc_comparison_replaces_initial_page_review():
     assert rows[0]["decision"] == "PENDING"
 
 
+def test_http_compare_review_revision_and_response_contract(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app, settings
+    from app.core.database import get_session
+    payload, discovery = fixture_payload()
+    item = NS(id=uuid4(), payload=payload, discovery_id=discovery.id,
+        organization_id=uuid4(), project_id=uuid4())
+    item.payload["scenarioId"] = str(item.id)
+    class Session:
+        commits = 0
+        async def scalar(self, query):
+            assert "organization_id" in str(query) and "project_id" in str(query)
+            return item
+        def add(self, event):
+            assert event.metadata_json["snapshot"]["revision"] >= 2
+        async def commit(self):
+            self.commits += 1
+    session = Session()
+    async def dependency():
+        yield session
+    monkeypatch.setattr(settings, "demo_auth_enabled", False)
+    monkeypatch.setitem(app.dependency_overrides, get_session, dependency)
+    with TestClient(app) as client:
+        path = f"/api/v1/page-scenarios/{item.id}"
+        response = client.post(path + "/compare", json={"expectedRevision": 1, "rawText": "메뉴 표시 확인"})
+        assert response.status_code == 200
+        assert response.json()["revision"] == 2
+        assert response.json()["comparisons"][0]["result"] == "MATCHED"
+        assert response.json()["extractedTestCase"]["aiCallCount"] == 0
+        request = {"expectedRevision": 2, "selections": [{"comparisonId": "comparison-1", "decision": "ADD"}]}
+        saved = client.patch(path + "/review", json=request)
+        assert saved.status_code == 200 and saved.json()["revision"] == 3
+        assert saved.json()["executable"] is False
+        stale = client.patch(path + "/review", json=request)
+        assert stale.status_code == 409
+        assert stale.json()["code"] == "SCENARIO_REVISION_CONFLICT"
+        assert stale.json()["requestId"] == stale.headers["x-request-id"]
+        assert stale.json()["retryable"] is False
+        latest = client.get(path)
+        assert latest.status_code == 200 and latest.json() == saved.json()
+        assert session.commits == 2
+
+
+def test_http_scenario_routes_require_authentication(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app, settings
+    monkeypatch.setattr(settings, "demo_auth_enabled", True)
+    with TestClient(app) as client:
+        for method, path in [("post", "/test-cases/extract"),
+            ("post", f"/page-scenarios/{uuid4()}/compare"),
+            ("patch", f"/page-scenarios/{uuid4()}/review"),
+            ("post", f"/page-scenarios/{uuid4()}/approve")]:
+            response = getattr(client, method)("/api/v1" + path, json={})
+            assert response.status_code == 401
+            assert response.json()["code"] == "AUTH_REQUIRED"
+
+
 @pytest.mark.asyncio
 async def test_worker_verifies_live_fingerprint_without_browser_or_network(monkeypatch):
     from app.modules.discoveries import page_first
