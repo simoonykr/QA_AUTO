@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -37,6 +37,7 @@ const mockExecutionPlans = new Map<string,ExecutionPlan>()
 const mockPlanKey = (versionId:string,environmentId:string) => `${versionId}:${environmentId}`
 const mockDiscoveries = new Map<string,{polls:number;value:PageDiscovery}>()
 const mockPageFirstDiscoveries = new Map<string,{polls:number;value:PageFirstDiscovery}>()
+const mockPageScenarios = new Map<string,PageScenarioDraft>()
 
 export const api = {
   subscribeExecution(id: string, onDetails: (details: ExecutionDetails) => void, onError: () => void): () => void {
@@ -240,7 +241,47 @@ export const api = {
   async generatePageScenario(discoveryId:string):Promise<PageScenarioDraft> {
     if (!USE_MOCK_API) return request(`/page-discoveries/${discoveryId}/scenarios`,{method:'POST',body:JSON.stringify({maxAiCalls:0})})
     const discovery=await this.getPageFirstDiscovery(discoveryId)
-    return {scenarioId:crypto.randomUUID(),discoveryId,revision:1,status:'REVIEW_REQUIRED',purpose:'탐색 페이지의 검증된 요소 표시 확인',pages:discovery.pages,steps:discovery.elements.map((element,index)=>({id:`step-${index+1}`,action:'assert',targetDescription:element.name,selector:element.selector,assertion:{type:'element',operator:'visible',expected:true},source:'PAGE_DISCOVERY',evidence:{elementId:element.elementId,fingerprint:discovery.pages[0]?.fingerprint??'',url:discovery.pages[0]?.url??'',observed:'visible'}})),automationStatus:'MANUAL_REVIEW_REQUIRED',warnings:[{code:'SCENARIO_APPROVAL_NOT_AVAILABLE',message:'페이지 표시 확인 초안입니다. 업무 의도 검토와 승인·실행 연결이 필요합니다.'}],executable:false,aiUsage:{source:'RULE_BASED',callCount:0,inputTokens:0,outputTokens:0,costUsd:'0'}}
+    const value:PageScenarioDraft={scenarioId:crypto.randomUUID(),discoveryId,revision:1,status:'REVIEW_REQUIRED',purpose:'탐색 페이지의 검증된 요소 표시 확인',pages:discovery.pages,steps:discovery.elements.map((element,index)=>({id:`step-${index+1}`,action:'assert',targetDescription:element.name,selector:element.selector,assertion:{type:'element',operator:'visible',expected:true},source:'PAGE_DISCOVERY',evidence:{elementId:element.elementId,fingerprint:discovery.pages[0]?.fingerprint??'',url:discovery.pages[0]?.url??'',observed:'visible'}})),automationStatus:'MANUAL_REVIEW_REQUIRED',warnings:[],executable:false,aiUsage:{source:'RULE_BASED',callCount:0,inputTokens:0,outputTokens:0,costUsd:'0'},environmentId:'env-staging'}
+    mockPageScenarios.set(value.scenarioId,value)
+    return structuredClone(value)
+  },
+
+  async getPageScenario(scenarioId:string):Promise<PageScenarioDraft> {
+    if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}`)
+    const value=mockPageScenarios.get(scenarioId)
+    if(!value)throw new ApiError({code:'SCENARIO_NOT_FOUND',message:'시나리오를 찾을 수 없습니다.',requestId:'mock',retryable:false},404)
+    return structuredClone(value)
+  },
+
+  async comparePageScenario(scenarioId:string,input:ScenarioCompareRequest):Promise<PageScenarioDraft> {
+    if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}/compare`,{method:'POST',body:JSON.stringify(input)})
+    const current=await this.getPageScenario(scenarioId)
+    if(current.revision!==input.expectedRevision)throw new ApiError({code:'SCENARIO_REVISION_CONFLICT',message:'다른 변경이 반영되었습니다. 최신 상태를 확인해 주세요.',requestId:'mock',retryable:false},409)
+    const lines=input.rawText.split(/\r?\n/).map(value=>value.replace(/^[-*\d.)\s]+/,'').trim()).filter(Boolean).slice(0,200)
+    const comparisons:ScenarioComparison[]=lines.map((text,index)=>{const step=current.steps.find(item=>text===`${item.targetDescription} 표시`||text===`${item.targetDescription} 표시 확인`);return {id:`tc-${index+1}`,result:step?'MATCHED':/육안|디자인|자연스럽|정상적|적절|품질/.test(text)?'NOT_AUTOMATABLE':'TC_ONLY',text,draft:text,decision:'PENDING',stepId:step?.id??null,source:'TEST_CASE',evidence:step?'페이지에서 유일하고 표시된 요소와 정확히 일치합니다.':'검증된 페이지 근거와 자동 연결되지 않았습니다.'}})
+    current.steps.filter(step=>!comparisons.some(item=>item.stepId===step.id)).forEach((step,index)=>comparisons.push({id:`page-${index+1}`,result:'PAGE_ONLY',text:step.targetDescription,draft:step.targetDescription,decision:'PENDING',stepId:step.id,source:'PAGE_DISCOVERY',evidence:'페이지에서 검증됐지만 TC에는 없는 기본 표시 확인입니다.'}))
+    const updated={...current,revision:current.revision+1,comparisons,extractedTestCase:{target:lines[0]??'',actions:lines.slice(1),expectedResults:lines.slice(-1),source:'RULE_BASED' as const,aiCallCount:0 as const},warnings:[{code:'SCENARIO_REVIEW_REQUIRED',message:'모든 비교 항목의 처리 방식을 선택해 주세요.'}]}
+    mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
+  },
+
+  async reviewPageScenario(scenarioId:string,input:ScenarioReviewRequest):Promise<PageScenarioDraft> {
+    if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}/review`,{method:'PATCH',body:JSON.stringify(input)})
+    const current=await this.getPageScenario(scenarioId)
+    if(current.revision!==input.expectedRevision)throw new ApiError({code:'SCENARIO_REVISION_CONFLICT',message:'다른 변경이 반영되었습니다. 최신 상태를 확인해 주세요.',requestId:'mock',retryable:false},409)
+    const selected=new Map(input.selections.map(item=>[item.comparisonId,item]))
+    const comparisons=current.comparisons?.map(item=>{const selection=selected.get(item.id);return selection?{...item,decision:selection.decision,draft:selection.draft??item.draft,source:selection.draft!==undefined?'MANUAL' as const:item.source}:item})??[]
+    const pending=comparisons.some(item=>item.decision==='PENDING')
+    const updated={...current,revision:current.revision+1,comparisons,warnings:pending?[{code:'SCENARIO_REVIEW_REQUIRED',message:'모든 비교 항목의 처리 방식을 선택해 주세요.'}]:[]}
+    mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
+  },
+
+  async approvePageScenario(scenarioId:string,input:ScenarioApproveRequest):Promise<PageScenarioDraft> {
+    if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}/approve`,{method:'POST',body:JSON.stringify(input)})
+    const current=await this.getPageScenario(scenarioId)
+    if(current.revision!==input.expectedRevision)throw new ApiError({code:'SCENARIO_REVISION_CONFLICT',message:'다른 변경이 반영되었습니다. 최신 상태를 확인해 주세요.',requestId:'mock',retryable:false},409)
+    if(current.comparisons?.some(item=>item.decision==='PENDING'))throw new ApiError({code:'SCENARIO_REVIEW_REQUIRED',message:'모든 비교 항목을 검토해 주세요.',requestId:'mock',retryable:false},422)
+    const updated={...current,status:'READY' as const,executable:true,automationStatus:'PARTIALLY_AUTOMATABLE' as const,versionId:crypto.randomUUID(),environmentId:current.environmentId??'env-staging',warnings:[{code:'PARTIAL_SCOPE',message:'수동·제외 항목은 자동 실행 범위에 포함되지 않습니다.'}]}
+    mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {

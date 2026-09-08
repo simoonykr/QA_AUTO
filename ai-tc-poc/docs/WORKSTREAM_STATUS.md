@@ -80,6 +80,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 페이지 우선 `AI 시나리오` 화면과 Mock UX 추가: 환경·시작 URL·선택적 TC 입력, 읽기 전용 분석 polling, 검증 요소·페이지 fingerprint, PAGE_DISCOVERY 단계 초안과 TC 보강 미리보기 표시
 - 백엔드 1차 `/page-discoveries`·`/page-discoveries/{id}`·`/page-discoveries/{id}/scenarios` 계약 연결. 현재 미지원인 TC 비교·승인 액션은 비활성화하고 AI 0회·실행 불가 초안임을 명시
 - TC 비교·편집 Mock UX 추가: `MATCHED | TC_ONLY | CONFLICT | NOT_AUTOMATABLE` 상태, 추가·제외·수동 검증·문구 수정 선택, 로컬 revision 증가와 미결정 건수 표시. 분석 입력 변경 시 과거 discovery·scenario·편집 상태를 폐기하고 늦은 응답을 무시하며, 서버 revision·승인·실행은 계약 전까지 차단
+- 백엔드 2차 시나리오 비교·검토·승인 API 연결: 서버 `comparisons` 전체 상태와 `PAGE_ONLY` 표시, 선택별 PATCH 저장, 서버 revision 기준 갱신, `SCENARIO_REVISION_CONFLICT` 발생 시 최신 상태 조회 후 수동 재검토, 승인 응답 `versionId`를 기존 실행 설정·계획·Worker 흐름에 전달
+- Mock API도 비교·선택·revision·승인 흐름을 동일하게 재현하며 근거 없는 ADD를 UI에서 차단. 수동·제외 항목은 실행 통과 범위가 아님을 유지하고 실제 AI 호출은 0회
 
 백엔드에 요청:
 
@@ -89,8 +91,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 다음 작업:
 
-- 백엔드 TC 비교 응답을 현재 Mock 검토 모델에 연결하고 `PAGE_ONLY`·AI 보강 제안을 실제 데이터로 표시
-- 비교 선택·단계 편집을 서버 revision API에 저장하고 승인·Worker 실행으로 연결
+- 페이지 우선 승인 후 실제 DB·Playwright Worker 통합 회귀 및 `DISCOVERY_STALE` 재분석 UX 검증
+- 백엔드가 제공하는 후속 단계 편집·순서 변경·AI 보강 제안 계약 연결
 - 가입 신청·승인 대기·거절 화면을 백엔드 계약에 맞춰 연결
 - 다중 TC 자동 분리 API가 확정되면 선택·분리·일괄 저장 UX 연결
 
@@ -187,6 +189,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 ## 최근 검증
 
 - 페이지 우선 프론트 Mock/API 연결: TypeScript 5.9 타입 검사 및 `git diff --check` 통과. 저장소 Vite 8은 기존 Windows 접근 위반, Vite 6 임시 검증은 pnpm store의 `picomatch` 누락으로 번들 검증 대기
+- 페이지 우선 2차 비교·검토·승인 연동: TypeScript 5.9 타입 검사와 `git diff --check` 통과. `pnpm run build`는 기존과 동일하게 Vite 프로세스가 Windows 접근 위반(`3221225477`)으로 종료되어 환경 정상화 후 번들 재확인 필요
 
 - 2026-09-08 imported TC 재구조화 수정: 정식 백엔드 테스트 `63 passed`, 의존성/수집 경고 4건, 실제 OpenAI 호출 0회. 기존 TC 재사용 및 최초 생성 경쟁 재시도·최종 충돌 처리를 검증했다. 이전 `71 passed` 집계에는 OneDrive 테스트 복사본이 포함되어 이번에는 정식 `test_api.py`, `test_ai.py`만 실행했다.
 - Temporary Staging 배포·DB 연동 재검증 대기: 현재 PC의 Docker Desktop이 `sailor-ingest.sock` 접근 오류로 엔진 시작에 실패한다. 복구 후 `.env.public`과 `compose.public-demo.yml`로 API를 반영하고 KG-WEB-001 반복 구조화를 확인해야 한다.
