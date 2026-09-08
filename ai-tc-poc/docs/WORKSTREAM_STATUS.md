@@ -1,6 +1,13 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-08
+마지막 갱신: 2026-09-09
+
+## 2026-09-09 실제 Chromium 컴포넌트 검증
+
+- 최신 main 확인 후 실제 Chromium 회귀 테스트 추가. 합성 HTML만 사용하며 브라우저 외부 요청을 전부 차단한다. 요소 수집(중복·비밀 필드 제외), 숨김 요소의 시나리오 제외, 검토 선택, Worker 표시 assertion 수행, DOM 변경 후 DISCOVERY_STALE 차단을 검증했다.
+- 실행: `RUN_BROWSER_TESTS=1`, `AI_ENABLED=false`, `AI_MAX_CALLS_PER_RUN=0`, 빈 OPENAI_API_KEY로 정식 테스트 5개 파일 실행 → **89 passed**, 경고 4건. TypeScript 통과, 실제 AI 0회. 브라우저 테스트는 기본 비활성이고 `python -m playwright install chromium` 후 명시적으로 활성화한다.
+- Docker Desktop 재기동 요청 후에도 Linux 엔진 연결 불가. PostgreSQL migration·동시성, Redis 큐, MinIO 증적을 포함한 전체 Worker 통합 및 Temporary Staging 배포는 미완료다. 컨테이너 재생성·포트 변경·DB 변경 없음.
+- API/공유 타입 변경 없음. 사용자 OneDrive 충돌 복사본 보존. 다음은 Docker 엔진 복구 후 `.env.public` + `compose.public-demo.yml` 환경의 통합 검증이다.
 
 ## 21:17 백엔드 정기 확인: 4a14a45 계약 회귀
 

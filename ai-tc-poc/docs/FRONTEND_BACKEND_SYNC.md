@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-09 실제 브라우저 검증
+
+- API/타입 계약 변경 없음. 실제 Chromium에서 합성 페이지의 요소 수집 → 검토 선택 → Worker 표시 assertion → DOM 변경 차단 회귀를 추가·통과했다. 외부 페이지 및 AI 호출 없음.
+- `RUN_BROWSER_TESTS=1`로 `tests/test_page_first_browser.py` 활성화 가능(Playwright Chromium 설치 필요). 정식 전체 89 passed/경고 4건, TypeScript 통과.
+- 이는 브라우저 컴포넌트 통합 검증이다. Docker 엔진 연결 불가로 PostgreSQL·Redis·MinIO·배포 E2E 완료를 뜻하지 않는다. 프론트는 기존 계약을 유지하며 Staging 실검증은 엔진 복구 후 진행한다.
+
 ## 2026-09-08 21:17 계약 회귀 확인
 
 - 프론트 4a14a45 연동 보완 반영 확인. 추가 API/타입 변경 없음.
