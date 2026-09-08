@@ -41,6 +41,10 @@ class ValidatedExecutionPlan:
 
 def validate_execution_plan(version: TestCaseVersion, environment: Environment) -> ValidatedExecutionPlan:
     spec = version.structured_spec or {}
+    page_first = spec.get("pageFirst")
+    if page_first and (page_first.get("environmentId") != str(environment.id)
+                       or page_first.get("revision") != spec.get("planRevision")):
+        raise ExecutionPlanError("SCENARIO_SNAPSHOT_INVALID", "승인된 시나리오 환경·revision과 일치하지 않습니다.")
     if spec.get("automationStatus") == "UNSUPPORTED":
         raise ExecutionPlanError("AUTOMATION_UNSUPPORTED", str(spec.get("automationReason") or "자동 실행을 지원하지 않는 테스트입니다."))
     source_steps = spec.get("steps")

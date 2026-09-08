@@ -12,6 +12,7 @@ from app.modules.resources.router import router as resource_router
 from app.modules.test_cases.router import router as test_case_router, version_router
 from app.modules.discoveries.router import router as discovery_router
 from app.modules.discoveries.page_first import router as page_first_router
+from app.modules.discoveries.review import router as review_router
 
 
 settings = get_settings()
@@ -61,6 +62,7 @@ app.include_router(test_case_router, prefix="/api/v1")
 app.include_router(version_router, prefix="/api/v1")
 app.include_router(discovery_router, prefix="/api/v1")
 app.include_router(page_first_router, prefix="/api/v1")
+app.include_router(review_router, prefix="/api/v1")
 app.include_router(execution_router, prefix="/api/v1")
 app.include_router(resource_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")

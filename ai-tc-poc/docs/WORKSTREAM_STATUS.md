@@ -2,7 +2,19 @@
 
 마지막 갱신: 2026-09-08
 
-## 페이지 우선 백엔드 1차 진행 상황
+## 페이지 우선 백엔드 2차: TC 비교 → 검토 저장 → 승인·Worker 연결
+
+- 프론트 `a35df71`을 fast-forward 반영하고 기존 Mock UX를 보존했다.
+- TC 단순 추출, 시나리오 비교, 선택·문구 저장, 서버 revision 충돌 방지, 승인 API 구현. 승인 시 READY TC 버전과 감사 snapshot을 같은 트랜잭션으로 저장한다.
+- 승인된 versionId는 기존 실행 계획 조회·실행 생성 API에 연결한다. Worker는 접속 후 실제 요소 fingerprint를 비교하고 변경되면 DISCOVERY_STALE로 중단한다.
+- 자동 실행 범위는 기존 1페이지 data-testid 표시 assertion에 한정된다. AI 의미 분석·클릭·입력·iframe 탐색은 미구현이며, 미확인 TC는 수동/제외 선택만 가능하다. 문구 변경은 실행 의미를 바꾸지 않는다.
+- 백엔드 정식 전체 테스트 **84 passed**, 기존 경고 4건, 실제 OpenAI 호출 **0회**. OneDrive 충돌 복사본 테스트는 제외하고 사용자 파일은 보존했다.
+- 공유 타입 갱신 후 `npm run typecheck` 통과. 로컬 누락 의존성만 복구했으며 package/lock 파일은 변경하지 않았다.
+- 프론트 요청: FRONTEND_BACKEND_SYNC.md의 2차 계약에 따라 Mock 비교·로컬 revision을 서버 응답으로 교체하고 승인 응답 versionId/environmentId로 기존 실행 API를 연결한다. 전체 선택 검토, 수동·제외 범위 표시와 409 재조회 UX를 유지한다.
+- Docker Linux 엔진 연결 불가로 실제 DB migration·브라우저 E2E·Temporary Staging 배포 검증은 미완료. 배포 시 `.env.public` + `compose.public-demo.yml`만 사용하며 이번 작업에서는 컨테이너를 변경하지 않았다.
+- 다음 백엔드: role/label·iframe·action 가능성 검증, 실제 AI 시나리오/의미 비교(별도 승인 전 호출 금지), DB·Worker 통합 검증.
+
+## 페이지 우선 백엔드 1차 진행 상황 (이력, 2차 내용 우선)
 
 - 정식 백엔드 테스트 전체 `73 passed`, 경고 4건, 실제 OpenAI 호출 0회. URL 제한·입력 제한·검증 요소 선택·조직 범위·미완료 분석 차단 회귀 포함.
 

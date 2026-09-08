@@ -31,6 +31,13 @@ class WorkerExecutionError(Exception):
         super().__init__(message)
 
 
+async def _verify_page_first_snapshot(page, snapshot):
+    from app.modules.discoveries.page_first import collect_elements, page_fingerprint
+    actual = page_fingerprint(page.url, await collect_elements(page))
+    if actual != snapshot["fingerprint"]:
+        raise WorkerExecutionError("DISCOVERY_STALE", "페이지가 변경되어 실행을 차단했습니다. 다시 분석해 주세요.")
+
+
 def _parse_viewport(value: str) -> dict[str, int]:
     try:
         width_text, height_text = value.lower().split("x", maxsplit=1)
@@ -232,8 +239,22 @@ async def execute(execution_id: UUID) -> None:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             try:
-                context = await browser.new_context(viewport=viewport, locale=locale)
+                page_first = (version.structured_spec or {}).get("pageFirst")
+                context_options = {"viewport": viewport, "locale": locale}
+                if page_first:
+                    context_options["service_workers"] = "block"
+                context = await browser.new_context(**context_options)
                 page = await context.new_page()
+                if page_first:
+                    from app.modules.discoveries.page_first import allowed_url
+
+                    async def guard(route):
+                        if route.request.method not in {"GET", "HEAD"} or not allowed_url(route.request.url, environment.allowed_domains):
+                            await route.abort()
+                        else:
+                            await route.continue_()
+
+                    await context.route("**/*", guard)
                 for current_step_no, step in enumerate(steps, start=1):
                     if await _is_cancel_requested(execution_id):
                         await _finish(execution_id, ExecutionStatus.CANCELLED)
@@ -242,6 +263,8 @@ async def execute(execution_id: UUID) -> None:
                     current_action = {"type": step.get("action", "unknown"), "planStepId": step.get("id")}
                     try:
                         result = await execute_step(page, step, environment.base_url)
+                        if page_first and step.get("action") == "navigate":
+                            await _verify_page_first_snapshot(page, page_first)
                     except Exception:
                         await _capture_failure(page, execution_id, current_step_no, current_action, current_started_at)
                         raise

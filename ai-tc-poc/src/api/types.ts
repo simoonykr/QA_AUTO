@@ -289,7 +289,7 @@ export interface PageScenarioDraft {
   scenarioId: string
   discoveryId: string
   revision: number
-  status: 'REVIEW_REQUIRED'
+  status: 'REVIEW_REQUIRED' | 'READY'
   purpose: string
   pages: PageFirstDiscovery['pages']
   steps: Array<{
@@ -301,8 +301,38 @@ export interface PageScenarioDraft {
     source: 'PAGE_DISCOVERY'
     evidence: {elementId: string; fingerprint: string; url: string; observed: 'visible'}
   }>
-  automationStatus: 'MANUAL_REVIEW_REQUIRED'
+  automationStatus: 'MANUAL_REVIEW_REQUIRED' | 'PARTIALLY_AUTOMATABLE'
   warnings: Array<{code: string; message: string}>
-  executable: false
+  executable: boolean
   aiUsage: {source: 'RULE_BASED'; callCount: 0; inputTokens: 0; outputTokens: 0; costUsd: string}
+  comparisons?: ScenarioComparison[]
+  extractedTestCase?: TCExtraction | null
+  versionId?: string | null
+  environmentId?: string | null
 }
+
+export type ScenarioComparisonResult = 'MATCHED' | 'TC_ONLY' | 'PAGE_ONLY' | 'CONFLICT' | 'NOT_AUTOMATABLE'
+export type ScenarioDecision = 'PENDING' | 'ADD' | 'MANUAL' | 'EXCLUDE' | 'IGNORE'
+export interface ScenarioComparison {
+  id: string
+  result: ScenarioComparisonResult
+  text: string
+  draft: string
+  decision: ScenarioDecision
+  stepId: string | null
+  source: 'TEST_CASE' | 'PAGE_DISCOVERY' | 'MANUAL'
+  evidence: string
+}
+export interface TCExtraction {
+  target: string
+  actions: string[]
+  expectedResults: string[]
+  source: 'RULE_BASED'
+  aiCallCount: 0
+}
+export interface ScenarioCompareRequest { expectedRevision: number; rawText: string }
+export interface ScenarioReviewRequest {
+  expectedRevision: number
+  selections: Array<{comparisonId: string; decision: ScenarioDecision; draft?: string}>
+}
+export interface ScenarioApproveRequest { expectedRevision: number }

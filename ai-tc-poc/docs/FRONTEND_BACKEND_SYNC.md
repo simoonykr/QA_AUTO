@@ -1,5 +1,30 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 페이지 우선 2차 계약 (2026-09-08, a35df71 이후 백엔드)
+
+이 절이 아래 1차의 승인·실행 미지원 설명을 대체한다. 기존 Mock UI는 유지하며 프론트 담당자가 연결한다. 모든 경로는 `/api/v1` 기준이며 기존 인증·요청 에러 처리는 동일하다.
+
+| 순서 | API | 요청 | 응답 |
+| --- | --- | --- | --- |
+| 선택적 단순 추출 | POST `/test-cases/extract` | `{rawText}` | `{target, actions: string[], expectedResults: string[], source: "RULE_BASED", aiCallCount: 0}` |
+| 비교 및 저장 | POST `/page-scenarios/{id}/compare` | `{expectedRevision, rawText}` | 전체 PageScenarioDraft, revision +1 |
+| 선택 저장 | PATCH `/page-scenarios/{id}/review` | `{expectedRevision, selections: [{comparisonId, decision, draft?}]}` | 전체 PageScenarioDraft, revision +1 |
+| 승인 | POST `/page-scenarios/{id}/approve` | `{expectedRevision}` | 전체 PageScenarioDraft, READY, executable=true, versionId, environmentId |
+| 최신 상태 | GET `/page-scenarios/{id}` | 없음 | 동일 전체 응답 |
+
+- 추가 응답: `comparisons: [{id,result,text,draft,decision,stepId,source,evidence}]`, `extractedTestCase`, `versionId`, `environmentId`. source는 TEST_CASE/PAGE_DISCOVERY이며 문구 변경 시 MANUAL. 원문 text와 수정 draft는 별도 보존한다.
+- result는 MATCHED/TC_ONLY/PAGE_ONLY/CONFLICT/NOT_AUTOMATABLE. decision은 PENDING/ADD/MANUAL/EXCLUDE/IGNORE. ADD 및 IGNORE는 검증된 MATCHED/PAGE_ONLY 단계만 실행에 포함한다. IGNORE는 해당 페이지 단계를 유지한다는 뜻이며 충돌을 무시하고 강제 실행하는 기능이 아니다. MANUAL/EXCLUDE는 실행에서 제외한다.
+- 매칭은 RULE_BASED 제한 구현이다. 유일한 요소 이름과 정확히 일치하는 `이름 표시`, `이름 표시 확인`, `이름 is visible`만 MATCHED다. 클릭·입력 기대 결과는 표시 assertion으로 대체하지 않는다. 미확인 항목을 추가하려면 향후 별도 근거 검증이 필요하다.
+- rawText는 선택한 단일 TC의 줄 단위 내용(최대 50,000자)이다. 대상/전제조건, 행동, 기대 결과를 보존하며 Result/BTS ID/Comment/Source 등 보고 필드는 제외한다. XLSX 바이너리 또는 여러 TC 표 전체를 전송하지 않는다. 파이프 표는 TC_TABLE_REQUIRES_IMPORT/422. 빈 내용은 TC_EMPTY/422, 추출·비교 항목 최대 200개다.
+- 비교를 다시 실행하면 이전 선택·문구 편집을 초기화한다. 검토 PATCH는 선택한 행만 수정한다. 요청 expectedRevision에는 마지막 서버 revision을 사용하고 성공 응답 전체로 상태를 교체한다. 로컬 revision을 서버에 맞추기 위해 임의 증가시키거나 409 후 자동 재시도하지 않는다.
+- 오래된 revision: SCENARIO_REVISION_CONFLICT/409 → 최신 GET 후 사용자 재검토. 승인 후 수정: SCENARIO_ALREADY_APPROVED/409 → 새 시나리오 생성. 모든 행 선택 전 SCENARIO_REVIEW_REQUIRED/422, 실행 가능한 선택이 없으면 SCENARIO_EMPTY/422. 미검증 ADD/IGNORE는 COMPARISON_EVIDENCE_REQUIRED/422. 문구 변경은 assertion 의미나 근거를 바꾸지 않는다.
+- 승인 시 완료된 최근 30분 이내 discovery와 요소의 유일성·표시·selector·fingerprint를 검증한다. 오래되면 DISCOVERY_STALE/409로 새 분석을 요구한다. 승인은 revision을 증가시키지 않고 동일 revision 재요청은 동일 versionId를 반환한다. 승인 후 시나리오는 변경 불가이며 별도의 READY TC 버전으로 고정된다.
+- 승인 응답 이후 `GET /test-case-versions/{versionId}/execution-plan?environmentId=...`와 기존 `POST /executions`를 사용한다. 실행 요청 형식/Idempotency-Key는 기존 계약 그대로이며 maxAiCalls=0을 유지한다. 승인 API 자체는 Worker 실행을 시작하지 않는다. scenarioId를 testCaseVersionId로 보내지 않는다.
+- Worker가 다른 environment/revision 또는 접속 직후 변경된 fingerprint를 발견하면 차단한다. 페이지 우선 실행만 discovery와 같은 GET/HEAD·허용 URL·서비스워커 제한을 적용한다. 동적 페이지·viewport/locale 차이도 재분석이 필요한 변경으로 판정될 수 있다.
+- READY도 `automationStatus=PARTIALLY_AUTOMATABLE`, PARTIAL_SCOPE 경고를 유지한다. 수동·제외 항목까지 통과한 것으로 표시하면 안 된다. 전체 업무 자동화나 실제 AI 의미 비교 완료를 뜻하지 않는다.
+- 공유 타입: TCExtraction, ScenarioComparison, ScenarioCompareRequest, ScenarioReviewRequest, ScenarioApproveRequest 및 PageScenarioDraft 응답 확장. 기존 API/Mock 호환 유지. 신규 migration은 없으며 1차 `0008_page_first` 적용이 필요하다.
+- 검증: 백엔드 정식 전체 84 passed/경고 4건/AI 호출 0회, `npm run typecheck` 통과. Docker 엔진 미실행으로 PostgreSQL 동시성·실브라우저·Temporary Staging 통합 검증은 별도 필요하다.
+
 ## 페이지 우선 1차 계약 (2026-09-08, 제한된 초안 생성)
 
 - `POST /api/v1/page-discoveries`: `{ environmentId, startUrl, maxPages: 1, maxAiCalls: 0 }` → HTTP 202 `{ discoveryId, status: "QUEUED" }`. TC 버전 없이 생성한다.

@@ -47,7 +47,7 @@ class ScenarioResponse(BaseModel):
     scenarioId: UUID
     discoveryId: UUID
     revision: int = 1
-    status: Literal["REVIEW_REQUIRED"] = "REVIEW_REQUIRED"
+    status: Literal["REVIEW_REQUIRED", "READY"] = "REVIEW_REQUIRED"
     purpose: str
     pages: list[dict]
     steps: list[EvidenceStep]
@@ -55,6 +55,10 @@ class ScenarioResponse(BaseModel):
     warnings: list[dict]
     executable: bool = False
     aiUsage: dict
+    comparisons: list[dict] = Field(default_factory=list)
+    extractedTestCase: dict | None = None
+    versionId: str | None = None
+    environmentId: str | None = None
 
 
 def allowed_url(url: str, domains: list[str]) -> bool:
@@ -88,7 +92,7 @@ def scenario_payload(discovery: PageDiscovery) -> dict:
         "status": "REVIEW_REQUIRED", "purpose": "탐색 페이지의 검증된 요소 표시 확인",
         "pages": result.get("pages", []), "steps": steps[:50],
         "automationStatus": "MANUAL_REVIEW_REQUIRED", "executable": False,
-        "warnings": [{"code": "SCENARIO_APPROVAL_NOT_AVAILABLE", "message": "페이지 표시 확인 초안입니다. 업무 의도 검토와 승인·실행 연결이 필요합니다."}],
+        "warnings": [{"code": "SCENARIO_REVIEW_REQUIRED", "message": "페이지 표시 확인 초안입니다. TC 비교와 검토 선택 저장 후 승인해 주세요."}],
         "aiUsage": {"source": "RULE_BASED", "callCount": 0, "inputTokens": 0, "outputTokens": 0, "costUsd": "0"}}
 
 
@@ -198,21 +202,8 @@ async def scan(discovery_id: UUID):
                     if not allowed_url(page.url, env.allowed_domains):
                         raise ValueError("redirect")
                     # Stable IDs only: no HTML, input values or arbitrary page text collected.
-                    nodes = page.locator('[data-testid]')
-                    elements = []
-                    for index in range(min(await nodes.count(), 100)):
-                        node = nodes.nth(index)
-                        test_id = await node.get_attribute("data-testid") or ""
-                        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", test_id) or not safe_text(test_id):
-                            continue
-                        selector = f'[data-testid="{test_id}"]'
-                        locator = page.locator(selector)
-                        if await locator.count() != 1:
-                            continue
-                        elements.append({"elementId": f"element-{index + 1}", "selector": selector,
-                            "name": safe_text(await node.get_attribute("aria-label") or test_id),
-                            "matchCount": 1, "visible": await node.is_visible(), "enabled": await node.is_enabled()})
-                    fingerprint = hashlib.sha256(json.dumps({"url": page.url, "elements": elements}, sort_keys=True).encode()).hexdigest()
+                    elements = await collect_elements(page)
+                    fingerprint = page_fingerprint(page.url, elements)
                     item.result = {"pages": [{"url": page.url, "title": "", "fingerprint": fingerprint}],
                         "elements": elements, "fingerprint": fingerprint,
                         "warnings": [{"code": "LIMITED_READ_ONLY_DISCOVERY", "message": "1페이지의 안정적인 test ID 요소만 탐색합니다. 클릭·입력·iframe 내부 탐색은 수행하지 않습니다."}]}
@@ -223,3 +214,24 @@ async def scan(discovery_id: UUID):
             item.status, item.error_code = "FAILED", "PAGE_SCAN_FAILED"
         item.ended_at = datetime.now(UTC)
         await session.commit()
+
+
+def page_fingerprint(url, elements):
+    return hashlib.sha256(json.dumps({"url": url, "elements": elements}, sort_keys=True).encode()).hexdigest()
+
+
+async def collect_elements(page):
+    nodes = page.locator('[data-testid]')
+    elements = []
+    for index in range(min(await nodes.count(), 100)):
+        node = nodes.nth(index)
+        test_id = await node.get_attribute("data-testid") or ""
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", test_id) or not safe_text(test_id):
+            continue
+        selector = f'[data-testid="{test_id}"]'
+        if await page.locator(selector).count() != 1:
+            continue
+        elements.append({"elementId": f"element-{index + 1}", "selector": selector,
+            "name": safe_text(await node.get_attribute("aria-label") or test_id),
+            "matchCount": 1, "visible": await node.is_visible(), "enabled": await node.is_enabled()})
+    return elements
