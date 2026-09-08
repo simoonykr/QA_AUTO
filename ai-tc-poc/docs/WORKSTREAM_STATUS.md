@@ -65,6 +65,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - XLSX 가져오기 응답의 21개 TC를 목록으로 표시하고 사용자가 선택한 한 건만 독립 구조화하는 UI/API 연결
 - 구조화 결과에 자동화 가능성 상태와 사유를 표시하고 실제 실행 이력 API로 대시보드 최근 실행·집계를 표시
 - 실행 이력 전용 화면을 실제 `/executions` API에 연결하고 상태·TC ID 필터, 20건 페이지 이동, 단계·오류·증적 요약 및 실행 상세 진입 구현
+- 페이지 우선 `AI 시나리오` 화면과 Mock UX 추가: 환경·시작 URL·선택적 TC 입력, 읽기 전용 분석 polling, 검증 요소·페이지 fingerprint, PAGE_DISCOVERY 단계 초안과 TC 보강 미리보기 표시
+- 백엔드 1차 `/page-discoveries`·`/page-discoveries/{id}`·`/page-discoveries/{id}/scenarios` 계약 연결. 현재 미지원인 TC 비교·승인 액션은 비활성화하고 AI 0회·실행 불가 초안임을 명시
 
 백엔드에 요청:
 
@@ -171,6 +173,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 다중 선택·일괄 구조화/승인은 단일 TC 전체 흐름 실환경 검증 후 확장
 
 ## 최근 검증
+
+- 페이지 우선 프론트 Mock/API 연결: TypeScript 5.9 타입 검사 및 `git diff --check` 통과. 저장소 Vite 8은 기존 Windows 접근 위반, Vite 6 임시 검증은 pnpm store의 `picomatch` 누락으로 번들 검증 대기
 
 - 2026-09-08 imported TC 재구조화 수정: 정식 백엔드 테스트 `63 passed`, 의존성/수집 경고 4건, 실제 OpenAI 호출 0회. 기존 TC 재사용 및 최초 생성 경쟁 재시도·최종 충돌 처리를 검증했다. 이전 `71 passed` 집계에는 OneDrive 테스트 복사본이 포함되어 이번에는 정식 `test_api.py`, `test_ai.py`만 실행했다.
 - Temporary Staging 배포·DB 연동 재검증 대기: 현재 PC의 Docker Desktop이 `sailor-ingest.sock` 접근 오류로 엔진 시작에 실패한다. 복구 후 `.env.public`과 `compose.public-demo.yml`로 API를 반영하고 KG-WEB-001 반복 구조화를 확인해야 한다.

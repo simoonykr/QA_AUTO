@@ -8,9 +8,9 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight, Trash2,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, EnvironmentSummary, Execution, ExecutionDetails, ExecutionHistoryItem, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, ImportedTestCaseItem, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
+import type { AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, EnvironmentSummary, Execution, ExecutionDetails, ExecutionHistoryItem, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, ImportedTestCaseItem, PageDiscovery, PageFirstDiscovery, PageScenarioDraft, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
 
-type View = 'dashboard' | 'cases' | 'history' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
+type View = 'dashboard' | 'cases' | 'history' | 'page-first' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
 type AuthorStage = 'draft' | 'structuring' | 'split-review' | 'review' | 'ready'
 type ApiConnection = 'mock' | 'checking' | 'online' | 'offline'
@@ -193,6 +193,7 @@ function App() {
           <Nav active={view === 'cases'} icon={<ListChecks/>} label="테스트 케이스" badge="24" onClick={() => setView('cases')}/>
           <Nav active={view === 'run'} icon={<Activity/>} label="실행 모니터" badge="3" onClick={() => setView('run')}/>
           <Nav active={view === 'history'} icon={<Clock3/>} label="실행 이력" onClick={() => setView('history')}/>
+          <Nav active={view === 'page-first'} icon={<WandSparkles/>} label="AI 시나리오" onClick={() => setView('page-first')}/>
           <p className="nav-label spaced">Manage</p>
           <Nav active={view === 'environments'} icon={<TerminalSquare/>} label="실행 환경" onClick={() => setView('environments')}/>
           <Nav active={view === 'accounts'} icon={<Users/>} label="계정 및 데이터" onClick={() => setView('accounts')}/>
@@ -217,6 +218,7 @@ function App() {
         {view === 'dashboard' && <Dashboard onRun={startRun} onCases={() => setView('cases')}/>} 
         {view === 'cases' && <Cases query={query} setQuery={setQuery} rows={filtered} loading={loadingCases} onRun={startRun} onCreate={() => {setActiveVersionId(null); setActiveStructured(null); setAuthorStage('draft'); setView('author')}}/>}
         {view === 'history' && <ExecutionHistoryPage onOpen={openHistoryExecution}/>}
+        {view === 'page-first' && <PageFirstScenario onToast={toast}/>}
         {view === 'author' && <Author stage={authorStage} setStage={setAuthorStage} onBack={() => setView('cases')} onRun={() => setView('configure')} onVersion={setActiveVersionId} onStructured={setActiveStructured} onToast={toast}/>}
         {view === 'configure' && activeVersionId && <RunConfigure versionId={activeVersionId} onBack={() => setView('author')} onStart={request=>{setPendingExecution(request);setView('plan')}} starting={startingRun}/>}
         {view === 'plan' && activeStructured && pendingExecution && <ExecutionPlanPreview structured={activeStructured} request={pendingExecution} onBack={()=>setView('configure')} onConfirm={()=>void createRun(pendingExecution)} starting={startingRun}/>}
@@ -313,6 +315,47 @@ function ExecutionHistoryPage({onOpen}:{onOpen:(item:ExecutionHistoryItem)=>Prom
       {loading&&<div className="empty-table"><Activity className="spin" size={16}/> 실행 이력을 불러오는 중입니다.</div>}{!loading&&error&&<div className="empty-table error-text">{error}</div>}{!loading&&!error&&result.items.length===0&&<div className="empty-table">조건에 맞는 실행 이력이 없습니다.</div>}
       <div className="history-pagination"><span>전체 {result.total}건 · {page}/{pages} 페이지</span><div><button className="secondary" disabled={offset===0||loading} onClick={()=>setOffset(Math.max(0,offset-HISTORY_PAGE_SIZE))}>이전</button><button className="secondary" disabled={offset+HISTORY_PAGE_SIZE>=result.total||loading} onClick={()=>setOffset(offset+HISTORY_PAGE_SIZE)}>다음</button></div></div>
     </article>
+  </section>
+}
+
+function PageFirstScenario({onToast}:{onToast:(message:string)=>void}) {
+  const [environments,setEnvironments]=useState<EnvironmentSummary[]>([])
+  const [environmentId,setEnvironmentId]=useState('')
+  const [startUrl,setStartUrl]=useState('')
+  const [tcContext,setTcContext]=useState('')
+  const [discoveryId,setDiscoveryId]=useState('')
+  const [discovery,setDiscovery]=useState<PageFirstDiscovery|null>(null)
+  const [scenario,setScenario]=useState<PageScenarioDraft|null>(null)
+  const [starting,setStarting]=useState(false)
+  const [generating,setGenerating]=useState(false)
+  const requestGeneration=useRef(0)
+  useEffect(()=>{api.listEnvironments().then(items=>{setEnvironments(items);setEnvironmentId(items[0]?.id??'');setStartUrl(items[0]?.baseUrl??'')}).catch(error=>onToast(error instanceof ApiError?error.body.message:'실행 환경을 불러오지 못했습니다.'))},[])
+  useEffect(()=>{
+    if(!discoveryId)return
+    let active=true,timer:number|undefined
+    const poll=async()=>{try{const result=await api.getPageFirstDiscovery(discoveryId);if(!active)return;setDiscovery(result);if(!['COMPLETED','FAILED'].includes(result.status))timer=window.setTimeout(()=>void poll(),1500)}catch(error){if(active)onToast(error instanceof ApiError?error.body.message:'페이지 분석 상태를 확인하지 못했습니다.')}}
+    void poll();return()=>{active=false;if(timer)window.clearTimeout(timer)}
+  },[discoveryId])
+  const start=async()=>{
+    if(!environmentId||!startUrl.trim()||starting)return onToast('실행 환경과 시작 URL을 확인해 주세요.')
+    const generation=++requestGeneration.current
+    setStarting(true);setDiscoveryId('');setDiscovery(null);setScenario(null)
+    try{const result=await api.startPageFirstDiscovery({environmentId,startUrl:startUrl.trim(),maxPages:1,maxAiCalls:0});if(generation!==requestGeneration.current)return;setDiscoveryId(result.discoveryId);onToast('읽기 전용 페이지 분석을 시작했습니다.')}
+    catch(error){if(generation===requestGeneration.current)onToast(error instanceof ApiError?error.body.message:'페이지 분석을 시작하지 못했습니다.')}
+    finally{if(generation===requestGeneration.current)setStarting(false)}
+  }
+  const generate=async()=>{
+    if(!discoveryId||discovery?.status!=='COMPLETED'||generating)return
+    const generation=requestGeneration.current;setGenerating(true)
+    try{const result=await api.generatePageScenario(discoveryId);if(generation!==requestGeneration.current)return;setScenario(result);onToast('페이지 근거 시나리오 초안을 생성했습니다.')}
+    catch(error){if(generation===requestGeneration.current)onToast(error instanceof ApiError?error.body.message:'시나리오를 생성하지 못했습니다.')}
+    finally{if(generation===requestGeneration.current)setGenerating(false)}
+  }
+  const busy=starting||generating||Boolean(discovery&&!['COMPLETED','FAILED'].includes(discovery.status))
+  return <section className="page page-first-page"><div className="page-heading compact"><div><p className="eyebrow">PAGE-FIRST SCENARIO</p><h1>AI 시나리오 초안</h1><p>실제 페이지에서 검증된 요소로 기본 시나리오를 만들고 자연어 TC를 보강 자료로 비교합니다.</p></div><span className="phase-badge">PHASE 1 · AI 0회</span></div>
+    <div className="page-first-grid"><article className="panel page-first-input"><div className="section-head"><div><h2>1. 분석 대상</h2><p>현재 백엔드 1차 계약은 한 페이지 읽기 전용 탐색만 지원합니다.</p></div><MonitorCheck/></div><label className="field-label">실행 환경</label><div className="select-wrap"><select value={environmentId} onChange={e=>{const id=e.target.value;setEnvironmentId(id);setStartUrl(environments.find(item=>item.id===id)?.baseUrl??'')}} disabled={busy}>{environments.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown/></div><label className="field-label">시작 URL</label><input className="field-input" value={startUrl} onChange={e=>setStartUrl(e.target.value)} disabled={busy}/><label className="field-label">선택적 자연어 TC</label><textarea className="tc-editor page-first-tc" value={tcContext} onChange={e=>setTcContext(e.target.value)} disabled={busy} placeholder="TC의 대상, 행동, 기대 결과를 붙여 넣으세요. 현재는 비교 UX 미리보기이며 서버 전송·자동 편입하지 않습니다."/><div className="privacy-note"><ShieldCheck/><span>GET/HEAD만 허용하며 입력값·쿠키·비밀번호·전체 HTML은 수집하지 않습니다.</span></div><button className="ai-button" onClick={()=>void start()} disabled={busy||!environmentId||!startUrl.trim()}>{starting?<Activity className="spin"/>:<Search/>}{starting?'분석 요청 중':'페이지 분석 시작'}</button></article>
+      <article className="panel page-first-progress"><div className="section-head"><div><h2>2. 분석 진행</h2><p>페이지 접속부터 시나리오 초안 생성까지 확인합니다.</p></div><span className={`live ${discovery?.status==='COMPLETED'?'done':discovery?'running':''}`}>{discovery?.status??'대기'}</span></div><div className="page-first-stages">{['페이지 접속','요소 수집','후보 검증','시나리오 초안'].map((label,index)=>{const complete=(discovery?.status==='COMPLETED'&&index<3)||Boolean(scenario);const active=!scenario&&((discovery?.status==='SCANNING'&&index<=1)||(discovery?.status==='COMPLETED'&&index===2));return <div className={complete?'complete':active?'active':''} key={label}><span>{complete?<Check/>:index+1}</span><b>{label}</b></div>})}</div>{discovery?.pages.map(page=><div className="page-summary" key={page.fingerprint}><ExternalLink/><div><b>{page.title||'제목 없음'}</b><small>{page.url}<br/>fingerprint {page.fingerprint.slice(0,16)}</small></div></div>)}{discovery?.status==='COMPLETED'&&<><div className="element-count"><Database/><span>검증 요소 <b>{discovery.elements.length}개</b></span></div><button className="primary wide" onClick={()=>void generate()} disabled={generating}>{generating?<Activity className="spin"/>:<WandSparkles/>}{generating?'초안 생성 중':'기본 시나리오 생성'}</button></>}{discovery?.status==='FAILED'&&<div className="config-error"><AlertTriangle/><div><b>페이지 분석 실패</b><span>{discovery.errorCode??'원인을 확인해 주세요.'}</span></div></div>}</article></div>
+    {scenario&&<article className="panel scenario-review"><div className="panel-head"><div><h2>3. 시나리오 검토</h2><p>{scenario.purpose} · revision {scenario.revision}</p></div><span className="pill review">{scenario.status}</span></div><div className="scenario-columns"><div><h3>페이지 근거 단계</h3>{scenario.steps.map((step,index)=><div className="scenario-step" key={step.id}><span>{index+1}</span><div><b>{step.targetDescription}</b><code>{step.selector}</code><small><em>PAGE DISCOVERY</em> · {step.assertion.operator}</small></div></div>)}</div><div><h3>TC 보강 미리보기</h3>{tcContext.trim()?<><div className="comparison-card tc-only"><b>TC ONLY · 검토 필요</b><p>{tcContext.trim().slice(0,240)}</p><small>백엔드 비교 계약 전까지 실행 계획에 자동 추가하지 않습니다.</small></div><div className="comparison-actions"><button className="secondary" disabled>시나리오에 추가</button><button className="secondary" disabled>수동 검증</button><button className="secondary" disabled>제외</button></div></>:<div className="empty-table">TC를 입력하면 향후 누락·불일치 제안을 이 영역에서 검토합니다.</div>}{scenario.warnings.map(item=><div className="config-error" key={item.code}><AlertTriangle/><div><b>{item.code}</b><span>{item.message}</span></div></div>)}</div></div></article>}
   </section>
 }
 

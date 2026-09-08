@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ImportedTestCaseItem, LoginResponse, PageDiscovery, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -36,6 +36,7 @@ const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve,
 const mockExecutionPlans = new Map<string,ExecutionPlan>()
 const mockPlanKey = (versionId:string,environmentId:string) => `${versionId}:${environmentId}`
 const mockDiscoveries = new Map<string,{polls:number;value:PageDiscovery}>()
+const mockPageFirstDiscoveries = new Map<string,{polls:number;value:PageFirstDiscovery}>()
 
 export const api = {
   subscribeExecution(id: string, onDetails: (details: ExecutionDetails) => void, onError: () => void): () => void {
@@ -214,6 +215,32 @@ export const api = {
     const updated={...plan,revision:plan.revision+1,planHash:`mock-discovery-${Date.now()}`,steps,warnings:[],executable:true}
     mockExecutionPlans.set(mockPlanKey(versionId,environmentId),updated)
     return structuredClone(updated)
+  },
+
+  async startPageFirstDiscovery(input:PageFirstStartRequest):Promise<{discoveryId:string;status:'QUEUED'}> {
+    if (!USE_MOCK_API) return request('/page-discoveries',{method:'POST',body:JSON.stringify({...input,maxPages:1,maxAiCalls:0})})
+    const discoveryId=crypto.randomUUID()
+    mockPageFirstDiscoveries.set(discoveryId,{polls:0,value:{discoveryId,status:'QUEUED',errorCode:null,pages:[{url:input.startUrl,title:'',fingerprint:''}],elements:[],warnings:[],aiUsage:{source:'RULE_BASED',callCount:0}}})
+    return {discoveryId,status:'QUEUED'}
+  },
+
+  async getPageFirstDiscovery(discoveryId:string):Promise<PageFirstDiscovery> {
+    if (!USE_MOCK_API) return request(`/page-discoveries/${discoveryId}`)
+    const item=mockPageFirstDiscoveries.get(discoveryId)
+    if (!item) throw new ApiError({code:'DISCOVERY_NOT_FOUND',message:'페이지 분석을 찾을 수 없습니다.',requestId:'mock',retryable:false},404)
+    item.polls+=1
+    if(item.polls===2)item.value={...item.value,status:'SCANNING'}
+    if(item.polls>=3)item.value={...item.value,status:'COMPLETED',pages:[{url:item.value.pages[0]?.url??'https://staging.storefront.test',title:'Storefront',fingerprint:'mock-page-first-fingerprint'}],elements:[
+      {elementId:'element-1',selector:'[data-testid="game-filter-pc"]',name:'#PC 필터',matchCount:1,visible:true,enabled:true},
+      {elementId:'element-2',selector:'[data-testid="game-list"]',name:'전체게임 목록',matchCount:1,visible:true,enabled:true},
+    ]}
+    return structuredClone(item.value)
+  },
+
+  async generatePageScenario(discoveryId:string):Promise<PageScenarioDraft> {
+    if (!USE_MOCK_API) return request(`/page-discoveries/${discoveryId}/scenarios`,{method:'POST',body:JSON.stringify({maxAiCalls:0})})
+    const discovery=await this.getPageFirstDiscovery(discoveryId)
+    return {scenarioId:crypto.randomUUID(),discoveryId,revision:1,status:'REVIEW_REQUIRED',purpose:'탐색 페이지의 검증된 요소 표시 확인',pages:discovery.pages,steps:discovery.elements.map((element,index)=>({id:`step-${index+1}`,action:'assert',targetDescription:element.name,selector:element.selector,assertion:{type:'element',operator:'visible',expected:true},source:'PAGE_DISCOVERY',evidence:{elementId:element.elementId,fingerprint:discovery.pages[0]?.fingerprint??'',url:discovery.pages[0]?.url??'',observed:'visible'}})),automationStatus:'MANUAL_REVIEW_REQUIRED',warnings:[{code:'SCENARIO_APPROVAL_NOT_AVAILABLE',message:'페이지 표시 확인 초안입니다. 업무 의도 검토와 승인·실행 연결이 필요합니다.'}],executable:false,aiUsage:{source:'RULE_BASED',callCount:0,inputTokens:0,outputTokens:0,costUsd:'0'}}
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {
