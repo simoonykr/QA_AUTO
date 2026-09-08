@@ -67,6 +67,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 실행 이력 전용 화면을 실제 `/executions` API에 연결하고 상태·TC ID 필터, 20건 페이지 이동, 단계·오류·증적 요약 및 실행 상세 진입 구현
 - 페이지 우선 `AI 시나리오` 화면과 Mock UX 추가: 환경·시작 URL·선택적 TC 입력, 읽기 전용 분석 polling, 검증 요소·페이지 fingerprint, PAGE_DISCOVERY 단계 초안과 TC 보강 미리보기 표시
 - 백엔드 1차 `/page-discoveries`·`/page-discoveries/{id}`·`/page-discoveries/{id}/scenarios` 계약 연결. 현재 미지원인 TC 비교·승인 액션은 비활성화하고 AI 0회·실행 불가 초안임을 명시
+- TC 비교·편집 Mock UX 추가: `MATCHED | TC_ONLY | CONFLICT | NOT_AUTOMATABLE` 상태, 추가·제외·수동 검증·문구 수정 선택, 로컬 revision 증가와 미결정 건수 표시. 분석 입력 변경 시 과거 discovery·scenario·편집 상태를 폐기하고 늦은 응답을 무시하며, 서버 revision·승인·실행은 계약 전까지 차단
 
 백엔드에 요청:
 
@@ -76,9 +77,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 다음 작업:
 
-- 환경·시작 URL 우선 페이지 분석 및 AI 기본 시나리오 생성 화면 설계
-- 단계별 출처·근거와 `MATCHED | TC_ONLY | PAGE_ONLY | CONFLICT | NOT_AUTOMATABLE` 비교 결과 검토 UX
-- AI 보강 제안의 추가·제외·수동 검증·수정 선택과 늦은 응답·중복 요청 방지
+- 백엔드 TC 비교 응답을 현재 Mock 검토 모델에 연결하고 `PAGE_ONLY`·AI 보강 제안을 실제 데이터로 표시
+- 비교 선택·단계 편집을 서버 revision API에 저장하고 승인·Worker 실행으로 연결
 - 가입 신청·승인 대기·거절 화면을 백엔드 계약에 맞춰 연결
 - 다중 TC 자동 분리 API가 확정되면 선택·분리·일괄 저장 UX 연결
 
