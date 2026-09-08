@@ -1,6 +1,6 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-03
+마지막 갱신: 2026-09-08
 
 이 문서는 두 담당 에이전트의 공용 전달판이다. 각 담당자는 작업 시작 전에 읽고, 작업 완료 커밋에서 자기 영역을 직접 갱신한다.
 
@@ -11,6 +11,8 @@ Firebase UI 데모를 실제 FastAPI·PostgreSQL·Redis·MinIO·Playwright Worke
 자연어 TC를 실행 가능한 계획으로 만들기 위한 다음 설계는 [`AI_PAGE_DISCOVERY_REQUIREMENTS.md`](AI_PAGE_DISCOVERY_REQUIREMENTS.md)를 기준으로 한다. QA에게 selector 작성을 요구하지 않고 AI 구조화와 Playwright 페이지 탐색·후보 검증을 분리한다.
 
 QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설계, 잘못된 계획 방어와 실행 이력 요구사항은 [`QA_NATURAL_LANGUAGE_AUTOMATION_REQUIREMENTS.md`](QA_NATURAL_LANGUAGE_AUTOMATION_REQUIREMENTS.md)를 공통 기준으로 사용한다.
+
+2026-09-08 합의 방향: 자연어 TC를 먼저 완전한 실행 명세로 변환하는 흐름의 정확도 한계를 줄이기 위해 **페이지 우선 시나리오 생성**으로 전환한다. Playwright가 실제 페이지의 검증 가능한 요소·흐름을 수집하고 AI가 기본 시나리오를 작성한 뒤, 자연어 TC는 대상·행동·기대 결과와 누락 검증을 보강하는 입력으로 사용한다. 단계별 `PAGE_DISCOVERY | TEST_CASE | AI_SUGGESTION | MANUAL` 출처와 TC 비교 결과를 QA가 검토·승인한다.
 
 ## 환경 운영 합의
 
@@ -62,6 +64,9 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 다음 작업:
 
+- 환경·시작 URL 우선 페이지 분석 및 AI 기본 시나리오 생성 화면 설계
+- 단계별 출처·근거와 `MATCHED | TC_ONLY | PAGE_ONLY | CONFLICT | NOT_AUTOMATABLE` 비교 결과 검토 UX
+- AI 보강 제안의 추가·제외·수동 검증·수정 선택과 늦은 응답·중복 요청 방지
 - 가입 신청·승인 대기·거절 화면을 백엔드 계약에 맞춰 연결
 - 다중 TC 자동 분리 API가 확정되면 선택·분리·일괄 저장 UX 연결
 
@@ -141,6 +146,9 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 다음 작업:
 
+- 페이지 분석 결과 기반 기본 시나리오 생성 API·저장 모델·revision 계약
+- TC 단순 추출(`target`, `actions`, `expectedResults`)과 페이지 시나리오 비교 계약
+- 검증된 element ID만 사용하는 AI 생성, 단계별 출처·근거, 미확인 충돌 승인 차단
 - Cloudflare 임시 HTTPS 터널로 Temporary Staging 구성 및 회사 네트워크 접속 확인
 - 프론트에서 구조화 결과의 `aiUsage.source`, 호출 수, 토큰·비용 표시 여부 결정
 - 확인 후 고정 Staging 서버·도메인·회사 IP 접근 제한 결정

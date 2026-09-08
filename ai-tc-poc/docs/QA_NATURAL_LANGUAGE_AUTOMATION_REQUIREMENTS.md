@@ -19,7 +19,67 @@ AI와 Playwright가 자연어 TC를 해석하고 실제 화면에서 검증하�
 - 실행 불가능한 계획이 `READY`로 판정됨
 - 잘못된 계획을 Worker가 실행한 뒤 실패
 
-## 목표 흐름
+## 2026-09-08 방향 변경: 페이지 우선 시나리오 생성
+
+자연어 TC를 먼저 완전한 Playwright 실행 명세로 변환하는 방식은 TC 형식과 표현 편차에 지나치게 의존한다. TC ID·제목·보고용 메타데이터가 실행 단계가 되거나, 행동과 기대 결과가 잘못 분리되고, 실제 화면에 없는 selector·URL이 생성되는 문제가 반복됐다. 잘못된 구조화 결과를 QA가 모두 수정·삭제하는 것도 실사용 흐름으로 적합하지 않다.
+
+따라서 다음 구현부터 **실제 페이지에서 검증 가능한 기본 시나리오를 먼저 생성하고 자연어 TC는 테스트 목적과 누락 검증을 보강하는 자료로 사용**한다. 자연어 TC는 실행 명세의 단일 진실 공급원이 아니며, 실제 페이지 분석 결과도 TC의 업무 의도를 임의로 대체하지 않는다. 두 입력의 차이를 QA가 검토·승인한다.
+
+```text
+실행 환경·시작 URL 선택
+→ Playwright 읽기 전용 페이지 탐색
+→ 화면 요소·이동 흐름·검증 가능한 상태 수집
+→ AI가 검증된 요소만 사용해 기본 테스트 시나리오 작성
+→ 자연어 TC에서 대상·행동·기대 결과만 단순 추출
+→ 페이지 시나리오와 TC 비교
+→ 누락·불일치·자동화 불가 항목 제안
+→ QA가 추가·제외·수정
+→ 승인된 revision만 Worker 실행
+```
+
+단계 출처는 다음 값으로 구분한다.
+
+- `PAGE_DISCOVERY`: 실제 페이지와 Playwright 검증 근거
+- `TEST_CASE`: 자연어 TC 원문 근거
+- `AI_SUGGESTION`: AI가 제안한 보강 단계
+- `MANUAL`: QA가 직접 추가하거나 수정한 단계
+
+### 백엔드 작업과 변경 이유
+
+백엔드는 자연어 문장을 action 키워드로 직접 치환하는 정확도 개선보다 페이지 기반 시나리오 생성 경로를 우선 구현한다. 이 방식은 selector와 URL을 실제 페이지에서 검증할 수 있고, 자연어 해석 실패가 전체 실행 계획을 오염시키는 범위를 줄인다.
+
+1. 페이지 분석 결과로 기본 시나리오를 만드는 API 계약을 추가한다. 후보 endpoint는 `POST /api/v1/page-discoveries/{discoveryId}/scenarios`이며 선택적인 `testCaseVersionId`와 `maxAiCalls`를 받는다.
+2. 응답에는 scenario ID, revision, 목적, 탐색 페이지, 단계, 검증된 selector, assertion, 자동화 가능성, 단계별 출처·근거, warnings, `aiUsage`를 포함한다.
+3. 페이지 분석은 URL·제목·role·accessible name·label·placeholder·표시 텍스트·안정 ID/name·링크 URL·visible/enabled·iframe·Shadow DOM·클릭 전후 비교 가능한 상태만 수집한다. 전체 HTML, 입력값, 쿠키, 비밀번호, 토큰과 개인정보는 저장하거나 AI에 전달하지 않는다.
+4. AI는 서버가 부여하고 Playwright가 검증한 element ID만 선택한다. 임의 selector·허용 범위 밖 URL을 만들 수 없으며, TC·시나리오당 최대 1회와 기존 일일 예산·비용 원장·캐시를 유지한다.
+5. 자연어 TC 분석은 우선 `target`, `actions[]`, `expectedResults[]` 추출로 단순화한다. TC ID, Result, BTS ID, Comment, Source와 보고서 값은 실행 입력에서 제외한다.
+6. TC와 페이지 시나리오 비교 결과는 `MATCHED | TC_ONLY | PAGE_ONLY | CONFLICT | NOT_AUTOMATABLE`로 반환한다. `TC_ONLY`, `CONFLICT`, `AI_SUGGESTION`은 QA 선택 없이 실행 계획에 자동 편입하지 않는다.
+7. 단계 추가·제외·순서 변경·assertion 수정·후보 선택·제안 채택은 새 revision과 감사 로그로 기록하고 승인된 revision만 Worker가 읽는다.
+8. 미검증 selector, stale fingerprint, 허용 도메인 밖 URL, 근거 없는 단계, 미확인 충돌, 자동화 불가능한 필수 assertion이 남으면 `executable=false`로 승인·실행을 차단한다.
+
+### 프론트엔드 작업
+
+1. 작성 시작 순서를 `환경 선택 → 시작 URL → 선택적 TC 업로드 → 페이지 분석 → AI 시나리오 생성`으로 변경한다.
+2. 페이지 접속, 요소 수집, 후보 검증, 흐름 분석, AI 시나리오 작성, TC 비교 상태를 표시한다.
+3. 단계별 행동·대상·검증 selector·기대 결과·자동화 가능성·출처·근거·warning을 검토 화면에 표시한다.
+4. 비교 결과별로 `시나리오에 추가`, `이번 실행에서 제외`, `수동 검증`, `문구 수정`, `무시`를 제공한다.
+5. 분석·재생성 시작 시 이전 client 승인 versionId, 실행 계획, discovery, 후보 선택, 편집 상태와 실행 설정 연결을 초기화한다. 서버의 과거 READY 버전과 실행 이력은 삭제하지 않는다.
+6. 분석 중 환경·URL·TC 변경과 중복 클릭을 막고 요청 ID 또는 AbortController로 늦은 응답을 무시한다.
+7. 구조화·승인 후 TC 목록을 새로고침하며 동일 externalId는 하나의 TestCase 행으로 유지하고 버전·실행 이력은 상세에서 구분한다.
+
+### 변경 후 구현 우선순위
+
+1. 페이지 분석 결과 기반 기본 시나리오 생성 API와 저장 모델
+2. 프론트의 환경·URL 우선 시작 흐름
+3. 단계별 근거·출처 계약과 검토 UI
+4. 자연어 TC 단순 추출
+5. TC와 페이지 시나리오 비교 및 보강 제안
+6. QA 선택·revision·승인·Worker 실행 연결
+7. 요청 경쟁 방지와 실제 페이지 통합 회귀
+
+아래 기존 요구사항은 XLSX 파싱, selector 검증, 잘못된 계획 방어, 실행 이력에 계속 적용한다. 단, 기존의 `TC 분석 → 페이지 탐색` 순서는 위 페이지 우선 흐름으로 대체한다.
+
+## 기존 상세 요구 흐름 (페이지 우선 순서로 적용)
 
 ```text
 XLSX 업로드
@@ -187,7 +247,7 @@ GET /api/v1/executions/{executionId}/details
 - 실패 단계·오류 코드·selector·assertion·PNG 증적 상세
 - 재시도와 원본 실행 관계
 
-## 구현 우선순위
+## 기존 구현 우선순위 (2026-09-08 이후 상위 우선순위로 대체)
 
 1. 다중 TC의 단일 계획 생성 차단
 2. XLSX를 TC별 객체로 분리
