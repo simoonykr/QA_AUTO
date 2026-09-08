@@ -118,6 +118,28 @@ def test_empty_or_table_tc_is_rejected():
         assert error.value.code == code
 
 
+def test_page_only_scenario_requires_review_without_tc():
+    payload, _ = fixture_payload()
+    assert len(payload["comparisons"]) == len(payload["steps"]) == 1
+    assert payload["comparisons"][0]["result"] == "PAGE_ONLY"
+    with pytest.raises(DomainError) as error:
+        selected_steps(payload)
+    assert error.value.code == "SCENARIO_REVIEW_REQUIRED"
+    reviewed = apply_selections(payload, ReviewRequest(expectedRevision=1,
+        selections=[Selection(comparisonId="comparison-1", decision="ADD")]))
+    assert selected_steps(reviewed) == payload["steps"]
+    assert reviewed["revision"] == 2 and not reviewed["executable"]
+
+
+def test_tc_comparison_replaces_initial_page_review():
+    payload, _ = fixture_payload()
+    payload = apply_selections(payload, ReviewRequest(expectedRevision=1,
+        selections=[Selection(comparisonId="comparison-1", decision="ADD")]))
+    rows = compare(payload, extract("메뉴 표시 확인"))
+    assert len(rows) == 1 and rows[0]["result"] == "MATCHED"
+    assert rows[0]["decision"] == "PENDING"
+
+
 @pytest.mark.asyncio
 async def test_worker_verifies_live_fingerprint_without_browser_or_network(monkeypatch):
     from app.modules.discoveries import page_first

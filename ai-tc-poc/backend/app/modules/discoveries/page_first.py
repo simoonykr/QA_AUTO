@@ -91,8 +91,12 @@ def scenario_payload(discovery: PageDiscovery) -> dict:
     return {"scenarioId": str(uuid4()), "discoveryId": str(discovery.id), "revision": 1,
         "status": "REVIEW_REQUIRED", "purpose": "탐색 페이지의 검증된 요소 표시 확인",
         "pages": result.get("pages", []), "steps": steps[:50],
+        "comparisons": [{"id": f"comparison-{index + 1}", "result": "PAGE_ONLY",
+            "text": step["targetDescription"], "draft": step["targetDescription"],
+            "decision": "PENDING", "stepId": step["id"], "source": "PAGE_DISCOVERY",
+            "evidence": "실제 표시된 페이지 요소"} for index, step in enumerate(steps[:50])],
         "automationStatus": "MANUAL_REVIEW_REQUIRED", "executable": False,
-        "warnings": [{"code": "SCENARIO_REVIEW_REQUIRED", "message": "페이지 표시 확인 초안입니다. TC 비교와 검토 선택 저장 후 승인해 주세요."}],
+        "warnings": [{"code": "SCENARIO_REVIEW_REQUIRED", "message": "페이지 표시 확인 초안입니다. 검토 선택 저장 후 승인해 주세요. TC 비교는 선택 사항입니다."}],
         "aiUsage": {"source": "RULE_BASED", "callCount": 0, "inputTokens": 0, "outputTokens": 0, "costUsd": "0"}}
 
 
