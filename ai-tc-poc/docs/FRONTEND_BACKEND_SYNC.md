@@ -1,5 +1,18 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 페이지 우선 1차 계약 (2026-09-08, 제한된 초안 생성)
+
+- `POST /api/v1/page-discoveries`: `{ environmentId, startUrl, maxPages: 1, maxAiCalls: 0 }` → HTTP 202 `{ discoveryId, status: "QUEUED" }`. TC 버전 없이 생성한다.
+- `GET /api/v1/page-discoveries/{discoveryId}`: `QUEUED → SCANNING → COMPLETED|FAILED`, pages·elements·warnings·errorCode·aiUsage 반환. 1~2초 polling으로 조회한다.
+- `POST /api/v1/page-discoveries/{discoveryId}/scenarios`: `{ maxAiCalls: 0 }` → HTTP 201 시나리오 초안. 완료되지 않은 discovery는 `DISCOVERY_NOT_READY`/409.
+- `GET /api/v1/page-scenarios/{scenarioId}`: 저장한 동일 초안 조회. 모든 리소스는 조직·프로젝트 범위로 제한한다.
+- 1차는 1페이지의 유일한 data-testid 요소만 수집한다. 실제로 표시된 요소에 대한 visible assertion, PAGE_DISCOVERY 출처와 elementId·URL·fingerprint 근거를 저장한다. 클릭·입력, iframe 내부 검증과 업무 결과 추론은 수행하지 않는다.
+- URL은 환경 allowlist 내 HTTP(S), 인증정보·query·fragment 없는 주소만 허용한다. 브라우저 요청도 동일 조건과 GET/HEAD로 제한하며 서비스워커를 차단한다. 이 제한으로 페이지 리소스가 일부 로드되지 않을 수 있다.
+- 모든 초안은 revision=1, REVIEW_REQUIRED, executable=false, aiUsage=RULE_BASED/0이다. 생성 버튼을 AI 생성으로 표기하지 않는다. 아직 승인·실행 API에 scenarioId를 보내면 안 된다.
+- 반복 생성은 별도 scenarioId를 만든다. 편집 revision API, testCaseVersionId 연결, AI 생성, TC 비교·보강, 승인·Worker 실행 연결은 후속 구현이다. maxAiCalls=1과 미지원 필드는 422로 거절한다.
+- 프론트 타입: PageFirstStartRequest, PageFirstDiscovery, PageScenarioDraft. 기존 API/Mock은 유지한다. 새 Mock UI 연결은 이 계약으로 후속 작업한다.
+- DB migration `0008_page_first` 적용 필요. Docker 엔진 미실행으로 실제 배포·Playwright/DB 통합 검증은 미완료.
+
 작성일: 2026-08-28
 
 ## 프론트 담당자 다음 요구사항 (2026-08-30)

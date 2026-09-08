@@ -803,7 +803,7 @@ def test_execution_request_digest_is_stable() -> None:
 
 
 def test_required_database_models_are_registered() -> None:
-    assert len(Base.metadata.tables) == 16
+    assert len(Base.metadata.tables) == 17
 
 
 def test_execution_resource_ids_require_real_uuids() -> None:

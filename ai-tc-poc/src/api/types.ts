@@ -261,3 +261,48 @@ export interface ApiErrorBody {
   retryable: boolean
   details?: Record<string, unknown>
 }
+// Page-first phase 1: read-only discovery and non-executable scenario drafts.
+export interface PageFirstStartRequest {
+  environmentId: string
+  startUrl: string
+  maxPages?: 1
+  maxAiCalls?: 0
+}
+export interface PageFirstElement {
+  elementId: string
+  selector: string
+  name: string
+  matchCount: number
+  visible: boolean
+  enabled: boolean
+}
+export interface PageFirstDiscovery {
+  discoveryId: string
+  status: 'QUEUED' | 'SCANNING' | 'COMPLETED' | 'FAILED'
+  errorCode: string | null
+  pages: Array<{url: string; title: string; fingerprint: string}>
+  elements: PageFirstElement[]
+  warnings: Array<{code: string; message: string}>
+  aiUsage: {source: 'RULE_BASED'; callCount: 0}
+}
+export interface PageScenarioDraft {
+  scenarioId: string
+  discoveryId: string
+  revision: number
+  status: 'REVIEW_REQUIRED'
+  purpose: string
+  pages: PageFirstDiscovery['pages']
+  steps: Array<{
+    id: string
+    action: 'assert'
+    targetDescription: string
+    selector: string
+    assertion: {type: 'element'; operator: 'visible'; expected: true}
+    source: 'PAGE_DISCOVERY'
+    evidence: {elementId: string; fingerprint: string; url: string; observed: 'visible'}
+  }>
+  automationStatus: 'MANUAL_REVIEW_REQUIRED'
+  warnings: Array<{code: string; message: string}>
+  executable: false
+  aiUsage: {source: 'RULE_BASED'; callCount: 0; inputTokens: 0; outputTokens: 0; costUsd: string}
+}

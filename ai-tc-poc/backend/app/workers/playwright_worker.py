@@ -526,6 +526,10 @@ async def run() -> None:
                         elif fields.get("event_type") == "page_discovery.requested":
                             payload = json.loads(fields.get("payload", "{}"))
                             await discover(UUID(payload.get("discoveryId") or fields["aggregate_id"]))
+                        elif fields.get("event_type") == "page_first.requested":
+                            from app.modules.discoveries.page_first import scan
+                            payload = json.loads(fields.get("payload", "{}"))
+                            await scan(UUID(payload.get("discoveryId") or fields["aggregate_id"]))
                     except Exception:
                         logger.exception("execution message failed", extra={"message_id": message_id})
                     finally:

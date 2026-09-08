@@ -132,7 +132,7 @@ class PageDiscovery(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False, index=True)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
-    test_case_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_case_versions.id", ondelete="CASCADE"), nullable=False, index=True)
+    test_case_version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("test_case_versions.id", ondelete="CASCADE"), nullable=True, index=True)
     environment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("environments.id"), nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="QUEUED")
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
@@ -141,6 +141,16 @@ class PageDiscovery(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PageScenario(Base):
+    __tablename__ = "page_scenarios"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    discovery_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("page_discoveries.id"), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Execution(Base):
