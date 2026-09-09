@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-09 로컬 통합 배포 확인
+
+- Docker 엔진 복구 및 `.env.public`/`compose.public-demo.yml` 빌드·migration·배포 성공. 테스트 페이지: `http://localhost:8080` (배포 PC 전용). 기존 데모 로그인 사용, 자격증명은 채팅/Git에 공개하지 않는다.
+- 실제 페이지 우선 분석·선택 저장·승인(동일 revision 멱등성)·Worker 3단계 PASS. 의도적 실패 및 MinIO PNG 저장/다운로드 확인. API/공유 타입 변경 없음.
+- frontend 이미지 빌드 성공, 백엔드 전체 89 passed, 실제 AI 0회. 환경 선택은 demo-target 포함 테스트 환경, 시작 URL은 `http://demo-target`, TC 없이 검토 생성 가능. 실제 운영 계정/개인정보 사용 금지.
+- 재배포 시 AI_ENABLED=false/AI_MAX_CALLS_PER_RUN=0 프로세스 override 유지. Secure 쿠키 설정을 낮추지 않았으며 로컬 smoke만 loopback 요청에 쿠키를 명시한다.
+- 외부 HTTPS 터널은 보안 검토 차단으로 미제공. 사용자 외부 공개 승인 후 별도 연결·HTTPS 쿠키 검증 필요. localhost 결과를 외부 Staging 검증 완료로 간주하지 않는다.
+
 ## 2026-09-09 실제 브라우저 검증
 
 - API/타입 계약 변경 없음. 실제 Chromium에서 합성 페이지의 요소 수집 → 검토 선택 → Worker 표시 assertion → DOM 변경 차단 회귀를 추가·통과했다. 외부 페이지 및 AI 호출 없음.

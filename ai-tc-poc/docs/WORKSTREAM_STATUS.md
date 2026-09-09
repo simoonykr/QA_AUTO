@@ -2,6 +2,16 @@
 
 마지막 갱신: 2026-09-09
 
+## 2026-09-09 Docker 복구·로컬 배포 통합 검증 완료
+
+- Docker Desktop 시작 실패 원인은 접근 불가 runtime 소켓(sailor-ingest.sock, engine.sock). Desktop 프로세스 종료 후 소켓 전용 폴더를 백업 이름으로 이동해 재생성하여 엔진 running 복구. DB·볼륨 삭제/초기화 없음.
+- `.env.public` + `compose.public-demo.yml`로 최신 main 빌드·배포 및 migration 성공. 프로세스 환경에서 AI_ENABLED=false, AI_MAX_CALLS_PER_RUN=0을 override했고 실행 중 API에서도 확인했다. 향후 재배포도 이 override를 유지해야 한다(.env.public 자체는 수정하지 않음).
+- 로컬 `http://localhost:8080`, health 200, 미인증 API 401, 기존 데모 자격증명 로그인 성공. PostgreSQL·Redis outbox·Playwright Worker 실제 페이지 우선 3단계 PASS: `6c0b1b66-2e7b-4997-b685-756ab86a7784`.
+- 합성 TC 의도적 실패 `bef8ec0a-fb51-4fa3-ab25-217cd2bddaee`는 FAIL, MinIO 증적 다운로드 200·PNG signature 검증 완료. 테스트 레코드는 추적을 위해 보존했다.
+- `backend/scripts/validate_page_first_local.py` 추가: localhost 고정, 로컬 env에서 자격증명 읽기, 비밀값 출력 없음. AI 비활성 배포 확인 후 실행하며 실제 DB에 합성 테스트 이력을 추가한다. DB 동시성 부하 검증은 이번 범위 아님.
+- 전체 정식 테스트 89 passed/경고 4건, 실제 AI 0회. frontend Docker 빌드 성공. DB/Redis/MinIO host port 미공개 확인.
+- 외부 HTTPS quick tunnel 생성은 보안 검토에서 공개 노출 승인 부족으로 차단됨. 우회하지 않았으며 사용자 외부 공개 승인 후 진행한다. 현재 전달 가능한 실제 통합 페이지는 해당 PC의 localhost뿐이다.
+
 ## 2026-09-09 실제 Chromium 컴포넌트 검증
 
 - 최신 main 확인 후 실제 Chromium 회귀 테스트 추가. 합성 HTML만 사용하며 브라우저 외부 요청을 전부 차단한다. 요소 수집(중복·비밀 필드 제외), 숨김 요소의 시나리오 제외, 검토 선택, Worker 표시 assertion 수행, DOM 변경 후 DISCOVERY_STALE 차단을 검증했다.
