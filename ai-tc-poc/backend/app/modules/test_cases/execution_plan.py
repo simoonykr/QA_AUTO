@@ -81,7 +81,8 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
                 step_no=step_no, step_id=step["id"], missing_fields=["selector"],
             )
         if action == "navigate":
-            step["url"] = step["url"] or environment.base_url
+            if not step["url"]:
+                raise ExecutionPlanError("TARGET_URL_REQUIRED", "원문 대상 URL이 없는 이동 단계입니다. 대상 URL을 명시해 다시 분석해 주세요.", step_no=step_no)
             _validate_target_url(step["url"], environment.allowed_domains, step_no)
         elif action == "fill":
             _require(step, ["selector"], step_no)
@@ -131,7 +132,7 @@ def preview_execution_steps(version: TestCaseVersion, environment: Environment) 
             "id": str(source.get("id") or f"step-{step_no}"),
             "title": str(source.get("title") or f"단계 {step_no}"),
             "action": action,
-            "url": (source.get("url") or environment.base_url) if action == "navigate" else source.get("url"),
+            "url": source.get("url"),
             "selector": source.get("selector"),
             "value": "***" if source.get("value") else None,
             "secretRef": source.get("secretRef"),

@@ -72,6 +72,15 @@ def main():
             'title': 'Synthetic artifact smoke',
             'rawText': 'http://demo-target 접속\n[data-testid="email"]에 "qa@example.test" 입력\n[data-testid="login"] 클릭\n[data-testid="welcome"] 문구 "deliberately absent synthetic text" 확인'})
         assert failed_case['aiUsage']['callCount'] == 0
+        legacy_path = '/test-case-versions/' + failed_case['versionId']
+        legacy = api('POST', legacy_path + '/discover', {'environmentId': env['id'], 'maxPages': 1, 'maxAiCalls': 0}, 202)
+        for _ in range(45):
+            legacy_result = api('GET', legacy_path + '/discoveries/' + legacy['discoveryId'])
+            if legacy_result['status'] in ('COMPLETED', 'NEEDS_REVIEW', 'FAILED'):
+                break
+            time.sleep(1)
+        assert legacy_result['status'] in ('COMPLETED', 'NEEDS_REVIEW'), legacy_result.get('errorCode')
+        print(json.dumps({'legacyDiscovery': legacy_result['status'], 'aiCalls': 0}))
         api('POST', '/test-case-versions/' + failed_case['versionId'] + '/approve')
         failed_run = api('POST', '/executions', {'testCaseVersionId': failed_case['versionId'],
             'environmentId': env['id'], 'accountId': accounts[0]['id'], 'browser': 'Chromium',

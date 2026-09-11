@@ -1,6 +1,16 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-09
+마지막 갱신: 2026-09-11
+
+## 2026-09-11 DISCOVERY_FAILED 수정 및 대상 URL 방어
+
+- 실제 Worker 로그의 반복 NameError(hashlib import 누락)를 수정했다. 합성 TC의 기존 discovery 경로가 실배포에서 COMPLETED로 완료됨을 확인했다.
+- 기존 TC discovery는 raw_text의 단일 명시 URL을 선택하고 환경 allowlist와 검증한다. URL 누락/복수/허용 범위 위반이면 422로 차단하며 환경 기본 demo-target으로 대체하지 않는다. Worker에서도 재검증한다. 실행 계획·미리보기에서도 URL 없는 navigate의 환경 기본값 자동 삽입을 제거했다.
+- 규칙 기반 구조화에서 TC ID·제목·전제조건·독립 단계 번호 제외, 번호 접두어 정리, 명시적인 기대 결과/이동 확인 문장 assertion 우선 분류. 마지막 행동을 임의 assertion으로 변경하지 않는다. 규칙 기반이므로 복잡한 자유 문장의 의미 분류 전체 해결은 아니다.
+- 오류 분류와 안전한 warning 메시지 추가, 원본 브라우저 예외/URL을 로그에 노출하지 않는다. 미해결 요소는 NEEDS_REVIEW/executable=false이며 빈 검증 목록도 실행 가능으로 표시하지 않는다.
+- 정식 전체 **100 passed**, 기존 경고 4건, TypeScript 통과, AI 0회. `.env.public` + `compose.public-demo.yml` 배포. 페이지 우선 PASS 3단계, 기존 discovery COMPLETED, 의도적 FAIL 및 MinIO PNG 다운로드 200 검증.
+- 프론트 요청: 오류 계약의 code/message 표시, 대상 URL·환경 사전 표시, 파일 가져오기/TC 선택을 페이지 우선 흐름에 연결. 구조화 automationStatus를 실행 가능으로 간주하지 않고 discovery/plan executable을 확인한다. 좁은 화면 레이아웃은 프론트 후속.
+- 과거 저장된 잘못된 구조화 버전은 변경하지 않았다. 수정 전 데이터는 원문 URL을 명시하고 새 버전으로 재구조화/재분석한다.
 
 ## 2026-09-09 Docker 복구·로컬 배포 통합 검증 완료
 

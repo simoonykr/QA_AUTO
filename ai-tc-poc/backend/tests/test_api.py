@@ -972,7 +972,7 @@ def _plan_environment():
 
 def test_execution_plan_validates_parameters_hash_and_masks_values() -> None:
     plan = validate_execution_plan(_plan_version([
-        {"id": "step-1", "title": "진입", "action": "navigate"},
+        {"id": "step-1", "title": "진입", "action": "navigate", "url": "http://demo-target"},
         {"id": "step-2", "title": "입력", "action": "fill", "selector": "#email", "value": "private", "timeoutMs": 5000},
         {"id": "step-3", "title": "클릭", "action": "click", "selector": "#submit"},
         {"id": "step-4", "title": "확인", "action": "assert", "selector": "#welcome", "operator": "contains", "expected": "환영"},
@@ -1033,7 +1033,7 @@ def test_execution_plan_rejects_invalid_steps(step, code) -> None:
 
 def test_worker_blocks_changed_execution_plan_snapshot() -> None:
     plan = validate_execution_plan(_plan_version([
-        {"id": "step-1", "title": "진입", "action": "navigate"},
+        {"id": "step-1", "title": "진입", "action": "navigate", "url": "http://demo-target"},
     ]), _plan_environment())
     execution = SimpleNamespace(settings={"executionPlan": {
         "hash": "changed", "revision": plan.revision, "stepCount": 1,

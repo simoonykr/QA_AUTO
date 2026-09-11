@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -404,7 +405,8 @@ async def discover(discovery_id: UUID) -> None:
             ))
             if not environment or not version or version.status != "REVIEW_REQUIRED":
                 raise WorkerExecutionError("DISCOVERY_RESOURCE_INVALID", "페이지 분석 대상 정보를 찾을 수 없습니다.")
-            _assert_allowed_url(environment.base_url, environment.allowed_domains)
+            from app.modules.discoveries.target import discovery_target
+            target_url = discovery_target(version.raw_text, environment.allowed_domains)
             discovery.status = "SCANNING"
             await session.commit()
             source_steps = (version.structured_spec or {}).get("steps") or []
@@ -413,7 +415,7 @@ async def discover(discovery_id: UUID) -> None:
             try:
                 context = await browser.new_context(viewport={"width": 1440, "height": 900})
                 page = await context.new_page()
-                await page.goto(environment.base_url, wait_until="domcontentloaded", timeout=30_000)
+                await page.goto(target_url, wait_until="domcontentloaded", timeout=30_000)
                 _assert_allowed_url(page.url, environment.allowed_domains)
                 page_url = page.url
                 title = await page.title()
@@ -487,7 +489,7 @@ async def discover(discovery_id: UUID) -> None:
                     await session.commit()
             finally:
                 await browser.close()
-        executable = all(item["resolutionStatus"] == "RESOLVED" for item in step_results)
+        executable = bool(step_results) and all(item["resolutionStatus"] == "RESOLVED" for item in step_results)
         async with SessionFactory() as session:
             discovery = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
             previous = await session.scalar(
@@ -508,7 +510,7 @@ async def discover(discovery_id: UUID) -> None:
             discovery.result = {
                 "revision": int((version.structured_spec or {}).get("planRevision") or 1),
                 "pages": pages,
-                "steps": step_results, "warnings": [],
+                "steps": step_results, "warnings": [] if executable else [{"code": "DISCOVERY_ELEMENTS_UNRESOLVED", "message": "검증할 요소가 없거나 확정되지 않았습니다. 대상 페이지와 검토 항목을 확인해 주세요."}],
                 "executable": executable, "fingerprint": fingerprint, "model": None,
                 "promptVersion": "rule-based-v1", "aiUsage": {"source": "RULE_BASED", "callCount": 0},
             }
@@ -519,11 +521,14 @@ async def discover(discovery_id: UUID) -> None:
             ))
             await session.commit()
     except Exception as exc:
-        logger.exception("page discovery failed", extra={"discovery_id": str(discovery_id)})
+        from app.modules.discoveries.target import discovery_error
+        code, message = discovery_error(exc)
+        logger.error("page discovery failed id=%s code=%s exception=%s", discovery_id, code, type(exc).__name__)
         async with SessionFactory() as session:
             item = await session.scalar(select(PageDiscovery).where(PageDiscovery.id == discovery_id).with_for_update())
             if item:
-                item.status, item.error_code, item.ended_at = "FAILED", getattr(exc, "code", "DISCOVERY_FAILED"), datetime.now(UTC)
+                item.status, item.error_code, item.ended_at = "FAILED", code, datetime.now(UTC)
+                item.result = {"executable": False, "warnings": [{"code": code, "message": message}]}
                 await session.commit()
 
 

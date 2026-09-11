@@ -214,8 +214,11 @@ async def scan(discovery_id: UUID):
                 finally:
                     await browser.close()
             item.status = "COMPLETED"
-        except Exception:
-            item.status, item.error_code = "FAILED", "PAGE_SCAN_FAILED"
+        except Exception as exc:
+            from app.modules.discoveries.target import discovery_error
+            code, message = discovery_error(exc)
+            item.status, item.error_code = "FAILED", code
+            item.result = {"warnings": [{"code": code, "message": message}]}
         item.ended_at = datetime.now(UTC)
         await session.commit()
 

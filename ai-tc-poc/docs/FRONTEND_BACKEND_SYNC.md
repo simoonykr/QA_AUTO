@@ -1,5 +1,14 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-11 분석 오류·대상 URL 계약
+
+- 기존 TC discovery 시작은 원문에 단일 HTTP(S) URL이 필요하다. 없으면 TARGET_URL_REQUIRED/422, 여러 개면 TARGET_URL_AMBIGUOUS/422, 환경 allowlist 위반 또는 인증정보/query/fragment 포함이면 TARGET_URL_NOT_ALLOWED/422. 페이지 우선에서는 기존 startUrl을 사용한다.
+- navigate URL 미지정은 더 이상 환경 기본 demo-target으로 대체하지 않는다. 실행 계획에서 TARGET_URL_REQUIRED로 차단된다. 과거 저장 버전은 자동 수정하지 않으며 원문을 고쳐 새 버전으로 분석한다.
+- 비동기 분석 FAILED의 errorCode 및 warnings[].code/message: DISCOVERY_TIMEOUT(접속/검증 시간 초과), DISCOVERY_CONNECTION_FAILED(DNS·네트워크·인증서 등 연결 오류), DISCOVERY_BROWSER_ERROR(기타 브라우저 오류), DISCOVERY_INTERNAL_ERROR(내부 처리 오류), TARGET_URL_NOT_ALLOWED(도메인 위반). 원본 예외·비밀 URL은 응답하지 않는다. 프론트는 재분석 버튼과 해당 안내를 표시한다.
+- 기존 discovery에서 미확정/없는 검증 요소는 NEEDS_REVIEW 및 DISCOVERY_ELEMENTS_UNRESOLVED warning, executable=false다. FAILED와 구분하여 검토/분석 필요로 표시한다. 응답 필드·타입 변경은 없으며 code는 기존 string 필드다.
+- Worker 실제 반복 실패 원인(hashlib 누락) 수정. 기존 discovery COMPLETED, 페이지 우선 실행 PASS, 실패 증적 PNG 정상. 전체 100 passed/TypeScript 통과/AI 0회.
+- 프론트 담당: 업로드 TC를 페이지 우선 시나리오로 연결, 대상 URL·환경 표시, automationStatus와 실제 executable 구분, 좁은 화면 배치 보완. 백엔드 규칙 분류는 명시적인 기대 결과에 한정되며 자유 문장의 완전한 의미 이해를 보장하지 않는다.
+
 ## 2026-09-09 로컬 통합 배포 확인
 
 - Docker 엔진 복구 및 `.env.public`/`compose.public-demo.yml` 빌드·migration·배포 성공. 테스트 페이지: `http://localhost:8080` (배포 PC 전용). 기존 데모 로그인 사용, 자격증명은 채팅/Git에 공개하지 않는다.

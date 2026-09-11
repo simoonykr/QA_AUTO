@@ -31,6 +31,8 @@ class DiscoveryRepository:
         ))
         if not environment:
             raise DiscoveryRuleError("ENVIRONMENT_NOT_FOUND", "실행 환경을 찾을 수 없습니다.")
+        from app.modules.discoveries.target import discovery_target
+        discovery_target(version.raw_text, environment.allowed_domains)
         if body.maxAiCalls and not ai_ready:
             raise DiscoveryRuleError("AI_DISABLED", "AI가 비활성화되어 규칙 기반 페이지 분석만 사용할 수 있습니다.")
         discovery_id = uuid4()

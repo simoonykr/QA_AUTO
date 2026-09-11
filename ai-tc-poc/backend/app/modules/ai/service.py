@@ -160,6 +160,12 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
     assumptions = []
     preconditions = []
     for index, segment in enumerate(segments[:20], start=1):
+        if re.match(r'^(?:TC[ _-]?ID|제목|Title|전제조건|Preconditions?)\s*[:：]', segment, re.I):
+            preconditions.append(segment)
+            continue
+        if re.fullmatch(r'(?:[A-Z]+-)+\d+', segment) or re.fullmatch(r'\d+[.)]?', segment):
+            continue
+        segment = re.sub(r'^\d+[.)]\s*', '', segment)
         action = _action_for(segment)
         if action == "assert":
             assertions.append({"type": "text", "operator": "contains", "expected": segment, "timeoutMs": 10_000})
@@ -184,10 +190,12 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         else:
             step["resolutionStatus"] = "RESOLVED" if step.get("selector") else "UNRESOLVED"
         steps.append(step)
+    if not steps:
+        raise DomainError('TC_ACTION_REQUIRED', '메타데이터 외에 행동 또는 기대 결과를 입력해 주세요.', 422)
     if not assertions:
         expected = segments[-1]
         assertions.append({"type": "text", "operator": "contains", "expected": expected, "timeoutMs": 10_000})
-        steps[-1]["action"] = "assert"
+        assumptions.append("명시적인 기대 결과가 없어 마지막 행동을 검증 결과로 확정하지 않았습니다.")
     if len(segments) > 20:
         assumptions.append(f"원문의 {len(segments)}개 항목 중 앞 20개만 구조화했습니다. 나머지 항목은 검토가 필요합니다.")
     automation_status, automation_reason = _automation_assessment(body.rawText)
@@ -267,6 +275,8 @@ def _test_segments(raw_text: str) -> list[str]:
 
 def _action_for(segment: str) -> str:
     lowered = segment.lower()
+    if re.match(r'^(?:기대\s*결과|expected(?:\s+results?)?)\s*[:：]', lowered) or any(word in lowered for word in ('되는지', '되어야', '표시 확인', '이동 확인', '접속 확인')):
+        return 'assert'
     if any(keyword in lowered for keyword in ("접속", "이동", "진입", "navigate", "open", "url")):
         return "navigate"
     if any(keyword in lowered for keyword in ("입력", "작성", "기입", "fill", "type")):
