@@ -64,6 +64,12 @@ def test_import_wrappers_wait_and_duplicate_navigation():
     assert result.automationStatus == 'MANUAL_REVIEW_REQUIRED'
 
 
+def test_duplicate_navigation_is_removed_even_when_separated():
+    raw = '단계 1: https://kakaogames.com/ 접속\n단계 2: 로딩 완료 대기\n단계 3: 기대결과: 메인 표시 확인\n대상 URL: https://kakaogames.com/'
+    result = rule_based_structure(StructureRequest(title='synthetic', rawText=raw))
+    assert [step.action for step in result.steps].count('navigate') == 1
+
+
 @pytest.mark.asyncio
 async def test_wait_does_not_require_selector():
     from app.workers.step_executor import execute_step

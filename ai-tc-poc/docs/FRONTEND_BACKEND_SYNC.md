@@ -1,5 +1,14 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-11 재검증 3차: 중복 이동·WAIT·Staging 허용 도메인
+
+- 구조화는 동일 URL의 `navigate`가 WAIT/assert 등 다른 단계 사이에 떨어져 있어도 최초 한 번만 유지한다. 비교는 trailing slash 제거와 소문자 정규화 기준이다. 기존 저장 버전은 자동 수정하지 않으므로 새 구조화 요청이 필요하다.
+- `wait/domcontentloaded`는 selector가 없는 정상 단계다. 프론트 검토 및 실행 계획에는 `문서 로딩 완료 대기`로 표시하며 `필수 값 확인 필요`로 안내하지 않는다.
+- migration `0009_allow_kakaogames_staging`은 기본 Staging 환경의 allowedDomains에 정확히 `kakaogames.com`만 추가한다. 하위 도메인을 포괄 허용하지 않으며 사용자정보·query·fragment URL 차단과 GET/HEAD 요청 제한은 유지한다.
+- a4498d6의 지속 오류 카드와 좁은 화면 overflow 보완을 실제 public 이미지에 포함한다. API 및 공유 TypeScript 타입 변경은 없다.
+- 검증: 백엔드 103 passed/경고 3건, TypeScript 통과, AI 호출 0회.
+- 외부 HTTPS 배포 UI에서 `https://kakaogames.com/` discovery COMPLETED, 중복 제거·WAIT 문구·지속 오류·1280px 클릭을 확인했다. 기존 KG-WEB-001 저장 버전에는 소급 적용되지 않는다.
+
 ## 2026-09-11 재검증 2차: 진행 표시·원문 분류
 
 - 프론트 최소 수정 배포: 분석 POST 수락 즉시 QUEUED 표시, API 30초 timeout, 공통 알림 수동 닫기(자동 소멸 제거), 시작 URL 자동 채움 제거. 두 화면 실제 Chromium 테스트 통과.

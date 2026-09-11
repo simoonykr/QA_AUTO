@@ -159,6 +159,7 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
     assertions = []
     assumptions = []
     preconditions = []
+    navigate_urls = set()
     for index, segment in enumerate(segments[:20], start=1):
         segment = re.sub(r'^단계\s*\d+\s*[:：]\s*', '', segment)
         if re.match(r'^(?:TC[ _-]?ID|제목|Title|전제조건|Preconditions?)\s*[:：]', segment, re.I):
@@ -183,8 +184,11 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
             "timeoutMs": 10_000,
         }
         step.update(_execution_fields(segment, action))
-        if action == 'navigate' and step.get('url') and steps and steps[-1].get('action') == 'navigate' and steps[-1].get('url') == step['url']:
-            continue
+        if action == 'navigate' and step.get('url'):
+            normalized_url = step['url'].rstrip('/').lower()
+            if normalized_url in navigate_urls:
+                continue
+            navigate_urls.add(normalized_url)
         step["targetDescription"] = segment[:300]
         step["actionIntent"] = action
         hint_values = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)

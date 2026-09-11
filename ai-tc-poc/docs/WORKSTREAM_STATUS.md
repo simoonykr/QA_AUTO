@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-11
 
+## 2026-09-11 Temporary Staging 재검증 3차 반영
+
+- 규칙 기반 구조화가 원문 전체에서 이미 생성한 동일 URL의 `navigate`를 다시 만들지 않도록 정규화·중복 제거 범위를 확대했다. WAIT는 selector 누락 경고가 아니라 `문서 로딩 완료 대기`로 표시한다.
+- 기본 Staging 환경 allowlist에 `kakaogames.com`을 추가하는 `0009_allow_kakaogames_staging` migration을 추가했다. 정확한 기본 Staging 레코드만 갱신하며 DB·Redis·MinIO 공개 포트는 추가하지 않는다.
+- 최신 main의 지속 오류 카드(a4498d6)를 public 이미지에 포함하고, 좁은 화면에서 grid 자식·긴 문구·버튼이 가로 폭을 확장하지 않도록 반응형 제약을 보완했다.
+- 백엔드 **103 passed**/경고 3건, TypeScript 통과, 실제 AI 호출 0회. 과거 저장된 구조화 결과는 변경하지 않으므로 KG-WEB-001을 다시 구조화해야 중복 제거 결과가 반영된다.
+- 외부 HTTPS Temporary Staging에서 실제 `https://kakaogames.com/` 분석 완료, NAVIGATE 1건, WAIT 정상 표시, 지속 오류 카드, 1280px 버튼 클릭을 Chromium으로 확인했다. 재검증 스크립트는 target/base URL 환경변수를 선택적으로 받되 자격증명을 출력하지 않는다.
+
 ## 2026-09-11 재검증 피드백 2차 반영
 
 - 두 분석 화면: 요청 시작 안내, POST 수락 직후 QUEUED 패널, 30초 요청 timeout, 닫기 전까지 유지되는 공통 알림을 적용했다. 기존 2.2초 자동 소멸 알림만으로 오류를 놓치는 문제를 보완했다. 페이지 우선 polling 오류 후 시작 버튼이 잠기지 않도록 상태 해제.
