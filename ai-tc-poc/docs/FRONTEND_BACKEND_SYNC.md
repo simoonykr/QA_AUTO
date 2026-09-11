@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-11 렌더링 리소스·시나리오 후보 확대
+
+- 환경 응답에 선택 필드 `resourceDomains`를 추가했다. `allowedDomains`는 최상위 문서 navigation에만 사용하고, 정적 하위 리소스는 두 목록의 정확한 도메인 및 하위 도메인에서만 GET/HEAD로 허용한다. Staging은 migration `0010_resource_domains`로 `cdn.jsdelivr.net`을 명시한다.
+- Worker와 페이지 우선 discovery는 load 완료, visible body, 750ms 안정화 후 요소 수집·성공 증적을 생성한다. 성공 증적은 viewport PNG이며 실행 모니터 주소창은 Artifact key 대신 실제 navigation URL을 표시한다.
+- 페이지 분석 후보는 유일한 `data-testid`와 유일한 role+accessible name을 가진 제목·버튼·링크·입력 계열이다. 최대 50개, 표시·활성 상태를 저장하며 전체 HTML·입력값은 수집하지 않는다.
+- 실제 KakaoGames 검증에서 본문 1,518자, 후보 29개를 확인했다. 광고·외부 API 등 명시하지 않은 호스트는 계속 차단됐다. 백엔드 104 passed/1 skipped, 실제 Chromium 1 passed, TypeScript 통과, AI 0회.
+
 ## 2026-09-11 재검증 3차: 중복 이동·WAIT·Staging 허용 도메인
 
 - 구조화는 동일 URL의 `navigate`가 WAIT/assert 등 다른 단계 사이에 떨어져 있어도 최초 한 번만 유지한다. 비교는 trailing slash 제거와 소문자 정규화 기준이다. 기존 저장 버전은 자동 수정하지 않으므로 새 구조화 요청이 필요하다.
@@ -83,8 +90,8 @@
 - `GET /api/v1/page-discoveries/{discoveryId}`: `QUEUED → SCANNING → COMPLETED|FAILED`, pages·elements·warnings·errorCode·aiUsage 반환. 1~2초 polling으로 조회한다.
 - `POST /api/v1/page-discoveries/{discoveryId}/scenarios`: `{ maxAiCalls: 0 }` → HTTP 201 시나리오 초안. 완료되지 않은 discovery는 `DISCOVERY_NOT_READY`/409.
 - `GET /api/v1/page-scenarios/{scenarioId}`: 저장한 동일 초안 조회. 모든 리소스는 조직·프로젝트 범위로 제한한다.
-- 1차는 1페이지의 유일한 data-testid 요소만 수집한다. 실제로 표시된 요소에 대한 visible assertion, PAGE_DISCOVERY 출처와 elementId·URL·fingerprint 근거를 저장한다. 클릭·입력, iframe 내부 검증과 업무 결과 추론은 수행하지 않는다.
-- URL은 환경 allowlist 내 HTTP(S), 인증정보·query·fragment 없는 주소만 허용한다. 브라우저 요청도 동일 조건과 GET/HEAD로 제한하며 서비스워커를 차단한다. 이 제한으로 페이지 리소스가 일부 로드되지 않을 수 있다.
+- 현재는 1페이지의 유일한 data-testid 및 role+accessible name 요소를 수집한다. 실제로 표시된 요소에 대한 visible assertion, PAGE_DISCOVERY 출처와 elementId·URL·fingerprint 근거를 저장한다. 클릭·입력, iframe 내부 검증과 업무 결과 추론은 수행하지 않는다.
+- URL은 환경 navigation allowlist 내 HTTP(S), 인증정보·query·fragment 없는 주소만 허용한다. 정적 리소스는 별도 `resourceDomains`와 navigation allowlist의 정확한 도메인·하위 도메인에서 GET/HEAD만 허용하며 서비스워커를 차단한다.
 - 모든 초안은 revision=1, REVIEW_REQUIRED, executable=false, aiUsage=RULE_BASED/0이다. 생성 버튼을 AI 생성으로 표기하지 않는다. 아직 승인·실행 API에 scenarioId를 보내면 안 된다.
 - 반복 생성은 별도 scenarioId를 만든다. 편집 revision API, testCaseVersionId 연결, AI 생성, TC 비교·보강, 승인·Worker 실행 연결은 후속 구현이다. maxAiCalls=1과 미지원 필드는 422로 거절한다.
 - 프론트 타입: PageFirstStartRequest, PageFirstDiscovery, PageScenarioDraft. 기존 API/Mock은 유지한다. 새 Mock UI 연결은 이 계약으로 후속 작업한다.

@@ -22,20 +22,27 @@ def _required(step: dict[str, Any], field: str) -> Any:
     return value
 
 
+async def wait_for_render(page: Page, timeout: int) -> None:
+    await page.wait_for_load_state("load", timeout=timeout)
+    await page.locator("body").wait_for(state="visible", timeout=timeout)
+    await page.wait_for_timeout(750)
+
+
 async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepResult:
     action_type = _required(step, "action")
     timeout = int(step.get("timeoutMs", 10_000))
     if action_type == 'wait':
         if step.get('operator') != 'domcontentloaded':
             raise StepDefinitionError('문서 로딩 완료 대기만 지원합니다.')
-        await page.wait_for_load_state('domcontentloaded', timeout=timeout)
-        return StepResult(action={'type': 'wait', 'state': 'domcontentloaded'})
+        await wait_for_render(page, timeout)
+        return StepResult(action={'type': 'wait', 'state': 'rendered'})
 
     if action_type == "navigate":
         url = step.get("url") or base_url
         response = await page.goto(url, wait_until="domcontentloaded", timeout=timeout)
         if response and response.status >= 400:
             raise AssertionError(f"HTTP {response.status}")
+        await wait_for_render(page, timeout)
         return StepResult(action={"type": "navigate", "url": url})
 
     if action_type == "assert" and (step.get("assertionType") == "url" or (step.get("url") and not step.get("selector"))):

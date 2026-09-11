@@ -253,10 +253,14 @@ async def execute(execution_id: UUID) -> None:
                 context = await browser.new_context(**context_options)
                 page = await context.new_page()
                 if page_first:
-                    from app.modules.discoveries.page_first import allowed_url
+                    from app.modules.discoveries.page_first import allowed_resource_url, allowed_url
 
                     async def guard(route):
-                        if route.request.method not in {"GET", "HEAD"} or not allowed_url(route.request.url, environment.allowed_domains):
+                        request = route.request
+                        resource_domains = [*environment.allowed_domains, *getattr(environment, "resource_domains", [])]
+                        permitted = (allowed_url(request.url, environment.allowed_domains) if request.is_navigation_request()
+                                     else allowed_resource_url(request.url, resource_domains))
+                        if request.method not in {"GET", "HEAD"} or not permitted:
                             await route.abort()
                         else:
                             await route.continue_()
@@ -292,6 +296,7 @@ async def execute(execution_id: UUID) -> None:
                             last_step_run_id,
                             artifact_type="SUCCESS_SCREENSHOT",
                             filename="success.png",
+                            full_page=False,
                         )
                     except Exception:
                         logger.exception(
@@ -340,6 +345,7 @@ async def _capture_failure(page, execution_id: UUID, step_no: int, action: dict,
             step_run_id,
             artifact_type="FAILURE_SCREENSHOT",
             filename="failure.png",
+            full_page=True,
         )
     except Exception:
         logger.exception("failure screenshot upload failed", extra={"execution_id": str(execution_id), "step_no": step_no})
@@ -353,8 +359,9 @@ async def _capture_screenshot(
     *,
     artifact_type: str,
     filename: str,
+    full_page: bool,
 ) -> None:
-    screenshot = await page.screenshot(full_page=True)
+    screenshot = await page.screenshot(full_page=full_page)
     object_key = f"executions/{execution_id}/steps/{step_no}/{filename}"
     stored = await ArtifactStore().put_png(object_key, screenshot)
     await _record_artifact(execution_id, step_run_id, stored, artifact_type)

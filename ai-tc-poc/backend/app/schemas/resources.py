@@ -8,6 +8,7 @@ class EnvironmentSummary(BaseModel):
     name: str
     baseUrl: str
     allowedDomains: list[str]
+    resourceDomains: list[str] = Field(default_factory=list)
     defaultViewport: str
 
 

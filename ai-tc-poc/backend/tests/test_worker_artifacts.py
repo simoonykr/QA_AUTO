@@ -14,7 +14,7 @@ async def test_capture_screenshot_persists_success_artifact(monkeypatch) -> None
 
     class Page:
         async def screenshot(self, *, full_page):
-            assert full_page is True
+            assert full_page is False
             return b"success-png"
 
     class Store:
@@ -40,6 +40,7 @@ async def test_capture_screenshot_persists_success_artifact(monkeypatch) -> None
         step_run_id,
         artifact_type="SUCCESS_SCREENSHOT",
         filename="success.png",
+        full_page=False,
     )
 
     assert recorded["execution_id"] == execution_id

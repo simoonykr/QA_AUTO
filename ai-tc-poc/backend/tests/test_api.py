@@ -1059,6 +1059,9 @@ class FakeLocator:
     async def click(self, **_kwargs):
         self.clicked = True
 
+    async def wait_for(self, **_kwargs):
+        pass
+
 
 class FakePage:
     def __init__(self):
@@ -1068,6 +1071,12 @@ class FakePage:
     async def goto(self, url, **_kwargs):
         self.url = url
         return FakeResponse()
+
+    async def wait_for_load_state(self, _state, **_kwargs):
+        pass
+
+    async def wait_for_timeout(self, _timeout):
+        pass
 
     def locator(self, selector):
         return self.locators.setdefault(selector, FakeLocator())

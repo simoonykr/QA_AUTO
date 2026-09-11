@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-11
 
+## 2026-09-11 KakaoGames 렌더링·페이지 시나리오 후보 보완
+
+- 흰색 성공 증적 원인은 페이지 우선 브라우저가 navigation allowlist를 모든 하위 리소스에도 적용해 `cdn.jsdelivr.net`의 필수 스크립트를 차단한 것이다. navigation과 resource allowlist를 분리하고 `0010_resource_domains` migration으로 Staging의 명시적 리소스 도메인을 추가했다. 임의 외부 API·광고 호스트는 계속 차단한다.
+- `domcontentloaded` 직후 실행·캡처하지 않고 load, visible body, 750ms 렌더 안정화까지 기다린다. 성공 증적은 축소된 전체 페이지가 아닌 현재 viewport를 저장하며 모니터 주소창에는 실제 navigation URL을 표시한다.
+- 페이지 우선 요소 수집을 유일한 `data-testid`에서 유일하고 표시 가능한 제목·버튼·링크·입력 계열의 role+accessible name까지 확대했다. 전체 HTML과 입력값은 저장하지 않으며 클릭·입력·iframe·AI 의미 추론은 아직 수행하지 않는다.
+- 실제 `KakaoGames_AI_Automation.xlsx`의 KG-WEB-001은 원본상 2단계(접속, 로딩 대기)와 기대 결과 1건이며 9단계 TC가 아니다. 현재 importer도 21개 TC 및 해당 2단계를 보존한다.
+- 수정 정책으로 외부 `https://kakaogames.com/`을 실행해 본문 1,518자와 시나리오 후보 29개 수집을 확인했다. 백엔드 **104 passed, 1 skipped**, 실제 Chromium 회귀 1 passed, TypeScript 통과, 실제 AI 호출 0회.
+
 ## 2026-09-11 Temporary Staging 재검증 3차 반영
 
 - 규칙 기반 구조화가 원문 전체에서 이미 생성한 동일 URL의 `navigate`를 다시 만들지 않도록 정규화·중복 제거 범위를 확대했다. WAIT는 selector 누락 경고가 아니라 `문서 로딩 완료 대기`로 표시한다.
@@ -80,7 +88,7 @@
 - 프론트 `a35df71`을 fast-forward 반영하고 기존 Mock UX를 보존했다.
 - TC 단순 추출, 시나리오 비교, 선택·문구 저장, 서버 revision 충돌 방지, 승인 API 구현. 승인 시 READY TC 버전과 감사 snapshot을 같은 트랜잭션으로 저장한다.
 - 승인된 versionId는 기존 실행 계획 조회·실행 생성 API에 연결한다. Worker는 접속 후 실제 요소 fingerprint를 비교하고 변경되면 DISCOVERY_STALE로 중단한다.
-- 자동 실행 범위는 기존 1페이지 data-testid 표시 assertion에 한정된다. AI 의미 분석·클릭·입력·iframe 탐색은 미구현이며, 미확인 TC는 수동/제외 선택만 가능하다. 문구 변경은 실행 의미를 바꾸지 않는다.
+- 자동 실행 범위는 1페이지의 유일한 data-testid 또는 role+accessible name 표시 assertion에 한정된다. AI 의미 분석·클릭·입력·iframe 탐색은 미구현이며, 미확인 TC는 수동/제외 선택만 가능하다. 문구 변경은 실행 의미를 바꾸지 않는다.
 - 백엔드 정식 전체 테스트 **84 passed**, 기존 경고 4건, 실제 OpenAI 호출 **0회**. OneDrive 충돌 복사본 테스트는 제외하고 사용자 파일은 보존했다.
 - 공유 타입 갱신 후 `npm run typecheck` 통과. 로컬 누락 의존성만 복구했으며 package/lock 파일은 변경하지 않았다.
 - 프론트 요청: FRONTEND_BACKEND_SYNC.md의 2차 계약에 따라 Mock 비교·로컬 revision을 서버 응답으로 교체하고 승인 응답 versionId/environmentId로 기존 실행 API를 연결한다. 전체 선택 검토, 수동·제외 범위 표시와 409 재조회 UX를 유지한다.

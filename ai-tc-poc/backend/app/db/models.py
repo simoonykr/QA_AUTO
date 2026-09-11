@@ -86,6 +86,7 @@ class Environment(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     base_url: Mapped[str] = mapped_column(Text, nullable=False)
     allowed_domains: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    resource_domains: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     viewport: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

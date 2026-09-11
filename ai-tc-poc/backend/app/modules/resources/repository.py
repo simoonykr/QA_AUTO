@@ -27,6 +27,7 @@ class SqlResourceRepository:
             name=item.name,
             baseUrl=item.base_url,
             allowedDomains=item.allowed_domains,
+            resourceDomains=item.resource_domains,
             defaultViewport=f"{item.viewport.get('width', 1440)}x{item.viewport.get('height', 900)}",
         ) for item in rows]
 

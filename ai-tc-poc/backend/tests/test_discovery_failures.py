@@ -73,8 +73,16 @@ def test_duplicate_navigation_is_removed_even_when_separated():
 @pytest.mark.asyncio
 async def test_wait_does_not_require_selector():
     from app.workers.step_executor import execute_step
+    class Body:
+        async def wait_for(self, state, timeout):
+            assert state == 'visible' and timeout == 10000
     class Page:
         async def wait_for_load_state(self, state, timeout):
-            assert state == 'domcontentloaded' and timeout == 10000
+            assert state == 'load' and timeout == 10000
+        def locator(self, selector):
+            assert selector == 'body'
+            return Body()
+        async def wait_for_timeout(self, timeout):
+            assert timeout == 750
     result = await execute_step(Page(), {'action': 'wait', 'operator': 'domcontentloaded'}, 'https://example.test')
-    assert result.action['state'] == 'domcontentloaded'
+    assert result.action['state'] == 'rendered'

@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 from app.core.errors import DomainError
 from app.modules.discoveries.page_first import (
-    StartRequest, ScenarioRequest, ScenarioResponse, allowed_url, safe_text,
+    StartRequest, ScenarioRequest, ScenarioResponse, allowed_resource_url, allowed_url, safe_text,
     scenario_payload, find_discovery, generate,
 )
 
@@ -22,6 +22,14 @@ def test_allowed_page_url_and_no_ai():
         ScenarioRequest(maxAiCalls=1)
     with pytest.raises(ValidationError):
         StartRequest(environmentId=uuid4(), startUrl="https://example.test", maxPages=3)
+
+
+def test_static_resources_allow_subdomains_without_relaxing_navigation_contract():
+    assert allowed_resource_url("https://cdn.assets.example.test/app.js?v=1", ["example.test"])
+    assert allowed_resource_url("https://example.test/app.css?v=1", ["example.test"])
+    assert allowed_resource_url("https://cdn.jsdelivr.net/npm/app.js", ["example.test", "cdn.jsdelivr.net"])
+    assert not allowed_resource_url("https://example.test.evil.test/app.js", ["example.test"])
+    assert not allowed_url("https://cdn.assets.example.test/", ["example.test"])
 
 
 def test_sensitive_metadata_removed():

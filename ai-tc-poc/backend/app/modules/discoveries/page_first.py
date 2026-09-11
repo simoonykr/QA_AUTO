@@ -70,6 +70,16 @@ def allowed_url(url: str, domains: list[str]) -> bool:
         return False
 
 
+def allowed_resource_url(url: str, domains: list[str]) -> bool:
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        return (parsed.scheme in {"http", "https"} and not parsed.username and not parsed.password
+                and any(host == domain or host.endswith(f".{domain}") for domain in domains))
+    except ValueError:
+        return False
+
+
 def safe_text(value: str) -> str:
     value = value[:160]
     if re.search(r"@|\b(?:token|secret|password|bearer)\b|\d{3}[- ]?\d{3,4}[- ]?\d{4}", value, re.I):
@@ -195,7 +205,10 @@ async def scan(discovery_id: UUID):
 
                     async def guard(route):
                         req = route.request
-                        if req.method not in {"GET", "HEAD"} or not allowed_url(req.url, env.allowed_domains):
+                        resource_domains = [*env.allowed_domains, *getattr(env, "resource_domains", [])]
+                        permitted = (allowed_url(req.url, env.allowed_domains) if req.is_navigation_request()
+                                     else allowed_resource_url(req.url, resource_domains))
+                        if req.method not in {"GET", "HEAD"} or not permitted:
                             await route.abort()
                         else:
                             await route.continue_()
@@ -203,14 +216,16 @@ async def scan(discovery_id: UUID):
                     await context.route("**/*", guard)
                     page = await context.new_page()
                     await page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    from app.workers.step_executor import wait_for_render
+                    await wait_for_render(page, 10_000)
                     if not allowed_url(page.url, env.allowed_domains):
                         raise ValueError("redirect")
-                    # Stable IDs only: no HTML, input values or arbitrary page text collected.
+                    # Collect stable IDs and unique visible semantic names. Input values and HTML are never collected.
                     elements = await collect_elements(page)
                     fingerprint = page_fingerprint(page.url, elements)
                     item.result = {"pages": [{"url": page.url, "title": "", "fingerprint": fingerprint}],
                         "elements": elements, "fingerprint": fingerprint,
-                        "warnings": [{"code": "LIMITED_READ_ONLY_DISCOVERY", "message": "1페이지의 안정적인 test ID 요소만 탐색합니다. 클릭·입력·iframe 내부 탐색은 수행하지 않습니다."}]}
+                        "warnings": [{"code": "LIMITED_READ_ONLY_DISCOVERY", "message": "1페이지의 안정적인 test ID와 고유한 제목·버튼·링크를 탐색합니다. 클릭·입력·iframe 내부 탐색은 수행하지 않습니다."}]}
                 finally:
                     await browser.close()
             item.status = "COMPLETED"
@@ -228,17 +243,39 @@ def page_fingerprint(url, elements):
 
 
 async def collect_elements(page):
-    nodes = page.locator('[data-testid]')
+    nodes = page.locator('[data-testid],h1,h2,h3,button,a[href],input,select,textarea,[role]')
     elements = []
-    for index in range(min(await nodes.count(), 100)):
+    for index in range(min(await nodes.count(), 200)):
         node = nodes.nth(index)
         test_id = await node.get_attribute("data-testid") or ""
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", test_id) or not safe_text(test_id):
-            continue
-        selector = f'[data-testid="{test_id}"]'
-        if await page.locator(selector).count() != 1:
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", test_id) and safe_text(test_id):
+            selector = f'[data-testid="{test_id}"]'
+            name = safe_text(await node.get_attribute("aria-label") or test_id)
+            locator = page.locator(selector)
+        else:
+            metadata = await node.evaluate("""element => {
+                const tag = element.tagName.toLowerCase();
+                const implicit = {a:'link',button:'button',h1:'heading',h2:'heading',h3:'heading',
+                    input:'textbox',select:'combobox',textarea:'textbox'}[tag] || '';
+                const role = element.getAttribute('role') || implicit;
+                const imageAlt = element.querySelector('img[alt]')?.getAttribute('alt') || '';
+                const name = element.getAttribute('aria-label') || element.getAttribute('title') ||
+                    element.getAttribute('placeholder') || element.innerText || imageAlt;
+                return {role, name: String(name || '').replace(/\\s+/g, ' ').trim()};
+            }""")
+            role = metadata.get("role", "")
+            raw_name = metadata.get("name", "")
+            name = safe_text(raw_name)
+            if role not in {"button", "link", "heading", "textbox", "combobox", "checkbox", "radio"}:
+                continue
+            if not name or name != raw_name or '"' in name or "\\" in name:
+                continue
+            selector = f'role={role}[name="{name}"]'
+            locator = page.get_by_role(role, name=name, exact=True)
+        if await locator.count() != 1:
             continue
         elements.append({"elementId": f"element-{index + 1}", "selector": selector,
-            "name": safe_text(await node.get_attribute("aria-label") or test_id),
-            "matchCount": 1, "visible": await node.is_visible(), "enabled": await node.is_enabled()})
+            "name": name, "matchCount": 1, "visible": await locator.is_visible(), "enabled": await locator.is_enabled()})
+        if len(elements) >= 50:
+            break
     return elements

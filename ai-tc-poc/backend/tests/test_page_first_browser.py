@@ -26,19 +26,21 @@ async def test_real_browser_collect_review_assert_and_detect_change():
             context = await browser.new_context(service_workers="block")
             await context.route("**/*", lambda route: route.abort())
             page = await context.new_page()
-            await page.set_content('''<button data-testid="menu" aria-label="Menu">Menu</button>
+            await page.set_content('''<h1>Main content</h1>
+                <button aria-label="Next">Next</button>
+                <button data-testid="menu" aria-label="Menu">Menu</button>
                 <span data-testid="hidden" hidden>Hidden</span>
                 <span data-testid="duplicate">One</span><span data-testid="duplicate">Two</span>
                 <input data-testid="password" value="synthetic-only">
                 <input data-testid="entry" value="synthetic-only">''')
             elements = await collect_elements(page)
-            assert {e["name"] for e in elements} == {"Menu", "hidden", "entry"}
+            assert {e["name"] for e in elements} == {"Main content", "Next", "Menu", "hidden", "entry"}
             assert "synthetic-only" not in str(elements)
             fingerprint = page_fingerprint(page.url, elements)
             result = {"elements": elements, "fingerprint": fingerprint,
                 "pages": [{"url": page.url, "fingerprint": fingerprint}]}
             payload = scenario_payload(SimpleNamespace(id=uuid4(), result=result))
-            assert len(payload["steps"]) == 2
+            assert len(payload["steps"]) == 4
             reviewed = apply_selections(payload, ReviewRequest(expectedRevision=1, selections=[
                 Selection(comparisonId=row["id"], decision="ADD") for row in payload["comparisons"]]))
             await _verify_page_first_snapshot(page, {"fingerprint": fingerprint})

@@ -21,6 +21,7 @@ export interface EnvironmentSummary {
   name: string
   baseUrl: string
   allowedDomains: string[]
+  resourceDomains?: string[]
   defaultViewport: string
 }
 
