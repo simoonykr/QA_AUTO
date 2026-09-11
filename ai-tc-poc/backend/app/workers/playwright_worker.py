@@ -191,7 +191,12 @@ async def _record_step(
         return step_run.id
 
 
-async def _record_artifact(execution_id: UUID, step_run_id: UUID | None, stored: StoredArtifact) -> None:
+async def _record_artifact(
+    execution_id: UUID,
+    step_run_id: UUID | None,
+    stored: StoredArtifact,
+    artifact_type: str,
+) -> None:
     async with SessionFactory() as session:
         execution = await session.scalar(select(Execution).where(Execution.id == execution_id))
         if not execution:
@@ -200,7 +205,7 @@ async def _record_artifact(execution_id: UUID, step_run_id: UUID | None, stored:
             organization_id=execution.organization_id,
             execution_id=execution.id,
             step_run_id=step_run_id,
-            artifact_type="FAILURE_SCREENSHOT",
+            artifact_type=artifact_type,
             object_key=stored.object_key,
             sha256=stored.sha256,
             size_bytes=stored.size_bytes,
@@ -216,6 +221,7 @@ async def execute(execution_id: UUID) -> None:
     current_action = {"type": "worker_start"}
     current_step_no = 0
     current_started_at = datetime.now(UTC)
+    last_step_run_id = None
     page = None
     try:
         if execution.settings.get("browser") != "Chromium":
@@ -269,7 +275,7 @@ async def execute(execution_id: UUID) -> None:
                     except Exception:
                         await _capture_failure(page, execution_id, current_step_no, current_action, current_started_at)
                         raise
-                    await _record_step(
+                    last_step_run_id = await _record_step(
                         execution_id,
                         current_step_no,
                         status="PASS",
@@ -277,6 +283,21 @@ async def execute(execution_id: UUID) -> None:
                         assertion=result.assertion,
                         started_at=current_started_at,
                     )
+                if current_step_no and last_step_run_id:
+                    try:
+                        await _capture_screenshot(
+                            page,
+                            execution_id,
+                            current_step_no,
+                            last_step_run_id,
+                            artifact_type="SUCCESS_SCREENSHOT",
+                            filename="success.png",
+                        )
+                    except Exception:
+                        logger.exception(
+                            "success screenshot upload failed",
+                            extra={"execution_id": str(execution_id), "step_no": current_step_no},
+                        )
             finally:
                 await browser.close()
 
@@ -312,12 +333,31 @@ async def _capture_failure(page, execution_id: UUID, step_no: int, action: dict,
         error_code="STEP_FAILED",
     )
     try:
-        screenshot = await page.screenshot(full_page=True)
-        object_key = f"executions/{execution_id}/steps/{step_no}/failure.png"
-        stored = await ArtifactStore().put_png(object_key, screenshot)
-        await _record_artifact(execution_id, step_run_id, stored)
+        await _capture_screenshot(
+            page,
+            execution_id,
+            step_no,
+            step_run_id,
+            artifact_type="FAILURE_SCREENSHOT",
+            filename="failure.png",
+        )
     except Exception:
         logger.exception("failure screenshot upload failed", extra={"execution_id": str(execution_id), "step_no": step_no})
+
+
+async def _capture_screenshot(
+    page,
+    execution_id: UUID,
+    step_no: int,
+    step_run_id: UUID | None,
+    *,
+    artifact_type: str,
+    filename: str,
+) -> None:
+    screenshot = await page.screenshot(full_page=True)
+    object_key = f"executions/{execution_id}/steps/{step_no}/{filename}"
+    stored = await ArtifactStore().put_png(object_key, screenshot)
+    await _record_artifact(execution_id, step_run_id, stored, artifact_type)
 
 
 async def _ensure_consumer_group(redis: Redis) -> None:

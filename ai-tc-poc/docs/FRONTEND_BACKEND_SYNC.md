@@ -295,6 +295,8 @@ assertion 검증 규칙:
 - 이벤트 `execution.completed`: 종료 상태에서 마지막으로 전달한 뒤 서버가 연결 종료
 - 종료 상태: `PASS`, `FAIL`, `BLOCKED`, `NEEDS_REVIEW`, `CANCELLED`, `SYSTEM_ERROR`
 - `GET /api/v1/executions/{executionId}/artifacts/{artifactId}`: 권한 범위가 확인된 PNG 증적 반환
+- Worker는 실패 단계의 `FAILURE_SCREENSHOT`뿐 아니라 성공 실행의 마지막 단계에 `SUCCESS_SCREENSHOT` 1건을 저장한다.
+- 실행 모니터는 상세 응답의 최신 Artifact를 실제 테스트 페이지 최종 화면으로 표시한다. 과거 실행처럼 Artifact가 없으면 재실행 안내를 표시한다.
 - SSE 연결이 불가능한 환경에서는 기존 2초 polling을 fallback으로 유지
 
 실행 설정 리소스 계약:
@@ -322,7 +324,7 @@ assertion 검증 규칙:
 - 실행 상태 `QUEUED → PROVISIONING → RUNNING → PASS/FAIL` 반영
 - 1차 navigation 단계 결과를 `step_runs`에 저장
 - 승인된 구조화 명세의 `navigate`·`fill`·`click`·`assert` 단계 실행
-- 각 단계 결과를 `step_runs`에 저장하고 실패 화면을 MinIO `tracepilot-artifacts` 버킷에 보관
+- 각 단계 결과를 `step_runs`에 저장하고 실패 화면 및 성공 실행의 최종 화면을 MinIO `tracepilot-artifacts` 버킷에 보관
 - `CANCEL_REQUESTED` 확인 후 `CANCELLED` 처리
 - 로컬 통합 검증용 `demo-target` 서비스 추가
 

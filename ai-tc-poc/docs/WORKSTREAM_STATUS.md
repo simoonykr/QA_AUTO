@@ -261,6 +261,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 ## 최근 검증
 
+- 2026-09-11 실행 화면 연결: Worker가 PASS 직전 마지막 페이지를 `SUCCESS_SCREENSHOT`으로 저장하고 실행 모니터가 최신 PNG 증적을 표시하도록 연결했다. 기존 증적 없는 실행은 새 실행 안내를 유지한다. 백엔드 `103 passed, 1 skipped`(경고 4건), TypeScript 및 Vite 프로덕션 빌드 통과, 실제 AI 호출 0회다.
+
 - 페이지 우선 프론트 Mock/API 연결: TypeScript 5.9 타입 검사 및 `git diff --check` 통과. 저장소 Vite 8은 기존 Windows 접근 위반, Vite 6 임시 검증은 pnpm store의 `picomatch` 누락으로 번들 검증 대기
 - 페이지 우선 2차 비교·검토·승인 연동: TypeScript 5.9 타입 검사와 `git diff --check` 통과. `pnpm run build`는 기존과 동일하게 Vite 프로세스가 Windows 접근 위반(`3221225477`)으로 종료되어 환경 정상화 후 번들 재확인 필요
 
