@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from app.db.models import Environment, TestCaseVersion
 
 
-SUPPORTED_ACTIONS = {"navigate", "fill", "click", "assert"}
+SUPPORTED_ACTIONS = {"navigate", "fill", "click", "assert", "wait"}
 
 
 class ExecutionPlanError(Exception):
@@ -58,6 +58,8 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
         action = source.get("action")
         if action not in SUPPORTED_ACTIONS:
             raise ExecutionPlanError("UNSUPPORTED_ACTION", f"지원하지 않는 action입니다: {action}", step_no=step_no)
+        if action == 'wait' and source.get('operator') != 'domcontentloaded':
+            raise ExecutionPlanError('UNSUPPORTED_ACTION', '문서 로딩 완료 대기만 지원합니다.', step_no=step_no)
         step = {
             "stepNo": step_no,
             "id": str(source.get("id") or f"step-{step_no}"),

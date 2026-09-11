@@ -2,6 +2,16 @@
 
 마지막 갱신: 2026-09-11
 
+## 2026-09-11 재검증 피드백 2차 반영
+
+- 두 분석 화면: 요청 시작 안내, POST 수락 직후 QUEUED 패널, 30초 요청 timeout, 닫기 전까지 유지되는 공통 알림을 적용했다. 기존 2.2초 자동 소멸 알림만으로 오류를 놓치는 문제를 보완했다. 페이지 우선 polling 오류 후 시작 버튼이 잠기지 않도록 상태 해제.
+- 시작 URL 초기/환경 변경 시 자동 입력을 제거했다. QA가 명시한 URL만 사용한다.
+- `단계 1: 1.` 등 importer 래퍼를 벗긴 후 빈 번호를 제거한다. 연속 동일 URL navigate를 중복 생성하지 않는다. 로딩 대기는 wait/domcontentloaded로 처리하며 selector를 요구하지 않는다(비동기 API·SPA 데이터 로딩까지 보장하지 않음).
+- selector 미해결 단계가 있으면 구조화 응답은 MANUAL_REVIEW_REQUIRED/페이지 분석 필요로 반환한다. 기존 저장 버전은 재구조화가 필요하다.
+- 전체 백엔드 102 passed/경고 4건, TypeScript 및 frontend Docker 빌드 통과, AI 0회. 지정 public compose로 배포 완료.
+- 실제 Chromium UI: 시작 URL 공란, 허용 도메인 오류 지속 표시, AI 시나리오 분석 완료 패널, TC 구조화 검토 분석 결과 패널 모두 확인. 합성 TC 사용; 사용자 XLSX 자체 재업로드 검증은 이번 테스트에서 수행하지 않았다.
+- 재실행 스크립트 `backend/scripts/validate_discovery_ui_local.py` 추가. localhost 전용 데모 로그인, 비밀값 출력 없음, 합성 분석 이력 생성.
+
 ## 2026-09-11 DISCOVERY_FAILED 수정 및 대상 URL 방어
 
 - 실제 Worker 로그의 반복 NameError(hashlib import 누락)를 수정했다. 합성 TC의 기존 discovery 경로가 실배포에서 COMPLETED로 완료됨을 확인했다.

@@ -160,7 +160,7 @@ function App() {
     } catch (error) { toast(error instanceof ApiError ? error.body.message : '실행 상세를 불러오지 못했습니다.') }
   }
 
-  const toast = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 2200) }
+  const toast = (message: string) => { setNotice(message) }
 
   const login = async (username: string, password: string) => {
     const response = await api.login(username, password)
@@ -229,7 +229,7 @@ function App() {
         {view === 'accounts' && <ManagementPage kind="account" onToast={toast}/>}
         {view === 'policies' && <ManagementPage kind="policy" onToast={toast}/>}
       </main>
-      {notice && <div className="toast"><Check size={16}/>{notice}</div>}
+      {notice && <div className="toast" role="status" style={{zIndex:10000,maxWidth:'calc(100vw - 32px)'}}>{notice}<button onClick={()=>setNotice('')} aria-label="알림 닫기">닫기</button></div>}
     </div>
   )
 }
@@ -335,18 +335,19 @@ function PageFirstScenario({onToast,onApproved}:{onToast:(message:string)=>void;
   const [reviewing,setReviewing]=useState(false)
   const [approving,setApproving]=useState(false)
   const requestGeneration=useRef(0)
-  useEffect(()=>{api.listEnvironments().then(items=>{setEnvironments(items);setEnvironmentId(items[0]?.id??'');setStartUrl(items[0]?.baseUrl??'')}).catch(error=>onToast(error instanceof ApiError?error.body.message:'실행 환경을 불러오지 못했습니다.'))},[])
+  useEffect(()=>{api.listEnvironments().then(items=>{setEnvironments(items);setEnvironmentId(items[0]?.id??'')}).catch(error=>onToast(error instanceof ApiError?error.body.message:'실행 환경을 불러오지 못했습니다.'))},[])
   useEffect(()=>{
     if(!discoveryId)return
     let active=true,timer:number|undefined
-    const poll=async()=>{try{const result=await api.getPageFirstDiscovery(discoveryId);if(!active)return;setDiscovery(result);if(!['COMPLETED','FAILED'].includes(result.status))timer=window.setTimeout(()=>void poll(),1500)}catch(error){if(active)onToast(error instanceof ApiError?error.body.message:'페이지 분석 상태를 확인하지 못했습니다.')}}
+    const poll=async()=>{try{const result=await api.getPageFirstDiscovery(discoveryId);if(!active)return;setDiscovery(result);if(!['COMPLETED','FAILED'].includes(result.status))timer=window.setTimeout(()=>void poll(),1500)}catch(error){if(active){setDiscovery(null);onToast(error instanceof ApiError?error.body.message:'페이지 분석 상태를 확인하지 못했습니다.')}}}
     void poll();return()=>{active=false;if(timer)window.clearTimeout(timer)}
   },[discoveryId])
   const start=async()=>{
     if(!environmentId||!startUrl.trim()||starting)return onToast('실행 환경과 시작 URL을 확인해 주세요.')
     const generation=++requestGeneration.current
     setStarting(true);setDiscoveryId('');setDiscovery(null);setScenario(null);setComparisons([]);setEditingComparisonId('');setMockRevision(1)
-    try{const result=await api.startPageFirstDiscovery({environmentId,startUrl:startUrl.trim(),maxPages:1,maxAiCalls:0});if(generation!==requestGeneration.current)return;setDiscoveryId(result.discoveryId);onToast('읽기 전용 페이지 분석을 시작했습니다.')}
+    onToast('페이지 분석 요청 중입니다.')
+    try{const result=await api.startPageFirstDiscovery({environmentId,startUrl:startUrl.trim(),maxPages:1,maxAiCalls:0});if(generation!==requestGeneration.current)return;setDiscovery({discoveryId:result.discoveryId,status:'QUEUED',pages:[],elements:[],warnings:[],errorCode:null,aiUsage:{source:'RULE_BASED',callCount:0}});setDiscoveryId(result.discoveryId);onToast('읽기 전용 페이지 분석을 시작했습니다.')}
     catch(error){if(generation===requestGeneration.current)onToast(error instanceof ApiError?error.body.message:'페이지 분석을 시작하지 못했습니다.')}
     finally{if(generation===requestGeneration.current)setStarting(false)}
   }
@@ -365,7 +366,7 @@ function PageFirstScenario({onToast,onApproved}:{onToast:(message:string)=>void;
   const pendingCount=comparisons.filter(item=>item.decision==='PENDING').length
   const busy=starting||generating||reviewing||approving||Boolean(discovery&&!['COMPLETED','FAILED'].includes(discovery.status))
   return <section className="page page-first-page"><div className="page-heading compact"><div><p className="eyebrow">PAGE-FIRST SCENARIO</p><h1>AI 시나리오 초안</h1><p>실제 페이지에서 검증된 요소로 기본 시나리오를 만들고 자연어 TC를 보강 자료로 비교합니다.</p></div><span className="phase-badge">PHASE 2 · AI 0회</span></div>
-    <div className="page-first-grid"><article className="panel page-first-input"><div className="section-head"><div><h2>1. 분석 대상</h2><p>현재 범위는 한 페이지의 data-testid 표시 검증입니다.</p></div><MonitorCheck/></div><label className="field-label">실행 환경</label><div className="select-wrap"><select value={environmentId} onChange={e=>{const id=e.target.value;invalidate();setEnvironmentId(id);setStartUrl(environments.find(item=>item.id===id)?.baseUrl??'')}} disabled={busy}>{environments.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown/></div><label className="field-label">시작 URL</label><input className="field-input" value={startUrl} onChange={e=>{invalidate();setStartUrl(e.target.value)}} disabled={busy}/><label className="field-label">선택적 자연어 TC</label><textarea className="tc-editor page-first-tc" value={tcContext} onChange={e=>{invalidate();setTcContext(e.target.value)}} disabled={busy} placeholder="선택한 단일 TC의 대상, 행동, 기대 결과를 줄 단위로 입력하세요. 비교 결과는 서버 revision에 저장됩니다."/><div className="privacy-note"><ShieldCheck/><span>GET/HEAD만 허용하며 입력값·쿠키·비밀번호·전체 HTML은 수집하지 않습니다.</span></div><button className="ai-button" onClick={()=>void start()} disabled={busy||!environmentId||!startUrl.trim()}>{starting?<Activity className="spin"/>:<Search/>}{starting?'분석 요청 중':'페이지 분석 시작'}</button></article>
+    <div className="page-first-grid"><article className="panel page-first-input"><div className="section-head"><div><h2>1. 분석 대상</h2><p>현재 범위는 한 페이지의 data-testid 표시 검증입니다.</p></div><MonitorCheck/></div><label className="field-label">실행 환경</label><div className="select-wrap"><select value={environmentId} onChange={e=>{const id=e.target.value;invalidate();setEnvironmentId(id);setStartUrl('')}} disabled={busy}>{environments.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown/></div><label className="field-label">시작 URL</label><input className="field-input" value={startUrl} onChange={e=>{invalidate();setStartUrl(e.target.value)}} disabled={busy}/><label className="field-label">선택적 자연어 TC</label><textarea className="tc-editor page-first-tc" value={tcContext} onChange={e=>{invalidate();setTcContext(e.target.value)}} disabled={busy} placeholder="선택한 단일 TC의 대상, 행동, 기대 결과를 줄 단위로 입력하세요. 비교 결과는 서버 revision에 저장됩니다."/><div className="privacy-note"><ShieldCheck/><span>GET/HEAD만 허용하며 입력값·쿠키·비밀번호·전체 HTML은 수집하지 않습니다.</span></div><button className="ai-button" onClick={()=>void start()} disabled={busy||!environmentId||!startUrl.trim()}>{starting?<Activity className="spin"/>:<Search/>}{starting?'분석 요청 중':'페이지 분석 시작'}</button></article>
       <article className="panel page-first-progress"><div className="section-head"><div><h2>2. 분석 진행</h2><p>페이지 접속부터 시나리오 초안 생성까지 확인합니다.</p></div><span className={`live ${discovery?.status==='COMPLETED'?'done':discovery?'running':''}`}>{discovery?.status??'대기'}</span></div><div className="page-first-stages">{['페이지 접속','요소 수집','후보 검증','시나리오 초안'].map((label,index)=>{const complete=(discovery?.status==='COMPLETED'&&index<3)||Boolean(scenario);const active=!scenario&&((discovery?.status==='SCANNING'&&index<=1)||(discovery?.status==='COMPLETED'&&index===2));return <div className={complete?'complete':active?'active':''} key={label}><span>{complete?<Check/>:index+1}</span><b>{label}</b></div>})}</div>{discovery?.pages.map(page=><div className="page-summary" key={page.fingerprint}><ExternalLink/><div><b>{page.title||'제목 없음'}</b><small>{page.url}<br/>fingerprint {page.fingerprint.slice(0,16)}</small></div></div>)}{discovery?.status==='COMPLETED'&&<><div className="element-count"><Database/><span>검증 요소 <b>{discovery.elements.length}개</b></span></div><button className="primary wide" onClick={()=>void generate()} disabled={generating}>{generating?<Activity className="spin"/>:<WandSparkles/>}{generating?'초안 생성 중':'기본 시나리오 생성'}</button></>}{discovery?.status==='FAILED'&&<div className="config-error"><AlertTriangle/><div><b>페이지 분석 실패</b><span>{discovery.errorCode??'원인을 확인해 주세요.'}</span></div></div>}</article></div>
     {scenario&&<article className="panel scenario-review"><div className="panel-head"><div><h2>3. 시나리오 비교·편집</h2><p>{scenario.purpose} · 서버 revision {mockRevision}</p></div><div className="review-state"><span className={`pill ${pendingCount?'review':'pass'}`}>{pendingCount?`미결정 ${pendingCount}건`:'검토 완료'}</span><button className="primary" onClick={()=>void approve()} disabled={Boolean(pendingCount)||busy||scenario.status==='READY'}>{approving?<Activity className="spin"/>:<ShieldCheck/>}{scenario.status==='READY'?'승인 완료':approving?'승인 중':'승인 후 실행 설정'}</button></div></div><div className="scenario-columns"><div><h3>페이지 근거 단계</h3>{scenario.steps.map((step,index)=><div className="scenario-step" key={step.id}><span>{index+1}</span><div><b>{step.targetDescription}</b><code>{step.selector}</code><small><em>PAGE DISCOVERY</em> · {step.assertion.operator} · {step.evidence.observed}</small></div></div>)}</div><div><h3>TC 비교 및 보강</h3>{comparisons.length?comparisons.map(item=><div className={`comparison-card ${item.result.toLowerCase()} ${item.decision!=='PENDING'?'decided':''}`} key={item.id}><div className="comparison-title"><b>{item.result.replace('_',' ')} · {comparisonLabel(item.result)}</b>{item.decision!=='PENDING'&&<span>{decisionLabel(item.decision)}</span>}</div>{editingComparisonId===item.id?<textarea value={item.draft} onChange={event=>updateComparison(item.id,{draft:event.target.value})}/>:<p>{item.draft}</p>}<small>{item.source.replace('_',' ')} · {item.evidence}</small><div className="comparison-actions">{editingComparisonId===item.id?<><button className="secondary" onClick={()=>void decide(item.id,item.result==='MATCHED'||item.result==='PAGE_ONLY'?'ADD':'MANUAL')} disabled={reviewing||!item.draft.trim()}><Save/>수정 저장</button><button className="secondary" onClick={()=>{updateComparison(item.id,{draft:item.text});setEditingComparisonId('')}} disabled={reviewing}>취소</button></>:<><button className="secondary" onClick={()=>void decide(item.id,'ADD')} disabled={reviewing||!['MATCHED','PAGE_ONLY'].includes(item.result)}>시나리오에 추가</button><button className="secondary" onClick={()=>void decide(item.id,'MANUAL')} disabled={reviewing}>수동 검증</button><button className="secondary" onClick={()=>setEditingComparisonId(item.id)} disabled={reviewing}>문구 수정</button><button className="secondary" onClick={()=>void decide(item.id,'EXCLUDE')} disabled={reviewing}>제외</button></>}</div></div>):<div className="empty-table">TC 없이 페이지 기본 시나리오만 검토합니다.</div>}<div className="mock-contract-note"><ShieldCheck/><span>검토 선택은 서버 revision에 저장됩니다. 수동·제외 항목은 실행 결과의 통과 범위에 포함되지 않습니다.</span></div>{scenario.warnings.map(item=><div className="config-error" key={item.code}><AlertTriangle/><div><b>{item.code}</b><span>{item.message}</span></div></div>)}</div></div></article>}
   </section>
@@ -592,9 +593,10 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     } finally { setDeletingStepId(null) }
   }
   const startDiscovery = async () => {
-    if (!structured||!reviewEnvironmentId||discoveryStarting) return
+    if (!structured||!reviewEnvironmentId||discoveryStarting) return onToast('실행 환경과 구조화 결과를 확인해 주세요.')
     setDiscoveryStarting(true); setDiscovery(null); setDiscoveryId(null); setCandidateSelections({})
-    try { const result=await api.startPageDiscovery(structured.versionId,reviewEnvironmentId);setDiscoveryId(result.discoveryId);onToast('페이지 분석을 시작했습니다. AI 호출 없이 실제 화면 요소를 검증합니다.') }
+    onToast('페이지 분석 요청 중입니다.')
+    try { const result=await api.startPageDiscovery(structured.versionId,reviewEnvironmentId);setDiscovery({discoveryId:result.discoveryId,status:'QUEUED',revision:1,pages:[],steps:[],warnings:[],executable:false});setDiscoveryId(result.discoveryId);onToast('페이지 분석을 시작했습니다. AI 호출 없이 실제 화면 요소를 검증합니다.') }
     catch(error){onToast(error instanceof ApiError?error.body.message:'페이지 분석을 시작하지 못했습니다.')}
     finally{setDiscoveryStarting(false)}
   }

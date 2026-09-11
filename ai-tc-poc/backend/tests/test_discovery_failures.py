@@ -52,3 +52,23 @@ def test_missing_navigation_url_cannot_use_environment_default():
     with pytest.raises(ExecutionPlanError) as error:
         validate_execution_plan(version, SimpleNamespace(base_url='http://demo-target'))
     assert error.value.code == 'TARGET_URL_REQUIRED'
+
+
+def test_import_wrappers_wait_and_duplicate_navigation():
+    from app.modules.ai.service import enforce_selector_grounding
+    raw = '단계 1: 1.\n단계 2: 2.\n대상 URL: https://example.test\n단계 3: https://example.test 접속\n단계 4: 로딩 완료 대기\n기대결과: 메뉴 표시 확인'
+    result = enforce_selector_grounding(rule_based_structure(StructureRequest(title='synthetic', rawText=raw)), raw)
+    assert [s.action for s in result.steps] == ['navigate', 'wait', 'assert']
+    assert result.steps[1].selector is None
+    assert result.steps[1].operator == 'domcontentloaded'
+    assert result.automationStatus == 'MANUAL_REVIEW_REQUIRED'
+
+
+@pytest.mark.asyncio
+async def test_wait_does_not_require_selector():
+    from app.workers.step_executor import execute_step
+    class Page:
+        async def wait_for_load_state(self, state, timeout):
+            assert state == 'domcontentloaded' and timeout == 10000
+    result = await execute_step(Page(), {'action': 'wait', 'operator': 'domcontentloaded'}, 'https://example.test')
+    assert result.action['state'] == 'domcontentloaded'

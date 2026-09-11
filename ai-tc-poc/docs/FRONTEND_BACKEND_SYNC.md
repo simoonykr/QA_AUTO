@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-11 재검증 2차: 진행 표시·원문 분류
+
+- 프론트 최소 수정 배포: 분석 POST 수락 즉시 QUEUED 표시, API 30초 timeout, 공통 알림 수동 닫기(자동 소멸 제거), 시작 URL 자동 채움 제거. 두 화면 실제 Chromium 테스트 통과.
+- 구조화는 importer의 `단계 N:` 래퍼 및 독립 번호 제거 후 분류한다. 연속 동일 URL 이동 중복 제거. selector 미해결 시 automationStatus=MANUAL_REVIEW_REQUIRED로 안내한다. 이전 저장 데이터는 자동 재작성하지 않는다.
+- action=wait, operator=domcontentloaded 지원 추가. 기존 action 타입에 wait가 이미 포함돼 타입 확장 없음. selector는 불필요하며 문서 파싱 완료 대기만 의미한다. 다른 wait operator는 승인/실행 차단한다. 페이지 데이터 로딩 완료 검증은 별도 assertion이 필요하다.
+- 검증: 백엔드 102 passed, TypeScript/이미지 빌드 통과, AI 0회. 사용자 XLSX 원본 대신 동일 래퍼 형태 합성 원문 회귀 테스트 및 배포 UI 검증을 사용했다.
+
 ## 2026-09-11 분석 오류·대상 URL 계약
 
 - 기존 TC discovery 시작은 원문에 단일 HTTP(S) URL이 필요하다. 없으면 TARGET_URL_REQUIRED/422, 여러 개면 TARGET_URL_AMBIGUOUS/422, 환경 allowlist 위반 또는 인증정보/query/fragment 포함이면 TARGET_URL_NOT_ALLOWED/422. 페이지 우선에서는 기존 startUrl을 사용한다.

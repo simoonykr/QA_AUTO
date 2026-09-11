@@ -25,6 +25,11 @@ def _required(step: dict[str, Any], field: str) -> Any:
 async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepResult:
     action_type = _required(step, "action")
     timeout = int(step.get("timeoutMs", 10_000))
+    if action_type == 'wait':
+        if step.get('operator') != 'domcontentloaded':
+            raise StepDefinitionError('문서 로딩 완료 대기만 지원합니다.')
+        await page.wait_for_load_state('domcontentloaded', timeout=timeout)
+        return StepResult(action={'type': 'wait', 'state': 'domcontentloaded'})
 
     if action_type == "navigate":
         url = step.get("url") or base_url

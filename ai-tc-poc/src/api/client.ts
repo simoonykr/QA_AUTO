@@ -15,6 +15,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const url = /^https?:\/\//.test(path) ? path : `${API_BASE_URL}${path}`
     const response = await fetch(url, {
       ...init,
+      signal: init?.signal ?? AbortSignal.timeout(30000),
       credentials: 'include',
       headers: init?.body instanceof FormData ? init?.headers : { 'Content-Type': 'application/json', ...init?.headers },
     })

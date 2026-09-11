@@ -160,12 +160,15 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
     assumptions = []
     preconditions = []
     for index, segment in enumerate(segments[:20], start=1):
+        segment = re.sub(r'^단계\s*\d+\s*[:：]\s*', '', segment)
         if re.match(r'^(?:TC[ _-]?ID|제목|Title|전제조건|Preconditions?)\s*[:：]', segment, re.I):
             preconditions.append(segment)
             continue
         if re.fullmatch(r'(?:[A-Z]+-)+\d+', segment) or re.fullmatch(r'\d+[.)]?', segment):
             continue
         segment = re.sub(r'^\d+[.)]\s*', '', segment)
+        if not segment.strip():
+            continue
         action = _action_for(segment)
         if action == "assert":
             assertions.append({"type": "text", "operator": "contains", "expected": segment, "timeoutMs": 10_000})
@@ -180,12 +183,14 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
             "timeoutMs": 10_000,
         }
         step.update(_execution_fields(segment, action))
+        if action == 'navigate' and step.get('url') and steps and steps[-1].get('action') == 'navigate' and steps[-1].get('url') == step['url']:
+            continue
         step["targetDescription"] = segment[:300]
         step["actionIntent"] = action
         hint_values = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
         hint_text = hint_values[-1] if hint_values else segment[:120]
         step["selectorHint"] = {"text": hint_text}
-        if action == "navigate" or (action == "assert" and step.get("url")):
+        if action in {"navigate", "wait"} or (action == "assert" and step.get("url")):
             step["resolutionStatus"] = "RESOLVED"
         else:
             step["resolutionStatus"] = "RESOLVED" if step.get("selector") else "UNRESOLVED"
@@ -230,6 +235,8 @@ def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> Str
             assumptions.append(f"{updated.id}: selector가 없어 승인 전에 검토·수정이 필요합니다.")
         steps.append(updated)
     automation_status, automation_reason = _automation_assessment(raw_text)
+    if automation_status != 'UNSUPPORTED' and any(step.resolutionStatus != 'RESOLVED' for step in steps):
+        automation_status, automation_reason = 'MANUAL_REVIEW_REQUIRED', '페이지 분석 필요: 미해결 요소가 있어 실행할 수 없습니다.'
     return result.model_copy(update={
         "steps": steps, "assumptions": list(dict.fromkeys(assumptions)),
         "automationStatus": automation_status, "automationReason": automation_reason,
@@ -275,6 +282,8 @@ def _test_segments(raw_text: str) -> list[str]:
 
 def _action_for(segment: str) -> str:
     lowered = segment.lower()
+    if re.search(r'(로딩|loading|load).*(대기|wait)|대기.*로딩', lowered):
+        return 'wait'
     if re.match(r'^(?:기대\s*결과|expected(?:\s+results?)?)\s*[:：]', lowered) or any(word in lowered for word in ('되는지', '되어야', '표시 확인', '이동 확인', '접속 확인')):
         return 'assert'
     if any(keyword in lowered for keyword in ("접속", "이동", "진입", "navigate", "open", "url")):
@@ -287,6 +296,8 @@ def _action_for(segment: str) -> str:
 
 
 def _execution_fields(segment: str, action: str) -> dict:
+    if action == 'wait':
+        return {'operator': 'domcontentloaded'}
     selector_match = re.search(r"(\[[^\]]+\]|#[A-Za-z0-9_-]+|\.[A-Za-z0-9_-]+)", segment)
     quoted = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
     fields: dict = {}
