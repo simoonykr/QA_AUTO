@@ -12,6 +12,14 @@
 - 실제 Chromium UI: 시작 URL 공란, 허용 도메인 오류 지속 표시, AI 시나리오 분석 완료 패널, TC 구조화 검토 분석 결과 패널 모두 확인. 합성 TC 사용; 사용자 XLSX 자체 재업로드 검증은 이번 테스트에서 수행하지 않았다.
 - 재실행 스크립트 `backend/scripts/validate_discovery_ui_local.py` 추가. localhost 전용 데모 로그인, 비밀값 출력 없음, 합성 분석 이력 생성.
 
+## 2026-09-11 프론트 페이지 분석 오류·상태 UX 보완
+
+- 페이지 우선 분석 시작 URL에서 환경 `baseUrl` 자동 입력을 제거했다. 사용자가 대상 URL을 직접 입력하고, 선택 환경과 허용 기준 URL은 별도 문맥으로 확인한다.
+- 페이지 우선 및 기존 TC discovery의 요청·polling·비동기 실패를 일시 토스트가 아닌 지속 오류 카드로 표시한다. `code`와 안전한 사용자 메시지를 함께 노출하고 입력을 보존한 채 직접 재분석할 수 있다.
+- `DISCOVERY_TIMEOUT`, `DISCOVERY_CONNECTION_FAILED`, `DISCOVERY_BROWSER_ERROR`, `DISCOVERY_INTERNAL_ERROR`, `TARGET_URL_NOT_ALLOWED` 안내를 백엔드 계약에 맞췄다.
+- 구조화의 `automationStatus`만으로 자동화 가능 상태를 표시하지 않는다. 현재 환경의 실행 계획이 `executable=true`가 아니면 `MANUAL_REVIEW_REQUIRED`와 미해결 안내를 표시한다.
+- 검증: TypeScript 타입 검사, Vite production build, `git diff --check` 통과. 실제 AI 호출 0회. 백엔드/API 계약 변경 없음.
+
 ## 2026-09-11 DISCOVERY_FAILED 수정 및 대상 URL 방어
 
 - 실제 Worker 로그의 반복 NameError(hashlib import 누락)를 수정했다. 합성 TC의 기존 discovery 경로가 실배포에서 COMPLETED로 완료됨을 확인했다.
