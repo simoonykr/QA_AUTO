@@ -1,5 +1,14 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 bounded crawl 1차 계약
+
+- 기존 `POST /page-discoveries` 요청에 선택 필드 `includeInternalLinks?: boolean`(기본 false), `maxDepth?: number`(0~2, 기본 0), `maxPages?: number`(1~5, 기본 1)를 추가했다. 기존 `{maxPages:1,maxAiCalls:0}` 요청은 그대로 동작한다.
+- 내부 링크 포함 시 `includeInternalLinks=true`, `maxDepth>=1`을 함께 보내야 한다. 내부 링크를 끈 상태에서 깊이 또는 페이지 수를 늘리는 모순된 요청은 `DISCOVERY_SCOPE_INVALID`/422다.
+- GET 응답에 선택적 `scope:{includeInternalLinks,maxDepth,maxPages}`, 각 `pages[]`에 선택적 `depth`, `elementCount`가 추가된다. 기존 필드는 변경하지 않았다.
+- 방문 후보는 현재 navigation allowlist의 정확한 도메인, HTTP(S), query/fragment/인증정보 없음 조건을 모두 만족해야 한다. logout/delete/checkout/payment 등 위험 경로는 방문하지 않으며, 최대 깊이·페이지 수를 초과하지 않고 같은 정규화 URL은 한 번만 방문한다.
+- 이번 1차는 탐색 범위와 페이지별 후보 수집 기반만 제공한다. `elements`, 시나리오 생성, 승인·Worker fingerprint는 시작 페이지 기준을 유지한다. 프론트는 후속 계약 전까지 연결된 페이지 전체가 자동화됐다고 표시하면 안 된다.
+- 백엔드 전체·실제 Chromium 107 passed, TypeScript·프로덕션 빌드 통과, AI 호출 0회.
+
 ## 2026-09-14 기능 커버리지·누락 TC 보강 요청
 
 - 프론트는 현 계약의 `PAGE_ONLY`를 `TC 누락 제안`으로 표시하고, 검증된 근거를 `ADD`로 즉시 review revision에 저장하는 커버리지 UX를 반영했다. endpoint와 enum 변경은 없다.

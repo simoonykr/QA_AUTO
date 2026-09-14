@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from app.core.errors import DomainError
 from app.modules.discoveries.page_first import (
     StartRequest, ScenarioRequest, ScenarioResponse, allowed_resource_url, allowed_url, safe_text,
-    scenario_payload, find_discovery, generate,
+    scenario_payload, find_discovery, generate, internal_page_url, start,
 )
 
 
@@ -20,8 +20,34 @@ def test_allowed_page_url_and_no_ai():
     assert allowed_url("https://example.test/games", ["example.test"])
     with pytest.raises(ValidationError):
         ScenarioRequest(maxAiCalls=1)
+    request = StartRequest(environmentId=uuid4(), startUrl="https://example.test",
+        includeInternalLinks=True, maxPages=3, maxDepth=2)
+    assert request.maxPages == 3 and request.maxDepth == 2
     with pytest.raises(ValidationError):
-        StartRequest(environmentId=uuid4(), startUrl="https://example.test", maxPages=3)
+        StartRequest(environmentId=uuid4(), startUrl="https://example.test", maxPages=6)
+
+
+def test_internal_page_candidates_stay_bounded_to_safe_navigation_urls():
+    domains = ["example.test"]
+    assert internal_page_url("https://example.test/games", "/policy", domains) == "https://example.test/policy"
+    assert internal_page_url("https://example.test/games", "https://evil.test", domains) is None
+    assert internal_page_url("https://example.test/games", "/search?q=secret", domains) is None
+    assert internal_page_url("https://example.test/games", "#section", domains) is None
+    assert internal_page_url("https://example.test/account", "/logout", domains) is None
+    assert internal_page_url("https://example.test/cart", "/checkout/payment", domains) is None
+
+
+@pytest.mark.asyncio
+async def test_internal_scope_requires_explicit_link_crawl():
+    class Session:
+        async def scalar(self, statement):
+            return SimpleNamespace(id=uuid4(), allowed_domains=["example.test"])
+
+    body = StartRequest(environmentId=uuid4(), startUrl="https://example.test", maxPages=2)
+    request = SimpleNamespace(state=SimpleNamespace(request_id=str(uuid4())))
+    with pytest.raises(DomainError) as error:
+        await start(body, request, Session())
+    assert error.value.code == "DISCOVERY_SCOPE_INVALID"
 
 
 def test_static_resources_allow_subdomains_without_relaxing_navigation_contract():

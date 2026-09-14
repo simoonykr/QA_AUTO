@@ -2,6 +2,15 @@
 
 마지막 갱신: 2026-09-14
 
+## 2026-09-14 bounded crawl 백엔드 1차
+
+- frontend `0c68cd6`의 페이지 커버리지·TC 누락 보강 UX를 확인하고 기능 시나리오의 선행 조건인 제한된 내부 페이지 탐색 계약을 구현했다.
+- `POST /page-discoveries`는 기존 기본값을 유지하면서 선택적으로 `includeInternalLinks`, `maxDepth`(0~2), `maxPages`(1~5)를 받는다. 내부 탐색을 끈 요청은 기존처럼 깊이 0·1페이지만 허용하며 모순된 범위는 `DISCOVERY_SCOPE_INVALID`/422로 차단한다.
+- 탐색은 사용자 환경의 navigation allowlist 안에서 query/fragment/인증정보 없는 내부 링크만 BFS로 방문한다. logout/delete/checkout/payment 등 위험 경로는 제외한다. GET/HEAD·resource allowlist·서비스워커 차단은 유지하며 실패한 하위 페이지는 안전한 `PAGE_SKIPPED` warning으로 제외한다.
+- 응답 `pages`에 선택적 `depth`, `elementCount`, discovery에 선택적 `scope`를 추가했다. 기존 클라이언트와 기본 1페이지 동작은 호환된다. 시나리오·승인·Worker 근거는 아직 시작 페이지로 제한해 다중 페이지 전체가 실행 가능하다고 과장하지 않는다.
+- 검증: 백엔드 전체 및 실제 Chromium **107 passed**(경고 3건), TypeScript·프로덕션 빌드·diff 검사 통과, 실제 AI 호출 0회.
+- 다음 백엔드: 화면 영역/상호작용 모델, 위험 행동을 제외한 클릭 전후 상태 비교, 기능 후보 병합과 coverage enum, 제안 채택 후 selector/fingerprint 재검증 및 즉시 실행 계약.
+
 ## 2026-09-14 페이지 커버리지·TC 누락 즉시 보강 프론트
 
 - 페이지 우선 검토 화면에 페이지 후보, TC 일치, TC 누락 제안, TC만 존재, 검토 진행을 한눈에 보는 커버리지 요약을 추가했다.

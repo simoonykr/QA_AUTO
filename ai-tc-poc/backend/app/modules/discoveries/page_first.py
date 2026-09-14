@@ -4,7 +4,7 @@ import json
 import re
 from datetime import UTC, datetime
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Request
@@ -24,7 +24,9 @@ class StartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     environmentId: UUID
     startUrl: str = Field(min_length=1, max_length=2048)
-    maxPages: Literal[1] = 1
+    includeInternalLinks: bool = False
+    maxDepth: int = Field(default=0, ge=0, le=2)
+    maxPages: int = Field(default=1, ge=1, le=5)
     maxAiCalls: Literal[0] = 0
 
 
@@ -80,6 +82,18 @@ def allowed_resource_url(url: str, domains: list[str]) -> bool:
         return False
 
 
+def internal_page_url(base_url: str, href: str, domains: list[str]) -> str | None:
+    """Resolve a crawl candidate without widening the navigation allowlist."""
+    try:
+        parsed = urlsplit(urljoin(base_url, href))
+        if re.search(r"(?:^|[-_/])(logout|log-out|signout|sign-out|delete|remove|checkout|payment|purchase|unsubscribe)(?:[-_/]|$)", parsed.path, re.I):
+            return None
+        normalized = urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", "", ""))
+        return normalized if not parsed.query and not parsed.fragment and allowed_url(normalized, domains) else None
+    except ValueError:
+        return None
+
+
 def safe_text(value: str) -> str:
     value = value[:160]
     if re.search(r"@|\b(?:token|secret|password|bearer)\b|\d{3}[- ]?\d{3,4}[- ]?\d{4}", value, re.I):
@@ -97,7 +111,7 @@ def scenario_payload(discovery: PageDiscovery) -> dict:
             "targetDescription": element.get("name") or element["elementId"],
             "selector": element["selector"], "assertion": {"type": "element", "operator": "visible", "expected": True},
             "source": "PAGE_DISCOVERY", "evidence": {"elementId": element["elementId"],
-                "fingerprint": result["fingerprint"], "url": result["pages"][0]["url"], "observed": "visible"}})
+            "fingerprint": result["fingerprint"], "url": result["pages"][0]["url"], "observed": "visible"}})
     return {"scenarioId": str(uuid4()), "discoveryId": str(discovery.id), "revision": 1,
         "status": "REVIEW_REQUIRED", "purpose": "탐색 페이지의 검증된 요소 표시 확인",
         "pages": result.get("pages", []), "steps": steps[:50],
@@ -139,9 +153,14 @@ async def start(body: StartRequest, request: Request, session: AsyncSession = De
         raise DomainError("ENVIRONMENT_NOT_FOUND", "실행 환경을 찾을 수 없습니다.", 404)
     if not allowed_url(body.startUrl, environment.allowed_domains):
         raise DomainError("TARGET_URL_NOT_ALLOWED", "허용 도메인의 인증정보·쿼리 없는 URL을 사용해 주세요.", 422)
+    if (not body.includeInternalLinks and (body.maxPages != 1 or body.maxDepth != 0)) or (
+        body.includeInternalLinks and body.maxDepth == 0
+    ):
+        raise DomainError("DISCOVERY_SCOPE_INVALID", "내부 페이지 탐색 여부와 깊이·페이지 수 범위를 확인해 주세요.", 422)
     item = PageDiscovery(id=uuid4(), organization_id=org, project_id=project,
         environment_id=environment.id, test_case_version_id=None, status="QUEUED",
-        settings={"startUrl": body.startUrl, "maxPages": 1, "maxAiCalls": 0, "mode": "PAGE_FIRST"})
+        settings={"startUrl": body.startUrl, "includeInternalLinks": body.includeInternalLinks,
+            "maxDepth": body.maxDepth, "maxPages": body.maxPages, "maxAiCalls": 0, "mode": "PAGE_FIRST"})
     session.add(item)
     session.add(OutboxEvent(organization_id=org, aggregate_type="page_discovery", aggregate_id=item.id,
         event_type="page_first.requested", payload={"discoveryId": str(item.id)}, status=OutboxStatus.PENDING,
@@ -156,7 +175,10 @@ async def get(discovery_id: UUID, session: AsyncSession = Depends(get_session)):
     item = await find_discovery(session, discovery_id)
     return {"discoveryId": str(item.id), "status": item.status, "errorCode": item.error_code,
             "pages": (item.result or {}).get("pages", []), "elements": (item.result or {}).get("elements", []),
-            "warnings": (item.result or {}).get("warnings", []), "aiUsage": {"source": "RULE_BASED", "callCount": 0}}
+            "warnings": (item.result or {}).get("warnings", []),
+            "scope": {"includeInternalLinks": bool(item.settings.get("includeInternalLinks", False)),
+                "maxDepth": int(item.settings.get("maxDepth", 0)), "maxPages": int(item.settings.get("maxPages", 1))},
+            "aiUsage": {"source": "RULE_BASED", "callCount": 0}}
 
 
 @router.post("/page-discoveries/{discovery_id}/scenarios", response_model=ScenarioResponse, status_code=201)
@@ -214,18 +236,46 @@ async def scan(discovery_id: UUID):
                             await route.continue_()
 
                     await context.route("**/*", guard)
-                    page = await context.new_page()
-                    await page.goto(url, wait_until="domcontentloaded", timeout=20000)
                     from app.workers.step_executor import wait_for_render
-                    await wait_for_render(page, 10_000)
-                    if not allowed_url(page.url, env.allowed_domains):
-                        raise ValueError("redirect")
-                    # Collect stable IDs and unique visible semantic names. Input values and HTML are never collected.
-                    elements = await collect_elements(page)
-                    fingerprint = page_fingerprint(page.url, elements)
-                    item.result = {"pages": [{"url": page.url, "title": "", "fingerprint": fingerprint}],
-                        "elements": elements, "fingerprint": fingerprint,
-                        "warnings": [{"code": "LIMITED_READ_ONLY_DISCOVERY", "message": "1페이지의 안정적인 test ID와 고유한 제목·버튼·링크를 탐색합니다. 클릭·입력·iframe 내부 탐색은 수행하지 않습니다."}]}
+                    page = await context.new_page()
+                    include_links = bool(item.settings.get("includeInternalLinks", False))
+                    max_depth = int(item.settings.get("maxDepth", 0))
+                    max_pages = int(item.settings.get("maxPages", 1))
+                    queue = [(url, 0)]
+                    visited: set[str] = set()
+                    pages, root_elements, root_fingerprint, warnings = [], [], "", []
+                    while queue and len(pages) < max_pages:
+                        candidate, depth = queue.pop(0)
+                        if candidate in visited:
+                            continue
+                        visited.add(candidate)
+                        try:
+                            await page.goto(candidate, wait_until="domcontentloaded", timeout=20000)
+                            await wait_for_render(page, 10_000)
+                            if not allowed_url(page.url, env.allowed_domains):
+                                raise ValueError("redirect")
+                            page_elements = await collect_elements(page)
+                            page_fp = page_fingerprint(page.url, page_elements)
+                            pages.append({"url": page.url, "title": safe_text(await page.title()),
+                                "fingerprint": page_fp, "depth": depth, "elementCount": len(page_elements)})
+                            if not root_fingerprint:
+                                root_elements, root_fingerprint = page_elements, page_fp
+                            if include_links and depth < max_depth:
+                                hrefs = await page.locator("a[href]").evaluate_all(
+                                    "nodes => nodes.map(node => node.getAttribute('href') || '')"
+                                )
+                                for href in hrefs:
+                                    linked = internal_page_url(page.url, href, env.allowed_domains)
+                                    if linked and linked not in visited and all(linked != queued for queued, _ in queue):
+                                        queue.append((linked, depth + 1))
+                        except Exception:
+                            if not pages:
+                                raise
+                            warnings.append({"code": "PAGE_SKIPPED", "message": "연결된 내부 페이지 1개를 안전하게 분석하지 못해 제외했습니다."})
+                    warnings.insert(0, {"code": "LIMITED_READ_ONLY_DISCOVERY",
+                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 시나리오 근거는 시작 페이지 요소로 제한되며 클릭 전후 상태·iframe·AI 기능 추론은 아직 수행하지 않습니다."})
+                    item.result = {"pages": pages, "elements": root_elements,
+                        "fingerprint": root_fingerprint, "warnings": warnings}
                 finally:
                     await browser.close()
             item.status = "COMPLETED"

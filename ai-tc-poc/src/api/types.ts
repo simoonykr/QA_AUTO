@@ -266,7 +266,9 @@ export interface ApiErrorBody {
 export interface PageFirstStartRequest {
   environmentId: string
   startUrl: string
-  maxPages?: 1
+  includeInternalLinks?: boolean
+  maxDepth?: number
+  maxPages?: number
   maxAiCalls?: 0
 }
 export interface PageFirstElement {
@@ -281,9 +283,10 @@ export interface PageFirstDiscovery {
   discoveryId: string
   status: 'QUEUED' | 'SCANNING' | 'COMPLETED' | 'FAILED'
   errorCode: string | null
-  pages: Array<{url: string; title: string; fingerprint: string}>
+  pages: Array<{url: string; title: string; fingerprint: string; depth?: number; elementCount?: number}>
   elements: PageFirstElement[]
   warnings: Array<{code: string; message: string}>
+  scope?: {includeInternalLinks: boolean; maxDepth: number; maxPages: number}
   aiUsage: {source: 'RULE_BASED'; callCount: 0}
 }
 export interface PageScenarioDraft {
