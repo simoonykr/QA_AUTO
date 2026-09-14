@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-15 discovery 경고 프론트 표시 완료
+
+- 완료 응답의 기존 `warnings[].code/message`를 분석 범위·제외 항목 카드에 모두 표시한다. `PAGE_SKIPPED`를 포함한 서버 경고가 더 이상 성공 상태 뒤에 숨지 않는다.
+- 경고는 분석 실패나 실행 가능 판정으로 재해석하지 않으며 기존 endpoint·enum·승인 조건을 변경하지 않는다. Mock에는 `LIMITED_READ_ONLY_DISCOVERY` 예시를 추가했다.
+- 기능 후보·coverage 계약이 추가되면 이 경고 영역을 제외·미지원 수와 연결할 예정이다. 추가 API 변경 요청은 없다.
+
 ## 2026-09-15 stateChanges interaction 참조 수정
 
 - `stateChanges[].interactionId`는 이제 같은 discovery의 `interactions[].id`를 정확히 참조한다. 이전 구현처럼 `elements[].elementId`를 반환하지 않는다.

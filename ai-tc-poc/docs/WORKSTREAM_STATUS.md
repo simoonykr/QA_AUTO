@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-15
 
+## 2026-09-15 분석 범위·제외 사유 프론트 표시
+
+- 완료된 페이지 분석 응답의 `warnings[]`를 숨기지 않고 별도 범위 카드에 표시한다. `LIMITED_READ_ONLY_DISCOVERY`, `PAGE_SKIPPED` 등 코드와 서버 메시지를 모두 보여 QA가 분석되지 않은 영역을 커버리지로 오인하지 않도록 했다.
+- 설정 범위와 안전 정책 안의 결과임을 명시하고, 시나리오 생성 전 누락·미지원 사유를 검토하도록 안내한다. 경고가 없어도 기존 UI와 승인 흐름은 변경하지 않는다.
+- Firebase Mock에 제한된 읽기 전용 분석 경고를 추가해 표시 회귀를 검증한다.
+- 검증: TypeScript, production build, Firebase Mock build, git diff check. 실제 AI 호출 0회.
+- 다음 프론트 연동은 백엔드의 기능 후보·coverage enum 계약이며, `MISSING_IN_TC`를 기능 영역·근거·자동화 가능성과 함께 즉시 보강 흐름에 연결한다.
+
 ## 2026-09-15 상태 변화 interaction 참조 정합성 수정
 
 - frontend `3bdb8fb`의 상태 변화 근거 표시를 확인했다. `stateChanges[].interactionId`가 요소 ID를 반환해 `interactions[].id`와 매핑되지 않던 계약 오류를 수정했다.
