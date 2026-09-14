@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 P0 후속 배포 확인
+
+- `3d16ff8`까지 Temporary Staging 재배포 완료. `0010_resource_domains`가 적용됐고 Staging의 `resourceDomains=["cdn.jsdelivr.net"]` 응답 계약을 유지한다.
+- 동일 `https://kakaogames.com/` discovery가 `COMPLETED`, 요소 29개를 반환하여 이전 `elements=[]` 재현은 해소됐다. title은 공란으로 남아 프론트가 `제목 없음` fallback을 사용한다.
+- 프론트의 요소 0개 초안 생성 차단과 실행 선택 0개 승인 차단은 서버의 기존 `SCENARIO_EMPTY` 방어를 보완한다. API enum/endpoint 추가 변경은 없다.
+- 회귀: 백엔드 104 passed/1 skipped, TypeScript·프로덕션 빌드·외부 Chromium UI 통과, AI 호출 0회.
+
 ## 2026-09-14 Temporary Staging 발견 사항
 
 - 현재 배포에서 `https://kakaogames.com/` 페이지 우선 discovery가 `COMPLETED`이면서 `title` 없음, `elements=[]`를 반환했다. 이전 main 검증의 후보 29개와 다르므로 백엔드는 배포 이미지, `0010_resource_domains`, resource allowlist 및 렌더 안정화 적용을 우선 확인한다.

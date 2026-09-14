@@ -2,6 +2,13 @@
 
 마지막 갱신: 2026-09-14
 
+## 2026-09-14 정기 main 연동·P0 배포 확인
+
+- frontend `3d16ff8`의 빈 discovery/실행 선택 방어와 `ce18860`의 navigation/resource allowlist 분리 변경을 확인하고 최신 main을 Temporary Staging에 배포했다.
+- migration head `0010_resource_domains`, Staging navigation 도메인 `demo-target`, `kakaogames.com`, resource 도메인 `cdn.jsdelivr.net` 적용을 확인했다. DB·Redis·MinIO host port는 공개하지 않았다.
+- 외부 Staging의 실제 `https://kakaogames.com/` 재분석은 `COMPLETED`, 검증 요소 **29개**로 복구됐다. 이전 요소 0개 P0은 구버전 배포 이미지/migration 미적용으로 확인됐으며 최신 배포에서 해소됐다. 페이지 title 공란은 남지만 후보 생성·차단 판단에는 영향이 없다.
+- 백엔드 전체 **104 passed, 1 skipped**(경고 3건), TypeScript 및 프로덕션 빌드 통과, 외부 Chromium UI 회귀 통과, 실제 AI 호출 0회다.
+
 ## 2026-09-14 페이지 우선 Temporary Staging 사용자 흐름 검증
 
 - `geographical-kyle-screenshot-andy.trycloudflare.com`에서 로그인 → AI 시나리오 → KakaoGames 분석 → 자연어 TC 비교 → 검토 저장 → 승인 흐름을 실제 브라우저로 검증했다.

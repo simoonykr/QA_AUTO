@@ -5,6 +5,10 @@
 대상 URL: `https://kakaogames.com/`  
 TC: `KG-WEB-001`의 접속, 로딩 대기 및 HTTPS 정상 노출 기대 결과를 단일 자연어 TC로 입력
 
+## 후속 재검증
+
+같은 날 최신 main `3d16ff8`과 migration `0010_resource_domains`를 Temporary Staging에 재배포한 뒤 동일 URL을 다시 분석했다. 결과는 `COMPLETED`, 검증 요소 29개로 복구되어 아래 P0의 요소 0개 현상은 구버전 배포 상태에서 발생한 것으로 확인됐다. title 공란은 남아 있으며 UI는 `제목 없음` fallback을 유지한다. 요소 0개 및 실행 선택 0개일 때의 프론트 사전 차단도 최신 번들에 포함됐다.
+
 ## 결과 요약
 
 **실패 — 정상 사용자 시나리오의 승인 및 Worker 실행까지 진행할 수 없다.**
