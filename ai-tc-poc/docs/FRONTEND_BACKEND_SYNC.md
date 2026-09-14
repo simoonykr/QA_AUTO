@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 bounded crawl 프론트 연동 완료
+
+- `includeInternalLinks`, `maxDepth`, `maxPages` 입력과 응답 `scope`, `pages[].depth`, `pages[].elementCount` 표시를 연결했다. 요청 기본값과 서버 제약은 bounded crawl 1차 계약을 따른다.
+- 내부 링크 포함 여부를 바꾸면 이전 discovery·scenario·revision 상태를 초기화한다. 분석 중에는 기존 busy 방어로 범위 변경과 중복 요청을 막는다.
+- 연결 페이지의 후보 합계를 별도로 표시하되 `elements` 및 실행 근거가 시작 페이지에 한정된다는 경고를 유지한다. 추가 API/타입 변경 요청은 없다.
+- 영역·상호작용·상태 변화·기능 coverage 계약이 추가되면 동일 화면의 커버리지 요약과 TC 누락 제안에 연결한다.
+
 ## 2026-09-14 bounded crawl 1차 계약
 
 - 기존 `POST /page-discoveries` 요청에 선택 필드 `includeInternalLinks?: boolean`(기본 false), `maxDepth?: number`(0~2, 기본 0), `maxPages?: number`(1~5, 기본 1)를 추가했다. 기존 `{maxPages:1,maxAiCalls:0}` 요청은 그대로 동작한다.
