@@ -131,6 +131,15 @@ def test_state_observation_rejects_forms_and_dangerous_controls():
     assert not safe_state_candidate({**base, "name": "PC", "interactable": False})
 
 
+def test_interaction_ids_reference_observed_elements():
+    element = {"elementId": "element-7", "selector": '[data-testid="pc"]', "name": "PC",
+        "matchCount": 1, "visible": True, "enabled": True, "interactable": True,
+        "role": "tab", "areaKind": "main", "areaName": "Filters"}
+    _, interactions = feature_inventory([element])
+    assert interactions[0]["id"] == "interaction-1"
+    assert interactions[0]["elementId"] == "element-7"
+
+
 def test_empty_or_table_tc_is_rejected():
     for raw, code in [("Result: Not Test", "TC_EMPTY"), ("a | b", "TC_TABLE_REQUIRES_IMPORT")]:
         with pytest.raises(DomainError) as error:

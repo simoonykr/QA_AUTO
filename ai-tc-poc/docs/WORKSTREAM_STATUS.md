@@ -2,6 +2,13 @@
 
 마지막 갱신: 2026-09-15
 
+## 2026-09-15 상태 변화 interaction 참조 정합성 수정
+
+- frontend `3bdb8fb`의 상태 변화 근거 표시를 확인했다. `stateChanges[].interactionId`가 요소 ID를 반환해 `interactions[].id`와 매핑되지 않던 계약 오류를 수정했다.
+- 관찰 함수가 elementId→interactionId 대응표를 사용하며, 기존 호출 호환 fallback은 유지한다. 프론트는 이제 해당 영역의 상호작용 아래에 실제 Playwright 전후 근거를 표시할 수 있다.
+- 검증: 실제 Chromium 포함 백엔드 전체 **120 passed**(경고 4건), TypeScript·diff 검사 통과, 실제 AI 호출 0회.
+- 기능 후보·coverage 생성은 아직 미구현이며 다음 백엔드 단계로 유지한다.
+
 ## 2026-09-15 안전한 상태 변화 근거 프론트 연동
 
 - 백엔드 `6483d6d`의 선택 응답 `stateChanges`를 분석 결과에 연결했다. 영역별 상호작용 후보에 실제 Playwright가 관찰한 URL·`aria-pressed`·`aria-selected`·`checked` 전후 차이만 표시한다.

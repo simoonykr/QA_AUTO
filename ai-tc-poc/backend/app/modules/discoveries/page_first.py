@@ -280,7 +280,7 @@ async def scan(discovery_id: UUID):
                     root_areas, root_interactions = feature_inventory(root_elements)
                     await page.goto(pages[0]["url"], wait_until="domcontentloaded", timeout=20000)
                     await wait_for_render(page, 10_000)
-                    state_changes = await observe_state_changes(page, root_elements)
+                    state_changes = await observe_state_changes(page, root_elements, root_interactions)
                     item.result = {"pages": pages, "elements": root_elements,
                         "areas": root_areas, "interactions": root_interactions,
                         "stateChanges": state_changes,
@@ -340,9 +340,10 @@ def safe_state_candidate(element: dict) -> bool:
     )
 
 
-async def observe_state_changes(page, elements: list[dict]) -> list[dict]:
+async def observe_state_changes(page, elements: list[dict], interactions: list[dict] | None = None) -> list[dict]:
     """Click only explicit, non-form toggle controls and retain bounded state evidence."""
     changes = []
+    interaction_ids = {item["elementId"]: item["id"] for item in (interactions or [])}
     for element in [item for item in elements if safe_state_candidate(item)][:10]:
         locator = page.locator(element["selector"]) if element["selector"].startswith("[") else page.get_by_role(
             element["role"], name=element["name"], exact=True)
@@ -360,7 +361,8 @@ async def observe_state_changes(page, elements: list[dict]) -> list[dict]:
         except Exception:
             continue
         if before != after:
-            changes.append({"interactionId": element["elementId"], "selector": element["selector"],
+            changes.append({"interactionId": interaction_ids.get(element["elementId"], element["elementId"]),
+                "selector": element["selector"],
                 "before": before, "after": after, "source": "PLAYWRIGHT_OBSERVED"})
         if before["url"] != after["url"]:
             break

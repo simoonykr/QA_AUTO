@@ -1,5 +1,10 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-15 stateChanges interaction 참조 수정
+
+- `stateChanges[].interactionId`는 이제 같은 discovery의 `interactions[].id`를 정확히 참조한다. 이전 구현처럼 `elements[].elementId`를 반환하지 않는다.
+- 프론트 `3bdb8fb`의 `state.interactionId === interaction.id` 매핑과 일치하며 API 필드 추가·enum 변경은 없다.
+
 ## 2026-09-15 안전한 상태 변화 근거 프론트 연동 완료
 
 - discovery 응답의 선택 필드 `stateChanges[]`를 영역별 interaction에 매핑하고, 실제로 달라진 URL·ARIA·checked 전후 값만 표시한다. 응답이 없는 기존 discovery도 기존 UI로 정상 동작한다.
