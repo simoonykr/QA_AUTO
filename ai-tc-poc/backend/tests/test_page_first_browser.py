@@ -10,7 +10,8 @@ from uuid import uuid4
 import pytest
 from playwright.async_api import async_playwright
 
-from app.modules.discoveries.page_first import collect_elements, feature_inventory, page_fingerprint, scenario_payload
+from app.modules.discoveries.page_first import (collect_elements, feature_inventory, observe_state_changes,
+    page_fingerprint, scenario_payload)
 from app.modules.discoveries.review import ReviewRequest, Selection, apply_selections, selected_steps
 from app.workers.playwright_worker import _verify_page_first_snapshot, WorkerExecutionError
 from app.workers.step_executor import execute_step
@@ -28,23 +29,27 @@ async def test_real_browser_collect_review_assert_and_detect_change():
             page = await context.new_page()
             await page.set_content('''<h1>Main content</h1>
                 <button aria-label="Next">Next</button>
+                <button role="tab" aria-selected="false" onclick="this.setAttribute('aria-selected','true')">PC</button>
                 <button data-testid="menu" aria-label="Menu">Menu</button>
                 <span data-testid="hidden" hidden>Hidden</span>
                 <span data-testid="duplicate">One</span><span data-testid="duplicate">Two</span>
                 <input data-testid="password" value="synthetic-only">
                 <input data-testid="entry" value="synthetic-only">''')
             elements = await collect_elements(page)
-            assert {e["name"] for e in elements} == {"Main content", "Next", "Menu", "hidden", "entry"}
+            assert {e["name"] for e in elements} == {"Main content", "Next", "PC", "Menu", "hidden", "entry"}
             assert "synthetic-only" not in str(elements)
             areas, interactions = feature_inventory(elements)
             assert {area["kind"] for area in areas} == {"content"}
-            assert {item["name"] for item in interactions} == {"Next", "Menu", "entry"}
+            assert {item["name"] for item in interactions} == {"Next", "PC", "Menu", "entry"}
             assert all(item["risk"] == "READ_ONLY_CANDIDATE" for item in interactions)
+            changes = await observe_state_changes(page, elements)
+            assert len(changes) == 1 and changes[0]["before"]["ariaSelected"] == "false"
+            assert changes[0]["after"]["ariaSelected"] == "true"
             fingerprint = page_fingerprint(page.url, elements)
             result = {"elements": elements, "fingerprint": fingerprint,
                 "pages": [{"url": page.url, "fingerprint": fingerprint}]}
             payload = scenario_payload(SimpleNamespace(id=uuid4(), result=result))
-            assert len(payload["steps"]) == 4
+            assert len(payload["steps"]) == 5
             reviewed = apply_selections(payload, ReviewRequest(expectedRevision=1, selections=[
                 Selection(comparisonId=row["id"], decision="ADD") for row in payload["comparisons"]]))
             await _verify_page_first_snapshot(page, {"fingerprint": fingerprint})

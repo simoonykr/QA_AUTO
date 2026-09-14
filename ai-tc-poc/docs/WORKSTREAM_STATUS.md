@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-14
 
+## 2026-09-14 안전한 토글 상태 변화 관찰 백엔드 1차
+
+- frontend `866c564`의 영역·상호작용 근거 UI 연동을 확인하고 `stateChanges` 선택 응답을 추가했다. 시작 페이지에서 checkbox/radio/tab 또는 `aria-pressed`/`aria-selected`가 명시된 토글만 최대 10개 관찰한다.
+- 폼 내부, 비활성·숨김 요소와 logout/delete/payment 등 위험 문구는 클릭 대상에서 제외한다. 일반 버튼·링크·텍스트 입력은 실행하지 않으며 전후 URL과 ARIA/checked 상태만 저장한다. 전체 HTML·입력값·쿠키는 저장하지 않는다.
+- 과거 discovery 응답과 fingerprint는 유지하며 실제 Playwright가 확인한 변화만 `source=PLAYWRIGHT_OBSERVED`로 반환한다. 이 근거는 아직 기능 시나리오나 자동 승인으로 변환하지 않는다.
+- 검증: 실제 Chromium 포함 백엔드 전체 **119 passed**(경고 4건), TypeScript·diff 검사 통과, 실제 AI 호출 0회.
+- 다음 백엔드: 상태 변화와 영역 근거를 기능 후보로 병합하고 TC coverage enum/근거를 생성한 뒤 draft revision 채택·재검증 흐름에 연결한다.
+
 ## 2026-09-14 화면 영역·상호작용 근거 프론트 연동
 
 - 백엔드 `92a4985`의 `areas`, `interactions`와 요소의 tag/role/area/interactable 근거를 페이지 분석 결과에 연결했다. 영역별 요소 수와 상호작용 후보의 종류·이름·selector·활성 상태를 스크롤 가능한 목록으로 표시한다.

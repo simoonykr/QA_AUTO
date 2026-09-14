@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from app.core.errors import DomainError
 from app.db.models import TestCaseVersion as Version
-from app.modules.discoveries.page_first import feature_inventory, scenario_payload, page_fingerprint
+from app.modules.discoveries.page_first import feature_inventory, safe_state_candidate, scenario_payload, page_fingerprint
 from app.modules.discoveries.review import (extract, compare, apply_selections, ReviewRequest, Selection,
     selected_steps, editable, approve, RevisionRequest)
 from app.modules.test_cases.execution_plan import validate_execution_plan, ExecutionPlanError
@@ -121,6 +121,14 @@ def test_semantic_metadata_does_not_invalidate_legacy_fingerprint():
     areas, interactions = feature_inventory([enriched])
     assert areas == [{"id": "area-1", "kind": "navigation", "name": "Main", "elementIds": ["e1"]}]
     assert interactions[0]["selector"] == element["selector"]
+
+
+def test_state_observation_rejects_forms_and_dangerous_controls():
+    base = {"interactable": True, "role": "tab", "ariaSelected": "false", "insideForm": False}
+    assert safe_state_candidate({**base, "name": "PC"})
+    assert not safe_state_candidate({**base, "name": "Delete account"})
+    assert not safe_state_candidate({**base, "name": "PC", "insideForm": True})
+    assert not safe_state_candidate({**base, "name": "PC", "interactable": False})
 
 
 def test_empty_or_table_tc_is_rejected():

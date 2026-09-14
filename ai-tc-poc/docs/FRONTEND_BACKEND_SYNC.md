@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 안전한 토글 상태 변화 관찰 계약
+
+- discovery GET에 선택 필드 `stateChanges[]`가 추가된다. 각 항목은 `interactionId`, 검증 selector, `before/after`의 URL·ariaPressed·ariaSelected·checked, `source=PLAYWRIGHT_OBSERVED`를 포함한다.
+- checkbox/radio/tab과 명시적 ARIA 토글만 최대 10개 관찰한다. 폼 내부·위험 문구·일반 버튼·링크·입력은 실행하지 않는다. 변화가 실제 확인되지 않은 후보는 응답에 넣지 않는다.
+- 기존 `areas/interactions/elements`와 승인 조건은 바뀌지 않는다. 프론트는 후속 기능 후보 계약 전까지 stateChanges를 자동화 완료나 TC coverage로 표현하지 않는다.
+
 ## 2026-09-14 화면 영역·상호작용 근거 프론트 연동 완료
 
 - discovery 완료 화면에 `areas`와 `interactions`를 영역별로 표시한다. interaction의 kind/name/selector/enabled를 보여주되 `READ_ONLY_CANDIDATE`는 실행 가능한 클릭 시나리오가 아니라 관찰 근거로 안내한다.

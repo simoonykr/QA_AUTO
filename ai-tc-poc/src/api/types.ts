@@ -301,6 +301,13 @@ export interface PageFirstInteraction {
   risk: 'READ_ONLY_CANDIDATE'
   source: 'PAGE_DISCOVERY'
 }
+export interface PageFirstStateChange {
+  interactionId: string
+  selector: string
+  before: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null}
+  after: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null}
+  source: 'PLAYWRIGHT_OBSERVED'
+}
 export interface PageFirstDiscovery {
   discoveryId: string
   status: 'QUEUED' | 'SCANNING' | 'COMPLETED' | 'FAILED'
@@ -309,6 +316,7 @@ export interface PageFirstDiscovery {
   elements: PageFirstElement[]
   areas?: PageFirstArea[]
   interactions?: PageFirstInteraction[]
+  stateChanges?: PageFirstStateChange[]
   warnings: Array<{code: string; message: string}>
   scope?: {includeInternalLinks: boolean; maxDepth: number; maxPages: number}
   aiUsage: {source: 'RULE_BASED'; callCount: 0}

@@ -177,6 +177,7 @@ async def get(discovery_id: UUID, session: AsyncSession = Depends(get_session)):
             "pages": (item.result or {}).get("pages", []), "elements": (item.result or {}).get("elements", []),
             "areas": (item.result or {}).get("areas", []),
             "interactions": (item.result or {}).get("interactions", []),
+            "stateChanges": (item.result or {}).get("stateChanges", []),
             "warnings": (item.result or {}).get("warnings", []),
             "scope": {"includeInternalLinks": bool(item.settings.get("includeInternalLinks", False)),
                 "maxDepth": int(item.settings.get("maxDepth", 0)), "maxPages": int(item.settings.get("maxPages", 1))},
@@ -275,10 +276,14 @@ async def scan(discovery_id: UUID):
                                 raise
                             warnings.append({"code": "PAGE_SKIPPED", "message": "연결된 내부 페이지 1개를 안전하게 분석하지 못해 제외했습니다."})
                     warnings.insert(0, {"code": "LIMITED_READ_ONLY_DISCOVERY",
-                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 영역·상호작용은 시작 페이지의 읽기 전용 근거이며 클릭 전후 상태·iframe·AI 기능 추론은 아직 수행하지 않습니다."})
+                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 시작 페이지의 명시적 토글만 클릭 전후 상태를 관찰하며 일반 버튼·폼·위험 행동·iframe·AI 기능 추론은 수행하지 않습니다."})
                     root_areas, root_interactions = feature_inventory(root_elements)
+                    await page.goto(pages[0]["url"], wait_until="domcontentloaded", timeout=20000)
+                    await wait_for_render(page, 10_000)
+                    state_changes = await observe_state_changes(page, root_elements)
                     item.result = {"pages": pages, "elements": root_elements,
                         "areas": root_areas, "interactions": root_interactions,
+                        "stateChanges": state_changes,
                         "fingerprint": root_fingerprint, "warnings": warnings}
                 finally:
                     await browser.close()
@@ -325,6 +330,43 @@ def feature_inventory(elements: list[dict]) -> tuple[list[dict], list[dict]]:
     return list(areas_by_key.values()), interactions
 
 
+def safe_state_candidate(element: dict) -> bool:
+    if not element.get("interactable") or element.get("insideForm"):
+        return False
+    if re.search(r"logout|log out|signout|sign out|delete|remove|checkout|payment|purchase|unsubscribe|탈퇴|삭제|결제|로그아웃", element.get("name", ""), re.I):
+        return False
+    return element.get("role") in {"checkbox", "radio", "tab"} or any(
+        element.get(key) is not None for key in ("ariaPressed", "ariaSelected")
+    )
+
+
+async def observe_state_changes(page, elements: list[dict]) -> list[dict]:
+    """Click only explicit, non-form toggle controls and retain bounded state evidence."""
+    changes = []
+    for element in [item for item in elements if safe_state_candidate(item)][:10]:
+        locator = page.locator(element["selector"]) if element["selector"].startswith("[") else page.get_by_role(
+            element["role"], name=element["name"], exact=True)
+        if await locator.count() != 1:
+            continue
+        try:
+            before = {"url": page.url, "ariaPressed": await locator.get_attribute("aria-pressed"),
+                "ariaSelected": await locator.get_attribute("aria-selected"), "checked": await locator.is_checked()
+                if element.get("role") in {"checkbox", "radio"} else None}
+            await locator.click(timeout=1000)
+            await page.wait_for_timeout(150)
+            after = {"url": page.url, "ariaPressed": await locator.get_attribute("aria-pressed"),
+                "ariaSelected": await locator.get_attribute("aria-selected"), "checked": await locator.is_checked()
+                if element.get("role") in {"checkbox", "radio"} else None}
+        except Exception:
+            continue
+        if before != after:
+            changes.append({"interactionId": element["elementId"], "selector": element["selector"],
+                "before": before, "after": after, "source": "PLAYWRIGHT_OBSERVED"})
+        if before["url"] != after["url"]:
+            break
+    return changes
+
+
 async def collect_elements(page):
     nodes = page.locator('[data-testid],h1,h2,h3,button,a[href],input,select,textarea,[role]')
     elements = []
@@ -341,7 +383,9 @@ async def collect_elements(page):
             const areaKind = landmark?.getAttribute('role') || landmarkTag;
             const heading = landmark?.querySelector('h1,h2,h3');
             const areaName = landmark?.getAttribute('aria-label') || heading?.innerText || areaKind;
-            return {tag, role, areaKind, areaName: String(areaName || '').replace(/\\s+/g, ' ').trim()};
+            return {tag, role, areaKind, areaName: String(areaName || '').replace(/\\s+/g, ' ').trim(),
+                insideForm: Boolean(element.closest('form')), ariaPressed: element.getAttribute('aria-pressed'),
+                ariaSelected: element.getAttribute('aria-selected')};
         }""")
         test_id = await node.get_attribute("data-testid") or ""
         if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", test_id) and safe_text(test_id):
@@ -362,7 +406,7 @@ async def collect_elements(page):
             role = metadata.get("role", "")
             raw_name = metadata.get("name", "")
             name = safe_text(raw_name)
-            if role not in {"button", "link", "heading", "textbox", "combobox", "checkbox", "radio"}:
+            if role not in {"button", "link", "heading", "textbox", "combobox", "checkbox", "radio", "tab"}:
                 continue
             if not name or name != raw_name or '"' in name or "\\" in name:
                 continue
@@ -377,8 +421,10 @@ async def collect_elements(page):
             "tag": semantics.get("tag", ""), "role": role,
             "areaKind": safe_text(semantics.get("areaKind", "")) or "content",
             "areaName": safe_text(semantics.get("areaName", "")) or "content",
+            "insideForm": bool(semantics.get("insideForm")),
+            "ariaPressed": semantics.get("ariaPressed"), "ariaSelected": semantics.get("ariaSelected"),
             "interactable": bool(visible and enabled and role in {
-                "button", "link", "textbox", "combobox", "checkbox", "radio"})})
+                "button", "link", "textbox", "combobox", "checkbox", "radio", "tab"})})
         if len(elements) >= 50:
             break
     return elements
