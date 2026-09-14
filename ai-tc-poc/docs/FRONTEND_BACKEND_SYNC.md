@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 Temporary Staging 발견 사항
+
+- 현재 배포에서 `https://kakaogames.com/` 페이지 우선 discovery가 `COMPLETED`이면서 `title` 없음, `elements=[]`를 반환했다. 이전 main 검증의 후보 29개와 다르므로 백엔드는 배포 이미지, `0010_resource_domains`, resource allowlist 및 렌더 안정화 적용을 우선 확인한다.
+- `COMPLETED + elements=0`을 프론트가 정상 완료로 처리해 빈 기본 시나리오 생성까지 허용한다. 백엔드는 분석 불충분 warning/code를 반환하고, 프론트는 요소 0개일 때 생성·승인을 차단한다.
+- TC 입력 5개 행은 전부 TC_ONLY였다. 모든 행 제외 후 revision 7, pending 0에서 승인 버튼이 활성화됐으나 서버는 SCENARIO_EMPTY 사용자 메시지 `실행할 검증 단계가 없습니다.`로 거절했다. 프론트 승인 활성 조건에 `scenario.steps.length > 0`과 실행 선택 존재 여부를 포함한다.
+- 상세 재현과 완료 조건은 [`PAGE_FIRST_STAGING_TEST_2026-09-14.md`](PAGE_FIRST_STAGING_TEST_2026-09-14.md), 합의 UX는 [`PAGE_FIRST_USER_SCENARIO.md`](PAGE_FIRST_USER_SCENARIO.md)를 따른다.
+
 ## 2026-09-11 렌더링 리소스·시나리오 후보 확대
 
 - 환경 응답에 선택 필드 `resourceDomains`를 추가했다. `allowedDomains`는 최상위 문서 navigation에만 사용하고, 정적 하위 리소스는 두 목록의 정확한 도메인 및 하위 도메인에서만 GET/HEAD로 허용한다. Staging은 migration `0010_resource_domains`로 `cdn.jsdelivr.net`을 명시한다.

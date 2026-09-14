@@ -1,6 +1,13 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-11
+마지막 갱신: 2026-09-14
+
+## 2026-09-14 페이지 우선 Temporary Staging 사용자 흐름 검증
+
+- `geographical-kyle-screenshot-andy.trycloudflare.com`에서 로그인 → AI 시나리오 → KakaoGames 분석 → 자연어 TC 비교 → 검토 저장 → 승인 흐름을 실제 브라우저로 검증했다.
+- discovery가 `COMPLETED`였지만 제목 없음, 검증 요소 0개였다. 페이지 근거 단계 없이 KG-WEB-001 입력의 5개 행이 모두 TC_ONLY로 생성됐고, 전부 제외 후 revision 저장은 성공했으나 승인은 `실행할 검증 단계가 없습니다.`로 실패했다.
+- P0은 현재 배포의 렌더링/resource allowlist/migration 적용 여부 확인이다. P1 프론트는 요소·실행 단계 0개일 때 기본 시나리오 생성과 승인을 사전 차단하고 분석 불충분 상태를 표시해야 한다.
+- 합의 사용자 흐름은 [`PAGE_FIRST_USER_SCENARIO.md`](PAGE_FIRST_USER_SCENARIO.md), 상세 실검증 결과는 [`PAGE_FIRST_STAGING_TEST_2026-09-14.md`](PAGE_FIRST_STAGING_TEST_2026-09-14.md)를 기준으로 한다.
 
 ## 2026-09-11 KakaoGames 렌더링·페이지 시나리오 후보 보완
 
