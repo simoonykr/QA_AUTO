@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from playwright.async_api import async_playwright
 
-from app.modules.discoveries.page_first import collect_elements, page_fingerprint, scenario_payload
+from app.modules.discoveries.page_first import collect_elements, feature_inventory, page_fingerprint, scenario_payload
 from app.modules.discoveries.review import ReviewRequest, Selection, apply_selections, selected_steps
 from app.workers.playwright_worker import _verify_page_first_snapshot, WorkerExecutionError
 from app.workers.step_executor import execute_step
@@ -36,6 +36,10 @@ async def test_real_browser_collect_review_assert_and_detect_change():
             elements = await collect_elements(page)
             assert {e["name"] for e in elements} == {"Main content", "Next", "Menu", "hidden", "entry"}
             assert "synthetic-only" not in str(elements)
+            areas, interactions = feature_inventory(elements)
+            assert {area["kind"] for area in areas} == {"content"}
+            assert {item["name"] for item in interactions} == {"Next", "Menu", "entry"}
+            assert all(item["risk"] == "READ_ONLY_CANDIDATE" for item in interactions)
             fingerprint = page_fingerprint(page.url, elements)
             result = {"elements": elements, "fingerprint": fingerprint,
                 "pages": [{"url": page.url, "fingerprint": fingerprint}]}

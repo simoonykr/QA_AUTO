@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from app.core.errors import DomainError
 from app.db.models import TestCaseVersion as Version
-from app.modules.discoveries.page_first import scenario_payload, page_fingerprint
+from app.modules.discoveries.page_first import feature_inventory, scenario_payload, page_fingerprint
 from app.modules.discoveries.review import (extract, compare, apply_selections, ReviewRequest, Selection,
     selected_steps, editable, approve, RevisionRequest)
 from app.modules.test_cases.execution_plan import validate_execution_plan, ExecutionPlanError
@@ -109,6 +109,18 @@ def test_fingerprint_changes_when_observed_state_changes():
     original = page_fingerprint("https://example.test", elements)
     elements[0]["visible"] = False
     assert page_fingerprint("https://example.test", elements) != original
+
+
+def test_semantic_metadata_does_not_invalidate_legacy_fingerprint():
+    element = {"elementId": "e1", "selector": '[data-testid="menu"]', "name": "menu",
+        "matchCount": 1, "visible": True, "enabled": True}
+    original = page_fingerprint("https://example.test", [element])
+    enriched = {**element, "role": "button", "areaKind": "navigation", "areaName": "Main",
+        "interactable": True}
+    assert page_fingerprint("https://example.test", [enriched]) == original
+    areas, interactions = feature_inventory([enriched])
+    assert areas == [{"id": "area-1", "kind": "navigation", "name": "Main", "elementIds": ["e1"]}]
+    assert interactions[0]["selector"] == element["selector"]
 
 
 def test_empty_or_table_tc_is_rejected():

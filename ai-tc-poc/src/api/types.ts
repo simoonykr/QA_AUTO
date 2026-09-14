@@ -278,6 +278,28 @@ export interface PageFirstElement {
   matchCount: number
   visible: boolean
   enabled: boolean
+  tag?: string
+  role?: string
+  areaKind?: string
+  areaName?: string
+  interactable?: boolean
+}
+export interface PageFirstArea {
+  id: string
+  kind: string
+  name: string
+  elementIds: string[]
+}
+export interface PageFirstInteraction {
+  id: string
+  areaId: string
+  elementId: string
+  kind: string
+  name: string
+  selector: string
+  enabled: boolean
+  risk: 'READ_ONLY_CANDIDATE'
+  source: 'PAGE_DISCOVERY'
 }
 export interface PageFirstDiscovery {
   discoveryId: string
@@ -285,6 +307,8 @@ export interface PageFirstDiscovery {
   errorCode: string | null
   pages: Array<{url: string; title: string; fingerprint: string; depth?: number; elementCount?: number}>
   elements: PageFirstElement[]
+  areas?: PageFirstArea[]
+  interactions?: PageFirstInteraction[]
   warnings: Array<{code: string; message: string}>
   scope?: {includeInternalLinks: boolean; maxDepth: number; maxPages: number}
   aiUsage: {source: 'RULE_BASED'; callCount: 0}

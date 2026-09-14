@@ -175,6 +175,8 @@ async def get(discovery_id: UUID, session: AsyncSession = Depends(get_session)):
     item = await find_discovery(session, discovery_id)
     return {"discoveryId": str(item.id), "status": item.status, "errorCode": item.error_code,
             "pages": (item.result or {}).get("pages", []), "elements": (item.result or {}).get("elements", []),
+            "areas": (item.result or {}).get("areas", []),
+            "interactions": (item.result or {}).get("interactions", []),
             "warnings": (item.result or {}).get("warnings", []),
             "scope": {"includeInternalLinks": bool(item.settings.get("includeInternalLinks", False)),
                 "maxDepth": int(item.settings.get("maxDepth", 0)), "maxPages": int(item.settings.get("maxPages", 1))},
@@ -273,8 +275,10 @@ async def scan(discovery_id: UUID):
                                 raise
                             warnings.append({"code": "PAGE_SKIPPED", "message": "연결된 내부 페이지 1개를 안전하게 분석하지 못해 제외했습니다."})
                     warnings.insert(0, {"code": "LIMITED_READ_ONLY_DISCOVERY",
-                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 시나리오 근거는 시작 페이지 요소로 제한되며 클릭 전후 상태·iframe·AI 기능 추론은 아직 수행하지 않습니다."})
+                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 영역·상호작용은 시작 페이지의 읽기 전용 근거이며 클릭 전후 상태·iframe·AI 기능 추론은 아직 수행하지 않습니다."})
+                    root_areas, root_interactions = feature_inventory(root_elements)
                     item.result = {"pages": pages, "elements": root_elements,
+                        "areas": root_areas, "interactions": root_interactions,
                         "fingerprint": root_fingerprint, "warnings": warnings}
                 finally:
                     await browser.close()
@@ -289,7 +293,36 @@ async def scan(discovery_id: UUID):
 
 
 def page_fingerprint(url, elements):
-    return hashlib.sha256(json.dumps({"url": url, "elements": elements}, sort_keys=True).encode()).hexdigest()
+    # Keep fingerprints compatible with discoveries created before semantic
+    # inventory metadata was added.
+    observed = [{key: element.get(key) for key in (
+        "elementId", "selector", "name", "matchCount", "visible", "enabled"
+    ) if key in element} for element in elements]
+    return hashlib.sha256(json.dumps({"url": url, "elements": observed}, sort_keys=True).encode()).hexdigest()
+
+
+def feature_inventory(elements: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Group observed elements without clicking or inventing page semantics."""
+    areas_by_key: dict[tuple[str, str], dict] = {}
+    interactions = []
+    for element in elements:
+        kind = element.get("areaKind") or "content"
+        name = element.get("areaName") or kind
+        key = (kind, name)
+        area = areas_by_key.get(key)
+        if area is None:
+            area = {"id": f"area-{len(areas_by_key) + 1}", "kind": kind,
+                "name": name, "elementIds": []}
+            areas_by_key[key] = area
+        area["elementIds"].append(element["elementId"])
+        if not element.get("interactable"):
+            continue
+        interactions.append({"id": f"interaction-{len(interactions) + 1}", "areaId": area["id"],
+            "elementId": element["elementId"], "kind": element.get("role") or element.get("tag"),
+            "name": element.get("name", ""), "selector": element.get("selector", ""),
+            "enabled": bool(element.get("enabled")), "risk": "READ_ONLY_CANDIDATE",
+            "source": "PAGE_DISCOVERY"})
+    return list(areas_by_key.values()), interactions
 
 
 async def collect_elements(page):
@@ -297,6 +330,19 @@ async def collect_elements(page):
     elements = []
     for index in range(min(await nodes.count(), 200)):
         node = nodes.nth(index)
+        semantics = await node.evaluate("""element => {
+            const tag = element.tagName.toLowerCase();
+            const implicit = {a:'link',button:'button',h1:'heading',h2:'heading',h3:'heading',
+                input:'textbox',select:'combobox',textarea:'textbox'}[tag] || '';
+            const role = element.getAttribute('role') || implicit;
+            const landmark = element.closest('header,nav,main,footer,section,form,[role="banner"],'
+                + '[role="navigation"],[role="main"],[role="contentinfo"],[role="dialog"]');
+            const landmarkTag = landmark?.tagName.toLowerCase() || 'content';
+            const areaKind = landmark?.getAttribute('role') || landmarkTag;
+            const heading = landmark?.querySelector('h1,h2,h3');
+            const areaName = landmark?.getAttribute('aria-label') || heading?.innerText || areaKind;
+            return {tag, role, areaKind, areaName: String(areaName || '').replace(/\\s+/g, ' ').trim()};
+        }""")
         test_id = await node.get_attribute("data-testid") or ""
         if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", test_id) and safe_text(test_id):
             selector = f'[data-testid="{test_id}"]'
@@ -324,8 +370,15 @@ async def collect_elements(page):
             locator = page.get_by_role(role, name=name, exact=True)
         if await locator.count() != 1:
             continue
+        visible, enabled = await locator.is_visible(), await locator.is_enabled()
+        role = semantics.get("role", "")
         elements.append({"elementId": f"element-{index + 1}", "selector": selector,
-            "name": name, "matchCount": 1, "visible": await locator.is_visible(), "enabled": await locator.is_enabled()})
+            "name": name, "matchCount": 1, "visible": visible, "enabled": enabled,
+            "tag": semantics.get("tag", ""), "role": role,
+            "areaKind": safe_text(semantics.get("areaKind", "")) or "content",
+            "areaName": safe_text(semantics.get("areaName", "")) or "content",
+            "interactable": bool(visible and enabled and role in {
+                "button", "link", "textbox", "combobox", "checkbox", "radio"})})
         if len(elements) >= 50:
             break
     return elements

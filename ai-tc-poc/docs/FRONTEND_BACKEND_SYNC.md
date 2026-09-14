@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 화면 영역·상호작용 근거 계약
+
+- `GET /api/v1/page-discoveries/{id}`에 선택 필드 `areas`, `interactions`가 추가됐다. `areas`는 `id/kind/name/elementIds`, `interactions`는 `id/areaId/elementId/kind/name/selector/enabled/risk/source`를 반환한다.
+- `elements`에도 선택 필드 `tag`, `role`, `areaKind`, `areaName`, `interactable`가 추가됐다. 기존 필드와 fingerprint/Worker 검증은 호환된다.
+- `risk=READ_ONLY_CANDIDATE`는 자동 실행 가능 판정이 아니다. 프론트는 클릭 시나리오나 coverage 결과로 과장하지 말고, 후속 상태 변화 검증 계약 전까지 관찰 근거로만 표시해야 한다.
+- AI 호출은 0회이며 클릭·입력·iframe 검증·기능 추론은 아직 수행하지 않는다. 다음 연동 요청은 백엔드의 상태 변화와 `COVERED|PARTIAL|MISSING_IN_TC|TC_ONLY|NOT_AUTOMATABLE` 계약 이후다.
+
 ## 2026-09-14 bounded crawl 프론트 연동 완료
 
 - `includeInternalLinks`, `maxDepth`, `maxPages` 입력과 응답 `scope`, `pages[].depth`, `pages[].elementCount` 표시를 연결했다. 요청 기본값과 서버 제약은 bounded crawl 1차 계약을 따른다.

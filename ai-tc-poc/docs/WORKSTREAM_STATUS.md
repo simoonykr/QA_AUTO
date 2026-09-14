@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-14
 
+## 2026-09-14 화면 영역·상호작용 근거 백엔드 1차
+
+- frontend `ac01dae`의 bounded discovery 설정·진행 표시를 확인하고, 시작 페이지에서 관찰한 DOM 랜드마크 기반 `areas`와 표시·활성 상태가 확인된 `interactions` 응답을 추가했다.
+- 영역은 header/nav/main/footer/section/form/dialog 등 실제 근거와 접근 가능한 이름만 사용한다. 상호작용은 기존 검증 selector를 참조하는 읽기 전용 후보이며 클릭·입력·AI 의미 추론·임의 selector/URL 생성은 하지 않는다.
+- 요소에 `tag`, `role`, `areaKind`, `areaName`, `interactable` 선택 필드를 추가했다. fingerprint는 기존 6개 관찰 필드만 사용해 과거 discovery/Worker 검증 호환성을 유지한다. 기존 클라이언트에는 모두 선택 필드라 호환된다.
+- 검증: 실제 Chromium 포함 백엔드 전체 **118 passed**(경고 4건), TypeScript 검사 통과, 실제 AI 호출 0회. 프로덕션 빌드는 로컬 `node_modules`의 선택적 Rolldown native binding 누락으로 완료하지 못했으며 이번 소스 변경과 무관한 환경 문제다.
+- 다음 백엔드: 위험 행동을 명시적으로 제외한 클릭 전후 상태 차이 수집, 영역별 기능 후보 병합, TC coverage enum과 근거 계약. 현재 `interactions`를 실행 가능 시나리오로 취급하면 안 된다.
+
 ## 2026-09-14 bounded crawl 프론트 연동
 
 - 백엔드 `c3e540c`의 선택 필드 `includeInternalLinks`, `maxDepth`, `maxPages`를 페이지 우선 분석 화면에 연결했다. 기본은 기존과 동일한 현재 페이지/깊이 0/1페이지이며, 내부 링크 선택 시 깊이 1/최대 3페이지로 시작해 서버 제한 안에서 조정한다.
