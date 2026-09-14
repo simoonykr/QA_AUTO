@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 화면 영역·상호작용 근거 프론트 연동 완료
+
+- discovery 완료 화면에 `areas`와 `interactions`를 영역별로 표시한다. interaction의 kind/name/selector/enabled를 보여주되 `READ_ONLY_CANDIDATE`는 실행 가능한 클릭 시나리오가 아니라 관찰 근거로 안내한다.
+- `PageFirstElement`의 신규 선택 필드는 기존 표시 assertion과 selector 근거를 보조하며 승인 조건은 변경하지 않았다.
+- 실제 API 요청의 `maxPages:1` 강제 덮어쓰기를 제거했다. `includeInternalLinks/maxDepth/maxPages` 사용자 선택을 그대로 보내고 기본값만 1로 보정한다.
+- Mock discovery에도 area/interaction 예시와 scope를 추가했다. 추가 endpoint·enum 변경 요청은 없다.
+
 ## 2026-09-14 화면 영역·상호작용 근거 계약
 
 - `GET /api/v1/page-discoveries/{id}`에 선택 필드 `areas`, `interactions`가 추가됐다. `areas`는 `id/kind/name/elementIds`, `interactions`는 `id/areaId/elementId/kind/name/selector/enabled/risk/source`를 반환한다.

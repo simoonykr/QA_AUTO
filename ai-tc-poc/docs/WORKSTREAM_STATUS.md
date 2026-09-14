@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-14
 
+## 2026-09-14 화면 영역·상호작용 근거 프론트 연동
+
+- 백엔드 `92a4985`의 `areas`, `interactions`와 요소의 tag/role/area/interactable 근거를 페이지 분석 결과에 연결했다. 영역별 요소 수와 상호작용 후보의 종류·이름·selector·활성 상태를 스크롤 가능한 목록으로 표시한다.
+- `READ_ONLY_CANDIDATE`를 클릭 테스트나 자동화 가능 시나리오로 표현하지 않고, 상태 변화 검증 전의 관찰 근거라는 지속 안내를 표시한다.
+- 실제 API client가 프론트에서 선택한 `maxPages`를 항상 1로 덮어쓰던 문제를 수정했다. 선택한 bounded crawl 범위가 그대로 POST 요청에 전달되며 `maxAiCalls=0`은 유지한다. Mock도 신규 근거 필드를 반환한다.
+- 검증: TypeScript, production build, Firebase Mock build, git diff check. 실제 AI 호출 0회.
+- 다음 프론트 연동은 클릭 전후 상태 변화, 영역별 기능 후보와 coverage enum이 백엔드 응답에 추가된 뒤 진행한다.
+
 ## 2026-09-14 화면 영역·상호작용 근거 백엔드 1차
 
 - frontend `ac01dae`의 bounded discovery 설정·진행 표시를 확인하고, 시작 페이지에서 관찰한 DOM 랜드마크 기반 `areas`와 표시·활성 상태가 확인된 `interactions` 응답을 추가했다.
