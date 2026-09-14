@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-14 기능 커버리지·누락 TC 보강 요청
+
+- 프론트는 현 계약의 `PAGE_ONLY`를 `TC 누락 제안`으로 표시하고, 검증된 근거를 `ADD`로 즉시 review revision에 저장하는 커버리지 UX를 반영했다. endpoint와 enum 변경은 없다.
+- 다음 백엔드 응답은 요소 수가 아니라 `areas`, `interactions`, `scenarioCandidates`, `coverage`를 반환해야 한다. coverage는 `COVERED|PARTIAL|MISSING_IN_TC|TC_ONLY|NOT_AUTOMATABLE`, 각 제안은 안정 ID, 기능 영역, 목적, 사전 상태, action/assertion 단계, 근거 element ID, confidence, automationStatus를 포함한다.
+- 분석 요청은 현재 페이지/내부 링크 여부, maxPages, maxDepth를 명시하며 navigation/resource allowlist와 위험 행동 정책을 계속 적용한다. 클릭 전후 DOM·URL·활성 상태·목록 변화는 Playwright가 검증하고 전체 HTML·입력값·쿠키는 저장하지 않는다.
+- 제안 채택은 중복 없는 새 draft revision으로 저장하고 selector/fingerprint를 재검증한다. 승인된 READY 버전은 변경하지 않으며 새 versionId만 실행에 사용한다. 실제 AI 활성화 전에는 규칙 기반/0회와 기능 제한을 응답에 명시한다.
+- 이 계약이 추가되기 전 프론트는 PAGE_ONLY 표시 assertion만 다루며, 이를 전체 기능 테스트 커버리지로 표시하지 않는다.
+
 ## 2026-09-14 P0 후속 배포 확인
 
 - `3d16ff8`까지 Temporary Staging 재배포 완료. `0010_resource_domains`가 적용됐고 Staging의 `resourceDomains=["cdn.jsdelivr.net"]` 응답 계약을 유지한다.

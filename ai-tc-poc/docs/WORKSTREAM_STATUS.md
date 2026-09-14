@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-14
 
+## 2026-09-14 페이지 커버리지·TC 누락 즉시 보강 프론트
+
+- 페이지 우선 검토 화면에 페이지 후보, TC 일치, TC 누락 제안, TC만 존재, 검토 진행을 한눈에 보는 커버리지 요약을 추가했다.
+- 기존 PAGE_ONLY를 사용자에게 `TC 누락 제안`으로 명확히 표시하고 `TC 보강 초안에 추가` 선택을 제공한다. 선택은 기존 서버 review API를 통해 draft revision에 즉시 저장되며, 전체 검토 후 승인·실행 설정·Worker 흐름을 그대로 사용한다. 원본 TC 영구 반영은 백엔드 upsert 계약이 추가된 뒤 연결한다.
+- 요소 목록과 표시 assertion을 기능 테스트로 과장하지 않는다. 현재는 검증된 페이지 근거의 표시 시나리오이며, 기능 영역·클릭 전후 상태·내부 페이지 탐색·기능 단위 TC coverage는 백엔드 후속 계약이 필요하다.
+- 프론트 검증: TypeScript, production build, Firebase Mock build, git diff check. 실제 AI 호출 0회.
+- 백엔드 우선 요청: bounded crawl 설정, 기능 영역/상호작용/상태 변화 기반 시나리오, `COVERED|PARTIAL|MISSING_IN_TC|TC_ONLY|NOT_AUTOMATABLE` coverage와 근거, 제안 채택 시 중복 없는 draft revision 반영·selector 재검증 계약. 상세 기준은 `QA_NATURAL_LANGUAGE_AUTOMATION_REQUIREMENTS.md`의 2026-09-14 절을 따른다.
+
 ## 2026-09-14 정기 main 연동·P0 배포 확인
 
 - frontend `3d16ff8`의 빈 discovery/실행 선택 방어와 `ce18860`의 navigation/resource allowlist 분리 변경을 확인하고 최신 main을 Temporary Staging에 배포했다.
