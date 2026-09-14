@@ -1,6 +1,14 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-14
+마지막 갱신: 2026-09-15
+
+## 2026-09-15 안전한 상태 변화 근거 프론트 연동
+
+- 백엔드 `6483d6d`의 선택 응답 `stateChanges`를 분석 결과에 연결했다. 영역별 상호작용 후보에 실제 Playwright가 관찰한 URL·`aria-pressed`·`aria-selected`·`checked` 전후 차이만 표시한다.
+- 상단 요약에 상태 변화 수를 추가하고, 변화가 확인된 interaction 아래에 근거를 배치했다. 이를 기능 시나리오나 자동화 커버리지로 오인하지 않도록 TC 보강 후보에는 아직 포함하지 않는다는 안내를 유지한다.
+- 초기·완료 Mock 응답에도 `stateChanges`를 추가해 토글 전후 표시를 회귀 검증할 수 있게 했다.
+- 검증: TypeScript, production build, Firebase Mock build, git diff check. 실제 AI 호출 0회.
+- 다음 프론트 연동은 백엔드가 영역·상태 변화를 기능 후보와 coverage enum으로 병합한 뒤 TC 누락 제안 및 draft revision 저장에 연결한다.
 
 ## 2026-09-14 안전한 토글 상태 변화 관찰 백엔드 1차
 

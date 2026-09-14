@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-15 안전한 상태 변화 근거 프론트 연동 완료
+
+- discovery 응답의 선택 필드 `stateChanges[]`를 영역별 interaction에 매핑하고, 실제로 달라진 URL·ARIA·checked 전후 값만 표시한다. 응답이 없는 기존 discovery도 기존 UI로 정상 동작한다.
+- 상태 변화 수와 `PLAYWRIGHT_OBSERVED` 출처를 표시하되, 기능 시나리오·TC coverage·Worker 실행 단계로 변환하지 않는다. 현재 승인 조건과 실행 근거는 변경하지 않았다.
+- Mock에는 `aria-pressed=false → true` 관찰 예시를 추가했다. 추가 API 변경 요청은 없으며 다음 연동 대기는 기능 후보와 coverage enum 계약이다.
+
 ## 2026-09-14 안전한 토글 상태 변화 관찰 계약
 
 - discovery GET에 선택 필드 `stateChanges[]`가 추가된다. 각 항목은 `interactionId`, 검증 selector, `before/after`의 URL·ariaPressed·ariaSelected·checked, `source=PLAYWRIGHT_OBSERVED`를 포함한다.

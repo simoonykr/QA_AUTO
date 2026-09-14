@@ -222,7 +222,7 @@ export const api = {
   async startPageFirstDiscovery(input:PageFirstStartRequest):Promise<{discoveryId:string;status:'QUEUED'}> {
     if (!USE_MOCK_API) return request('/page-discoveries',{method:'POST',body:JSON.stringify({...input,maxPages:input.maxPages??1,maxAiCalls:0})})
     const discoveryId=crypto.randomUUID()
-    mockPageFirstDiscoveries.set(discoveryId,{polls:0,value:{discoveryId,status:'QUEUED',errorCode:null,pages:[{url:input.startUrl,title:'',fingerprint:'',depth:0,elementCount:0}],elements:[],areas:[],interactions:[],warnings:[],scope:{includeInternalLinks:input.includeInternalLinks??false,maxDepth:input.maxDepth??0,maxPages:input.maxPages??1},aiUsage:{source:'RULE_BASED',callCount:0}}})
+    mockPageFirstDiscoveries.set(discoveryId,{polls:0,value:{discoveryId,status:'QUEUED',errorCode:null,pages:[{url:input.startUrl,title:'',fingerprint:'',depth:0,elementCount:0}],elements:[],areas:[],interactions:[],stateChanges:[],warnings:[],scope:{includeInternalLinks:input.includeInternalLinks??false,maxDepth:input.maxDepth??0,maxPages:input.maxPages??1},aiUsage:{source:'RULE_BASED',callCount:0}}})
     return {discoveryId,status:'QUEUED'}
   },
 
@@ -235,7 +235,7 @@ export const api = {
     if(item.polls>=3)item.value={...item.value,status:'COMPLETED',pages:[{url:item.value.pages[0]?.url??'https://staging.storefront.test',title:'Storefront',fingerprint:'mock-page-first-fingerprint',depth:0,elementCount:2}],elements:[
       {elementId:'element-1',selector:'[data-testid="game-filter-pc"]',name:'#PC 필터',matchCount:1,visible:true,enabled:true,tag:'button',role:'button',areaKind:'main',areaName:'전체게임 필터',interactable:true},
       {elementId:'element-2',selector:'[data-testid="game-list"]',name:'전체게임 목록',matchCount:1,visible:true,enabled:true,tag:'section',areaKind:'main',areaName:'전체게임',interactable:false},
-    ],areas:[{id:'area-main',kind:'main',name:'전체게임',elementIds:['element-1','element-2']}],interactions:[{id:'interaction-1',areaId:'area-main',elementId:'element-1',kind:'button',name:'#PC 필터',selector:'[data-testid="game-filter-pc"]',enabled:true,risk:'READ_ONLY_CANDIDATE',source:'PAGE_DISCOVERY'}]}
+    ],areas:[{id:'area-main',kind:'main',name:'전체게임',elementIds:['element-1','element-2']}],interactions:[{id:'interaction-1',areaId:'area-main',elementId:'element-1',kind:'button',name:'#PC 필터',selector:'[data-testid="game-filter-pc"]',enabled:true,risk:'READ_ONLY_CANDIDATE',source:'PAGE_DISCOVERY'}],stateChanges:[{interactionId:'interaction-1',selector:'[data-testid="game-filter-pc"]',before:{url:item.value.pages[0]?.url??'https://staging.storefront.test',ariaPressed:'false',ariaSelected:null,checked:null},after:{url:item.value.pages[0]?.url??'https://staging.storefront.test',ariaPressed:'true',ariaSelected:null,checked:null},source:'PLAYWRIGHT_OBSERVED'}]}
     return structuredClone(item.value)
   },
 
