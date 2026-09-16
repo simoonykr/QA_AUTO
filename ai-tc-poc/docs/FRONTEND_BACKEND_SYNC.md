@@ -325,6 +325,13 @@ assertion 검증 규칙:
 - 아직 일반 버튼 클릭 후 목록·카드·URL fingerprint 재현과 Worker 실행 계획 연결이 완료되지 않았으므로 후보의 `automationStatus`는 `MANUAL_REVIEW_REQUIRED`이다. 프론트는 이를 즉시 실행 가능한 상태로 표시하거나 승인·실행하지 않는다.
 - 다음 백엔드 작업은 안전한 일반 버튼 클릭 전후의 영역·목록 fingerprint 관찰, 상태 복구, click/assert 실행 계획 저장 및 Worker 재현이다.
 
+### 페이지 기능 후보·TC 커버리지 프론트 연결 (2026-09-16)
+
+- discovery와 scenario 응답의 `scenarioCandidates`, `coverage`를 동일한 기능 후보 카드와 5종 커버리지 요약으로 표시한다. TC 비교 뒤 서버가 갱신한 상태도 즉시 반영한다.
+- 후보별 영역·목적·click/assert 단계·근거 개수·신뢰도를 표시하며 `MANUAL_REVIEW_REQUIRED`는 실행 가능이나 승인 완료로 표현하지 않는다.
+- Mock은 관찰된 토글 후보와 `MISSING_IN_TC` 집계를 제공하고, TC에 `#PC` 필터가 포함되면 `COVERED`로 전환해 회귀를 확인할 수 있다.
+- 프론트 타입 검사와 프로덕션 빌드는 통과했다. 다음 연동은 백엔드의 일반 버튼 영역 fingerprint 및 Worker 재현 계약 완료 후 진행한다.
+
 - 구조화 단계는 `targetDescription`, `selectorHint`, `resolutionStatus`를 반환한다. 원문 근거가 없는 selector는 저장하지 않으며 초기 상태는 `UNRESOLVED`이다.
 - `POST /api/v1/test-case-versions/{versionId}/discover`: `{ environmentId, maxPages: 1..3, maxAiCalls: 0..1 }`, HTTP 202 `{ discoveryId, status: "QUEUED" }`
 - `GET /api/v1/test-case-versions/{versionId}/discoveries/{discoveryId}`: `QUEUED → PROVISIONING → SCANNING → MAPPING → VALIDATING → COMPLETED|NEEDS_REVIEW|FAILED` 상태와 페이지 fingerprint, 단계별 후보를 반환한다.

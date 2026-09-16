@@ -257,6 +257,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - TC 비교·편집 Mock UX 추가: `MATCHED | TC_ONLY | CONFLICT | NOT_AUTOMATABLE` 상태, 추가·제외·수동 검증·문구 수정 선택, 로컬 revision 증가와 미결정 건수 표시. 분석 입력 변경 시 과거 discovery·scenario·편집 상태를 폐기하고 늦은 응답을 무시하며, 서버 revision·승인·실행은 계약 전까지 차단
 - 백엔드 2차 시나리오 비교·검토·승인 API 연결: 서버 `comparisons` 전체 상태와 `PAGE_ONLY` 표시, 선택별 PATCH 저장, 서버 revision 기준 갱신, `SCENARIO_REVISION_CONFLICT` 발생 시 최신 상태 조회 후 수동 재검토, 승인 응답 `versionId`를 기존 실행 설정·계획·Worker 흐름에 전달
 - Mock API도 비교·선택·revision·승인 흐름을 동일하게 재현하며 근거 없는 ADD를 UI에서 차단. 수동·제외 항목은 실행 통과 범위가 아님을 유지하고 실제 AI 호출은 0회
+- 페이지 기능 후보·TC 커버리지 UI 연결: `scenarioCandidates`의 영역·목적·click/assert 단계·관찰 근거·신뢰도와 `coverage` 5종 집계를 표시하고, `MANUAL_REVIEW_REQUIRED` 후보는 승인·자동 실행 대상이 아님을 명시. Mock discovery/TC 비교도 `MISSING_IN_TC → COVERED` 변화를 재현
 
 백엔드에 요청:
 
@@ -362,6 +363,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 다중 선택·일괄 구조화/승인은 단일 TC 전체 흐름 실환경 검증 후 확장
 
 ## 최근 검증
+
+- 2026-09-16 페이지 기능 후보·커버리지 프론트 연결: 번들 Node 런타임으로 TypeScript 검사와 Vite 8 프로덕션 빌드 통과, `git diff --check` 통과. 시스템 기본 Node는 기존 Windows 접근 위반 `3221225477`이 계속 재현됐다. 실제 AI 호출 0회다.
 
 - 2026-09-16 페이지 기능 후보·커버리지 백엔드 계약: Playwright가 실제로 관찰한 상태 변화만 `scenarioCandidates`로 승격하고 영역·목적·click/assert 단계·근거 ID를 반환한다. TC 비교 후 `COVERED`, `PARTIAL`, `MISSING_IN_TC`를 보수적으로 계산하며 전체 상태 집계 계약도 추가했다. 임의 selector·URL·기능은 생성하지 않고 Worker 재현 연결 전까지 `MANUAL_REVIEW_REQUIRED`를 유지한다. 보존 중인 OneDrive 충돌 복사본을 제외한 정식 백엔드 전체 테스트 `111 passed, 1 skipped`(경고 4건), TypeScript 타입 검사 및 `git diff --check` 통과, 실제 AI 호출 0회다.
 
