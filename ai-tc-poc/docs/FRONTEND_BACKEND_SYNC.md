@@ -336,6 +336,13 @@ assertion 검증 규칙:
 - Worker는 기능 click 직전 `INTERACTION_BEFORE_SCREENSHOT`, 직후 `INTERACTION_AFTER_SCREENSHOT` PNG를 저장한다. 최종 성공·실패 증적 계약도 그대로 유지한다.
 - 프론트 다음 연결: `AUTOMATABLE` 카드의 `추가 후 테스트`에서 후보 apply API 호출 → 반환 revision/coverage/selectedCandidateIds 반영 → 기존 승인 API 호출 → 반환 versionId로 실행 설정 이동. `MANUAL_REVIEW_REQUIRED`는 apply 버튼을 비활성화한다.
 
+### 일반 버튼 기능 후보 실행 프론트 연결 완료 (2026-09-16)
+
+- 후보 apply API를 연결하고 응답의 최신 revision, coverage, selectedCandidateIds, warnings를 화면 상태에 반영한다.
+- `AUTOMATABLE` 후보만 추가할 수 있고 `MANUAL_REVIEW_REQUIRED`, 이미 선택된 후보, 요청 처리 중 중복 클릭은 비활성화한다. 409 revision 충돌은 기존 최신 시나리오 재조회 흐름으로 복구한다.
+- 관찰 근거에 변경 영역의 항목 수와 시작 상태 복구 여부를 표시한다. 적용 완료 후보는 카드와 버튼 상태로 구분되며 기존 승인 API가 반환한 versionId를 실행 설정으로 전달한다.
+- Mock도 영역 fingerprint 변화·복구 성공·후보 적용·승인 후 `AUTOMATABLE`을 재현한다. 번들 Node 기준 TypeScript와 프로덕션 빌드가 통과했다.
+
 ### 페이지 기능 후보·TC 커버리지 프론트 연결 (2026-09-16)
 
 - discovery와 scenario 응답의 `scenarioCandidates`, `coverage`를 동일한 기능 후보 카드와 5종 커버리지 요약으로 표시한다. TC 비교 뒤 서버가 갱신한 상태도 즉시 반영한다.

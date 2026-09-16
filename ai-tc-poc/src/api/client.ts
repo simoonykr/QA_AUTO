@@ -235,7 +235,7 @@ export const api = {
     if(item.polls>=3)item.value={...item.value,status:'COMPLETED',pages:[{url:item.value.pages[0]?.url??'https://staging.storefront.test',title:'Storefront',fingerprint:'mock-page-first-fingerprint',depth:0,elementCount:2}],elements:[
       {elementId:'element-1',selector:'[data-testid="game-filter-pc"]',name:'#PC 필터',matchCount:1,visible:true,enabled:true,tag:'button',role:'button',areaKind:'main',areaName:'전체게임 필터',interactable:true},
       {elementId:'element-2',selector:'[data-testid="game-list"]',name:'전체게임 목록',matchCount:1,visible:true,enabled:true,tag:'section',areaKind:'main',areaName:'전체게임',interactable:false},
-    ],areas:[{id:'area-main',kind:'main',name:'전체게임',elementIds:['element-1','element-2']}],interactions:[{id:'interaction-1',areaId:'area-main',elementId:'element-1',kind:'button',name:'#PC 필터',selector:'[data-testid="game-filter-pc"]',enabled:true,risk:'READ_ONLY_CANDIDATE',source:'PAGE_DISCOVERY'}],stateChanges:[{id:'state-change-1',interactionId:'interaction-1',selector:'[data-testid="game-filter-pc"]',before:{url:item.value.pages[0]?.url??'https://staging.storefront.test',ariaPressed:'false',ariaSelected:null,checked:null},after:{url:item.value.pages[0]?.url??'https://staging.storefront.test',ariaPressed:'true',ariaSelected:null,checked:null},source:'PLAYWRIGHT_OBSERVED'}],scenarioCandidates:[{id:'function-candidate-1',areaId:'area-main',areaName:'전체게임',purpose:'#PC 필터를 선택하면 활성 상태가 변경된다.',preconditions:['전체게임 영역이 표시되어야 합니다.'],steps:[{action:'click',interactionId:'interaction-1',selector:'[data-testid="game-filter-pc"]'},{action:'assert',assertion:{type:'observed_state',changedFields:['ariaPressed'],expected:{ariaPressed:'true'}}}],evidence:{elementIds:['element-1'],interactionIds:['interaction-1'],stateChangeIds:['state-change-1']},automationStatus:'MANUAL_REVIEW_REQUIRED',confidence:.96,coverage:'MISSING_IN_TC',source:'RULE_BASED_OBSERVED'}],coverage:{COVERED:0,PARTIAL:0,MISSING_IN_TC:1,TC_ONLY:0,NOT_AUTOMATABLE:0},warnings:[{code:'LIMITED_READ_ONLY_DISCOVERY',message:'안전한 읽기 전용 범위만 분석했습니다. 외부 이동과 위험 동작은 제외됩니다.'}]}
+    ],areas:[{id:'area-main',kind:'main',name:'전체게임',elementIds:['element-1','element-2']}],interactions:[{id:'interaction-1',areaId:'area-main',elementId:'element-1',kind:'button',name:'#PC 필터',selector:'[data-testid="game-filter-pc"]',enabled:true,risk:'READ_ONLY_CANDIDATE',source:'PAGE_DISCOVERY'}],stateChanges:[{id:'state-change-1',interactionId:'interaction-1',selector:'[data-testid="game-filter-pc"]',before:{url:item.value.pages[0]?.url??'https://staging.storefront.test',ariaPressed:'false',ariaSelected:null,checked:null,pageFingerprint:'mock-page-before'},after:{url:item.value.pages[0]?.url??'https://staging.storefront.test',ariaPressed:'true',ariaSelected:null,checked:null,pageFingerprint:'mock-page-after'},changedAreas:[{kind:'main',name:'전체게임',beforeItemCount:24,afterItemCount:8,beforeFingerprint:'mock-area-before',afterFingerprint:'mock-area-after'}],restored:true,source:'PLAYWRIGHT_OBSERVED'}],scenarioCandidates:[{id:'function-candidate-1',areaId:'area-main',areaName:'전체게임',purpose:'#PC 필터를 선택하면 활성 상태와 게임 목록이 변경된다.',preconditions:['전체게임 영역이 표시되어야 합니다.'],steps:[{action:'click',interactionId:'interaction-1',selector:'[data-testid="game-filter-pc"]'},{action:'assert',assertion:{type:'observed_state',changedFields:['ariaPressed','changedAreas'],expected:{ariaPressed:'true',changedAreas:[{kind:'main',name:'전체게임',beforeItemCount:24,afterItemCount:8,beforeFingerprint:'mock-area-before',afterFingerprint:'mock-area-after'}]}}}],evidence:{elementIds:['element-1'],interactionIds:['interaction-1'],stateChangeIds:['state-change-1']},automationStatus:'AUTOMATABLE',confidence:.96,coverage:'MISSING_IN_TC',source:'RULE_BASED_OBSERVED'}],coverage:{COVERED:0,PARTIAL:0,MISSING_IN_TC:1,TC_ONLY:0,NOT_AUTOMATABLE:0},warnings:[{code:'LIMITED_READ_ONLY_DISCOVERY',message:'안전한 읽기 전용 범위만 분석했습니다. 외부 이동과 위험 동작은 제외됩니다.'}]}
     return structuredClone(item.value)
   },
 
@@ -283,6 +283,21 @@ export const api = {
     mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
   },
 
+  async applyPageScenarioCandidate(scenarioId:string,candidateId:string,input:ScenarioApproveRequest):Promise<PageScenarioDraft> {
+    if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}/candidates/${encodeURIComponent(candidateId)}/apply`,{method:'POST',body:JSON.stringify(input)})
+    const current=await this.getPageScenario(scenarioId)
+    if(current.revision!==input.expectedRevision)throw new ApiError({code:'SCENARIO_REVISION_CONFLICT',message:'최신 시나리오를 다시 조회해 주세요.',requestId:'mock',retryable:false},409)
+    if(current.status==='READY')throw new ApiError({code:'SCENARIO_ALREADY_APPROVED',message:'승인된 시나리오는 변경할 수 없습니다.',requestId:'mock',retryable:false},409)
+    const candidate=current.scenarioCandidates?.find(item=>item.id===candidateId)
+    if(!candidate)throw new ApiError({code:'SCENARIO_CANDIDATE_NOT_FOUND',message:'기능 후보를 찾을 수 없습니다.',requestId:'mock',retryable:false},404)
+    if(candidate.automationStatus!=='AUTOMATABLE')throw new ApiError({code:'SCENARIO_CANDIDATE_NOT_AUTOMATABLE',message:'상태 복구와 근거 검증이 완료된 후보만 실행 계획에 추가할 수 있습니다.',requestId:'mock',retryable:false},422)
+    const selectedCandidateIds=[...new Set([...(current.selectedCandidateIds??[]),candidateId])]
+    const scenarioCandidates=current.scenarioCandidates?.map(item=>item.id===candidateId?{...item,coverage:'COVERED' as const}:item)
+    const coverage={...(current.coverage??{COVERED:0,PARTIAL:0,MISSING_IN_TC:0,TC_ONLY:0,NOT_AUTOMATABLE:0}),COVERED:scenarioCandidates?.filter(item=>item.coverage==='COVERED').length??0,MISSING_IN_TC:scenarioCandidates?.filter(item=>item.coverage==='MISSING_IN_TC').length??0}
+    const updated={...current,revision:current.revision+1,selectedCandidateIds,scenarioCandidates,coverage,executable:false,warnings:[{code:'SCENARIO_REVIEW_REQUIRED',message:'추가한 기능 후보의 실행 계획을 확인한 뒤 승인해 주세요.'}]}
+    mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
+  },
+
   async approvePageScenario(scenarioId:string,input:ScenarioApproveRequest):Promise<PageScenarioDraft> {
     if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}/approve`,{method:'POST',body:JSON.stringify(input)})
     const current=await this.getPageScenario(scenarioId)
@@ -290,7 +305,8 @@ export const api = {
     if(current.status==='READY')return current
     if(!current.comparisons?.length||current.comparisons.some(item=>item.decision==='PENDING'))throw new ApiError({code:'SCENARIO_REVIEW_REQUIRED',message:'모든 비교 항목을 검토해 주세요.',requestId:'mock',retryable:false},422)
     if(!current.comparisons.some(item=>['ADD','IGNORE'].includes(item.decision)&&item.stepId))throw new ApiError({code:'SCENARIO_EMPTY',message:'실행할 검증 단계가 없습니다.',requestId:'mock',retryable:false},422)
-    const updated={...current,status:'READY' as const,executable:true,automationStatus:'PARTIALLY_AUTOMATABLE' as const,versionId:crypto.randomUUID(),environmentId:current.environmentId??'env-staging',warnings:[{code:'PARTIAL_SCOPE',message:'수동·제외 항목은 자동 실행 범위에 포함되지 않습니다.'}]}
+    const hasFunctionCandidate=Boolean(current.selectedCandidateIds?.length)
+    const updated={...current,status:'READY' as const,executable:true,automationStatus:hasFunctionCandidate?'AUTOMATABLE' as const:'PARTIALLY_AUTOMATABLE' as const,versionId:crypto.randomUUID(),environmentId:current.environmentId??'env-staging',warnings:[{code:hasFunctionCandidate?'FUNCTION_STEPS_READY':'PARTIAL_SCOPE',message:hasFunctionCandidate?'검증된 클릭과 관찰 상태 assertion을 Worker 실행 계획에 반영했습니다.':'수동·제외 항목은 자동 실행 범위에 포함되지 않습니다.'}]}
     mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
   },
 

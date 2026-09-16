@@ -258,6 +258,7 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 백엔드 2차 시나리오 비교·검토·승인 API 연결: 서버 `comparisons` 전체 상태와 `PAGE_ONLY` 표시, 선택별 PATCH 저장, 서버 revision 기준 갱신, `SCENARIO_REVISION_CONFLICT` 발생 시 최신 상태 조회 후 수동 재검토, 승인 응답 `versionId`를 기존 실행 설정·계획·Worker 흐름에 전달
 - Mock API도 비교·선택·revision·승인 흐름을 동일하게 재현하며 근거 없는 ADD를 UI에서 차단. 수동·제외 항목은 실행 통과 범위가 아님을 유지하고 실제 AI 호출은 0회
 - 페이지 기능 후보·TC 커버리지 UI 연결: `scenarioCandidates`의 영역·목적·click/assert 단계·관찰 근거·신뢰도와 `coverage` 5종 집계를 표시하고, `MANUAL_REVIEW_REQUIRED` 후보는 승인·자동 실행 대상이 아님을 명시. Mock discovery/TC 비교도 `MISSING_IN_TC → COVERED` 변화를 재현
+- 기능 후보 실행 연결: `AUTOMATABLE` 후보만 apply API로 현재 draft revision에 추가하고 반환 `revision`, `coverage`, `selectedCandidateIds`를 즉시 반영. 복구 실패·수동 후보와 중복 클릭을 차단하며 기존 승인 API가 최신 revision의 `versionId`를 실행 설정으로 전달
 
 백엔드에 요청:
 
@@ -363,6 +364,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 - 다중 선택·일괄 구조화/승인은 단일 TC 전체 흐름 실환경 검증 후 확장
 
 ## 최근 검증
+
+- 2026-09-16 관찰 기능 실행 프론트 연결: Mock에서 상태 복구·영역 목록 변화가 확인된 후보 적용, 중복 병합, `MISSING_IN_TC → COVERED`, 승인 후 `AUTOMATABLE` 전환을 재현했다. 번들 Node 런타임으로 TypeScript 검사와 Vite 8 프로덕션 빌드, `git diff --check` 통과. 실제 AI 호출 0회다.
 
 - 2026-09-16 일반 버튼 기능 관찰·Worker 계약: 폼 밖의 고유·표시·활성 버튼을 위험 문구 차단과 최대 10회 제한 안에서 관찰하고, 클릭 전후 URL·ARIA/checked·페이지 fingerprint·영역별 item count/signature를 저장한다. 시작 상태 복구까지 확인된 후보만 `AUTOMATABLE`로 승격하며 후보 apply API로 새 revision에 선택 저장한다. 승인 계획은 `navigate → click → observed_state assert`로 변환되고 Worker는 클릭 전후 PNG와 상태·목록 signature를 재검증한다. 정식 백엔드 전체 테스트(실제 Chromium 포함) `115 passed`(경고 4건), TypeScript 검사 및 `git diff --check` 통과, 실제 AI 호출 0회다.
 
