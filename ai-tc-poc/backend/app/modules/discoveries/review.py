@@ -46,6 +46,26 @@ class ReviewRequest(RevisionRequest):
     selections: list[Selection] = Field(min_length=1, max_length=200)
 
 
+def apply_function_candidate(payload: dict, candidate_id: str, expected_revision: int) -> dict:
+    editable(payload, expected_revision)
+    result = deepcopy(payload)
+    candidates = result.get("scenarioCandidates") or []
+    candidate = next((item for item in candidates if item.get("id") == candidate_id), None)
+    if not candidate:
+        raise DomainError("SCENARIO_CANDIDATE_NOT_FOUND", "기능 후보를 찾을 수 없습니다.", 404)
+    if candidate.get("automationStatus") != "AUTOMATABLE":
+        raise DomainError("SCENARIO_CANDIDATE_NOT_AUTOMATABLE", "상태 복구와 근거 검증이 완료된 후보만 실행 계획에 추가할 수 있습니다.", 422)
+    selected = list(dict.fromkeys([*(result.get("selectedCandidateIds") or []), candidate_id]))
+    result["selectedCandidateIds"] = selected
+    candidate["coverage"] = "COVERED"
+    result["coverage"] = coverage_summary(candidates)
+    result["revision"] += 1
+    result["executable"] = False
+    result["warnings"] = [{"code": "SCENARIO_REVIEW_REQUIRED",
+        "message": "추가한 기능 후보의 실행 계획을 확인한 뒤 승인해 주세요."}]
+    return result
+
+
 def extract(raw: str) -> dict:
     target, actions, expected = [], [], []
     for line in raw.splitlines():
@@ -186,6 +206,14 @@ async def review(scenario_id: UUID, body: ReviewRequest, request: Request, sessi
     return await persist(session, item, apply_selections(item.payload, body), request, "page_scenario.reviewed")
 
 
+@router.post("/page-scenarios/{scenario_id}/candidates/{candidate_id}/apply", response_model=ScenarioResponse)
+async def apply_candidate(scenario_id: UUID, candidate_id: str, body: RevisionRequest, request: Request,
+        session: AsyncSession = Depends(get_session)):
+    item = await scenario(session, scenario_id, True)
+    payload = apply_function_candidate(item.payload, candidate_id, body.expectedRevision)
+    return await persist(session, item, payload, request, "page_scenario.candidate_applied")
+
+
 @router.post("/page-scenarios/{scenario_id}/approve", response_model=ScenarioResponse)
 async def approve(scenario_id: UUID, body: RevisionRequest, request: Request, session: AsyncSession = Depends(get_session)):
     item = await scenario(session, scenario_id, True)
@@ -210,16 +238,43 @@ async def approve(scenario_id: UUID, body: RevisionRequest, request: Request, se
         element = elements.get(evidence["elementId"])
         if not element or element["matchCount"] != 1 or not element["visible"] or element["selector"] != step["selector"] or evidence["fingerprint"] != result["fingerprint"]:
             raise DomainError("SCENARIO_EVIDENCE_INVALID", "페이지 근거를 다시 확인해 주세요.", 422)
+    functional_steps = []
+    interactions = {item["id"]: item for item in result.get("interactions", [])}
+    state_changes = {item["id"]: item for item in result.get("stateChanges", [])}
+    candidates = {item["id"]: item for item in payload.get("scenarioCandidates", [])}
+    for candidate_id in payload.get("selectedCandidateIds", []):
+        candidate = candidates.get(candidate_id)
+        if not candidate or candidate.get("automationStatus") != "AUTOMATABLE":
+            raise DomainError("SCENARIO_CANDIDATE_NOT_AUTOMATABLE", "실행 후보의 상태 복구 근거를 다시 확인해 주세요.", 422)
+        evidence = candidate.get("evidence") or {}
+        interaction = interactions.get((evidence.get("interactionIds") or [None])[0])
+        change = state_changes.get((evidence.get("stateChangeIds") or [None])[0])
+        candidate_steps = candidate.get("steps") or []
+        if (not interaction or not change or not change.get("restored") or len(candidate_steps) != 2
+                or interaction.get("selector") != candidate_steps[0].get("selector")
+                or change.get("interactionId") != interaction.get("id")):
+            raise DomainError("SCENARIO_EVIDENCE_INVALID", "기능 후보의 interaction/state-change 근거가 일치하지 않습니다.", 422)
+        selector = interaction["selector"]
+        functional_steps.extend([
+            {"id": f"{candidate_id}-click", "action": "click", "title": candidate["purpose"],
+                "selector": selector, "resolutionStatus": "RESOLVED"},
+            {"id": f"{candidate_id}-assert", "action": "assert", "title": candidate["purpose"],
+                "selector": selector, "assertionType": "observed_state",
+                "expected": candidate_steps[1]["assertion"]["expected"], "resolutionStatus": "RESOLVED"},
+        ])
+    automation_status = "AUTOMATABLE" if functional_steps else "PARTIALLY_AUTOMATABLE"
     case_id, version_id = uuid4(), uuid4()
     now = datetime.now(UTC)
     spec = {"source": "RULE_BASED", "planRevision": payload["revision"],
-        "automationStatus": "PARTIALLY_AUTOMATABLE", "automationReason": "QA가 선택한 표시 assertion만 실행합니다. 제외·수동 항목은 실행하지 않습니다.",
+        "automationStatus": automation_status,
+        "automationReason": "관찰·복구가 검증된 click/assert 기능 단계를 실행합니다." if functional_steps
+            else "QA가 선택한 표시 assertion만 실행합니다. 제외·수동 항목은 실행하지 않습니다.",
         "pageFirst": {"scenarioId": str(item.id), "revision": payload["revision"], "environmentId": str(environment.id),
             "fingerprint": result["fingerprint"], "url": url, "elements": result["elements"]},
         "steps": [{"id": "navigate", "action": "navigate", "title": "분석 페이지 접속", "url": url}] + [
             {"id": s["id"], "action": "assert", "title": s["targetDescription"], "selector": s["selector"],
                 "assertionType": "element", "operator": "visible", "expected": "true", "resolutionStatus": "RESOLVED"}
-            for s in steps]}
+            for s in steps] + functional_steps}
     version = TestCaseVersion(id=version_id, organization_id=item.organization_id, test_case_id=case_id,
         version_no=1, raw_text=payload["purpose"], structured_spec=spec, status="READY", created_at=now)
     validate_execution_plan(version, environment)
@@ -227,5 +282,7 @@ async def approve(scenario_id: UUID, body: RevisionRequest, request: Request, se
         display_id=f"SC-{case_id}", title=payload["purpose"], group_name="Page scenarios", created_at=now))
     session.add(version)
     payload.update(status="READY", executable=True, versionId=str(version_id), environmentId=str(environment.id),
-        automationStatus="PARTIALLY_AUTOMATABLE", warnings=[{"code": "PARTIAL_SCOPE", "message": "선택한 표시 검증만 실행합니다. 수동·제외 항목은 실행 범위 밖입니다."}])
+        automationStatus=automation_status, warnings=[{"code": "PARTIAL_SCOPE" if not functional_steps else "FUNCTION_STEPS_READY",
+            "message": "선택한 표시 검증만 실행합니다. 수동·제외 항목은 실행 범위 밖입니다." if not functional_steps
+                else "검증된 클릭과 관찰 상태 assertion을 Worker 실행 계획에 반영했습니다."}])
     return await persist(session, item, payload, request, "page_scenario.approved")

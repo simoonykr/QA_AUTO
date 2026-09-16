@@ -18,7 +18,7 @@ from app.core.config import get_settings
 from app.core.database import SessionFactory
 from app.db.models import Artifact, AuditEvent, Environment, Execution, ExecutionStatus, PageDiscovery, StepRun, TestCase, TestCaseVersion
 from app.workers.artifacts import ArtifactStore, StoredArtifact
-from app.workers.step_executor import StepDefinitionError, execute_step, selector_locator
+from app.workers.step_executor import StepAssertionError, StepDefinitionError, execute_step, selector_locator
 from app.modules.test_cases.execution_plan import ExecutionPlanError, validate_execution_plan
 
 
@@ -273,7 +273,14 @@ async def execute(execution_id: UUID) -> None:
                     current_started_at = datetime.now(UTC)
                     current_action = {"type": step.get("action", "unknown"), "planStepId": step.get("id")}
                     try:
+                        if page_first and step.get("action") == "click":
+                            await _capture_screenshot(page, execution_id, current_step_no, None,
+                                artifact_type="INTERACTION_BEFORE_SCREENSHOT", filename="before-click.png", full_page=False)
                         result = await execute_step(page, step, environment.base_url)
+                        if page_first and step.get("action") == "click":
+                            await page.wait_for_timeout(300)
+                            await _capture_screenshot(page, execution_id, current_step_no, None,
+                                artifact_type="INTERACTION_AFTER_SCREENSHOT", filename="after-click.png", full_page=False)
                         if page_first and step.get("action") == "navigate":
                             await _verify_page_first_snapshot(page, page_first)
                     except Exception:
@@ -315,6 +322,8 @@ async def execute(execution_id: UUID) -> None:
     except StepDefinitionError:
         logger.exception("invalid test step", extra={"execution_id": str(execution_id), "step_no": current_step_no})
         await _finish(execution_id, ExecutionStatus.FAIL, error_code="INVALID_TEST_STEP")
+    except StepAssertionError as exc:
+        await _finish(execution_id, ExecutionStatus.FAIL, error_code=exc.code)
     except AssertionError:
         await _finish(execution_id, ExecutionStatus.FAIL, error_code="ASSERTION_FAILED")
     except PlaywrightTimeoutError:

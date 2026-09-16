@@ -364,6 +364,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 ## 최근 검증
 
+- 2026-09-16 일반 버튼 기능 관찰·Worker 계약: 폼 밖의 고유·표시·활성 버튼을 위험 문구 차단과 최대 10회 제한 안에서 관찰하고, 클릭 전후 URL·ARIA/checked·페이지 fingerprint·영역별 item count/signature를 저장한다. 시작 상태 복구까지 확인된 후보만 `AUTOMATABLE`로 승격하며 후보 apply API로 새 revision에 선택 저장한다. 승인 계획은 `navigate → click → observed_state assert`로 변환되고 Worker는 클릭 전후 PNG와 상태·목록 signature를 재검증한다. 정식 백엔드 전체 테스트(실제 Chromium 포함) `115 passed`(경고 4건), TypeScript 검사 및 `git diff --check` 통과, 실제 AI 호출 0회다.
+
 - 2026-09-16 페이지 기능 후보·커버리지 프론트 연결: 번들 Node 런타임으로 TypeScript 검사와 Vite 8 프로덕션 빌드 통과, `git diff --check` 통과. 시스템 기본 Node는 기존 Windows 접근 위반 `3221225477`이 계속 재현됐다. 실제 AI 호출 0회다.
 
 - 2026-09-16 페이지 기능 후보·커버리지 백엔드 계약: Playwright가 실제로 관찰한 상태 변화만 `scenarioCandidates`로 승격하고 영역·목적·click/assert 단계·근거 ID를 반환한다. TC 비교 후 `COVERED`, `PARTIAL`, `MISSING_IN_TC`를 보수적으로 계산하며 전체 상태 집계 계약도 추가했다. 임의 selector·URL·기능은 생성하지 않고 Worker 재현 연결 전까지 `MANUAL_REVIEW_REQUIRED`를 유지한다. 보존 중인 OneDrive 충돌 복사본을 제외한 정식 백엔드 전체 테스트 `111 passed, 1 skipped`(경고 4건), TypeScript 타입 검사 및 `git diff --check` 통과, 실제 AI 호출 0회다.

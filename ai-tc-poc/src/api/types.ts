@@ -305,8 +305,10 @@ export interface PageFirstStateChange {
   id?: string
   interactionId: string
   selector: string
-  before: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null}
-  after: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null}
+  before: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null; pageFingerprint?: string}
+  after: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null; pageFingerprint?: string}
+  changedAreas?: Array<{kind: string; name: string; beforeItemCount: number; afterItemCount: number; beforeFingerprint: string | null; afterFingerprint: string | null}>
+  restored?: boolean
   source: 'PLAYWRIGHT_OBSERVED'
 }
 export type FunctionalCoverageStatus = 'COVERED' | 'PARTIAL' | 'MISSING_IN_TC' | 'TC_ONLY' | 'NOT_AUTOMATABLE'
@@ -318,10 +320,10 @@ export interface PageScenarioCandidate {
   preconditions: string[]
   steps: Array<
     | {action: 'click'; interactionId: string; selector: string}
-    | {action: 'assert'; assertion: {type: 'observed_state'; changedFields: string[]; expected: Record<string, string | boolean | null>}}
+    | {action: 'assert'; assertion: {type: 'observed_state'; changedFields: string[]; expected: Record<string, unknown>}}
   >
   evidence: {elementIds: string[]; interactionIds: string[]; stateChangeIds: string[]}
-  automationStatus: 'MANUAL_REVIEW_REQUIRED'
+  automationStatus: 'AUTOMATABLE' | 'MANUAL_REVIEW_REQUIRED'
   confidence: number
   coverage: FunctionalCoverageStatus
   source: 'RULE_BASED_OBSERVED'
@@ -358,13 +360,14 @@ export interface PageScenarioDraft {
     source: 'PAGE_DISCOVERY'
     evidence: {elementId: string; fingerprint: string; url: string; observed: 'visible'}
   }>
-  automationStatus: 'MANUAL_REVIEW_REQUIRED' | 'PARTIALLY_AUTOMATABLE'
+  automationStatus: 'MANUAL_REVIEW_REQUIRED' | 'PARTIALLY_AUTOMATABLE' | 'AUTOMATABLE'
   warnings: Array<{code: string; message: string}>
   executable: boolean
   aiUsage: {source: 'RULE_BASED'; callCount: 0; inputTokens: 0; outputTokens: 0; costUsd: string}
   comparisons?: ScenarioComparison[]
   scenarioCandidates?: PageScenarioCandidate[]
   coverage?: FunctionalCoverageSummary
+  selectedCandidateIds?: string[]
   extractedTestCase?: TCExtraction | null
   versionId?: string | null
   environmentId?: string | null

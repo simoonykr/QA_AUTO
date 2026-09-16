@@ -322,8 +322,19 @@ assertion 검증 규칙:
 - 현재 단계 계약은 검증된 selector를 쓰는 `click`과 클릭 뒤 관찰된 `url`, `ariaPressed`, `ariaSelected`, `checked` 변화에 대한 `observed_state` assertion이다.
 - `evidence`는 후보를 만든 `elementIds`, `interactionIds`, `stateChangeIds`를 제공한다. 같은 영역·selector의 중복 후보는 하나로 병합한다.
 - `POST /api/v1/page-scenarios/{scenarioId}/compare-tc` 호출 시 추출된 TC의 action·expected result와 후보를 비교해 `COVERED`, `PARTIAL`, `MISSING_IN_TC`를 계산한다. 전체 enum은 향후 비교를 위해 `TC_ONLY`, `NOT_AUTOMATABLE`도 포함한다.
-- 아직 일반 버튼 클릭 후 목록·카드·URL fingerprint 재현과 Worker 실행 계획 연결이 완료되지 않았으므로 후보의 `automationStatus`는 `MANUAL_REVIEW_REQUIRED`이다. 프론트는 이를 즉시 실행 가능한 상태로 표시하거나 승인·실행하지 않는다.
-- 다음 백엔드 작업은 안전한 일반 버튼 클릭 전후의 영역·목록 fingerprint 관찰, 상태 복구, click/assert 실행 계획 저장 및 Worker 재현이다.
+- 일반 버튼·영역 fingerprint 및 Worker 계약이 아래와 같이 완료됐다. 시작 상태 복구가 확인되지 않은 후보는 계속 `MANUAL_REVIEW_REQUIRED`이며 자동 실행할 수 없다.
+
+### 일반 버튼 관찰·기능 후보 실행 계약 (2026-09-16)
+
+- discovery의 `stateChanges[]`는 선택 필드 `pageFingerprint`, `changedAreas`, `restored`를 추가로 반환한다. `changedAreas[]`는 영역의 `kind`, `name`, 클릭 전후 `itemCount`, 클릭 전후 SHA-256 fingerprint만 포함하며 전체 HTML·입력값·쿠키는 포함하지 않는다.
+- 폼 밖이며 selector 단일 일치, 표시·활성 상태인 `button|checkbox|radio|tab`만 최대 10개 관찰한다. 저장·전송·다운로드·결제·삭제·로그아웃 등 위험 문구는 제외한다.
+- 클릭 뒤 시작 URL과 fingerprint 복구가 확인된 후보만 `automationStatus=AUTOMATABLE`이다. 복구 실패 후보는 `MANUAL_REVIEW_REQUIRED`이며 다음 후보 관찰과 자동 실행을 중단한다.
+- `POST /api/v1/page-scenarios/{scenarioId}/candidates/{candidateId}/apply`, 요청 `{ expectedRevision }`: 복구·근거 검증된 후보를 현재 draft의 `selectedCandidateIds`에 저장하고 revision을 증가시킨다. 중복 적용은 ID 기준으로 병합한다.
+- 수동 후보 적용은 HTTP 422 `SCENARIO_CANDIDATE_NOT_AUTOMATABLE`, 없는 후보는 404 `SCENARIO_CANDIDATE_NOT_FOUND`, revision 불일치는 기존 409 `SCENARIO_REVISION_CONFLICT`이다.
+- 승인 시 서버는 discovery의 interaction ID, state-change ID, selector, `restored=true`를 다시 대조하고 `navigate → 기존 표시 assertion → click → observed_state assertion` 계획을 만든다.
+- Worker의 `observed_state` assertion은 URL, `ariaPressed`, `ariaSelected`, checked, 페이지 fingerprint 및 변경 영역의 item count/fingerprint를 재수집해 비교한다. 불일치는 `EXPECTED_STATE_NOT_CHANGED` 또는 `LIST_CHANGE_NOT_OBSERVED`로 실패한다.
+- Worker는 기능 click 직전 `INTERACTION_BEFORE_SCREENSHOT`, 직후 `INTERACTION_AFTER_SCREENSHOT` PNG를 저장한다. 최종 성공·실패 증적 계약도 그대로 유지한다.
+- 프론트 다음 연결: `AUTOMATABLE` 카드의 `추가 후 테스트`에서 후보 apply API 호출 → 반환 revision/coverage/selectedCandidateIds 반영 → 기존 승인 API 호출 → 반환 versionId로 실행 설정 이동. `MANUAL_REVIEW_REQUIRED`는 apply 버튼을 비활성화한다.
 
 ### 페이지 기능 후보·TC 커버리지 프론트 연결 (2026-09-16)
 

@@ -6,10 +6,11 @@ from uuid import uuid4
 import pytest
 from app.core.errors import DomainError
 from app.db.models import TestCaseVersion as Version
-from app.modules.discoveries.page_first import (build_scenario_candidates, compare_candidate_coverage,
-    coverage_summary, feature_inventory, safe_state_candidate, scenario_payload, page_fingerprint)
-from app.modules.discoveries.review import (extract, compare, apply_selections, ReviewRequest, Selection,
-    selected_steps, editable, approve, RevisionRequest)
+from app.modules.discoveries.page_first import (area_fingerprints, build_scenario_candidates,
+    changed_area_evidence, compare_candidate_coverage, coverage_summary, feature_inventory,
+    safe_state_candidate, scenario_payload, page_fingerprint)
+from app.modules.discoveries.review import (extract, compare, apply_function_candidate, apply_selections,
+    ReviewRequest, Selection, selected_steps, editable, approve, RevisionRequest)
 from app.modules.test_cases.execution_plan import validate_execution_plan, ExecutionPlanError
 
 
@@ -105,6 +106,46 @@ async def test_approval_creates_ready_version_once_and_validates_environment():
         editable(item.payload, 2)
 
 
+@pytest.mark.asyncio
+async def test_approval_converts_selected_observed_candidate_to_worker_steps():
+    payload, discovery = fixture_payload()
+    interaction = {"id": "interaction-1", "areaId": "area-1", "elementId": "e1",
+        "selector": '[data-testid="menu"]', "name": "메뉴"}
+    change = {"id": "state-change-1", "interactionId": "interaction-1", "restored": True,
+        "source": "PLAYWRIGHT_OBSERVED", "before": {"ariaPressed": "false"},
+        "after": {"ariaPressed": "true"}, "changedAreas": []}
+    discovery.result.update(interactions=[interaction], stateChanges=[change])
+    payload["scenarioCandidates"] = build_scenario_candidates(
+        [{"id": "area-1", "name": "메뉴"}], [interaction], [change])
+    payload["comparisons"] = compare(payload, extract("메뉴 표시 확인"))
+    payload = apply_selections(payload, ReviewRequest(expectedRevision=1,
+        selections=[Selection(comparisonId="comparison-1", decision="ADD")]))
+    candidate_id = payload["scenarioCandidates"][0]["id"]
+    payload = apply_function_candidate(payload, candidate_id, 2)
+    item = NS(id=uuid4(), payload=payload, discovery_id=discovery.id,
+        organization_id=uuid4(), project_id=uuid4())
+    env = NS(id=discovery.environment_id, base_url="https://example.test", name="Staging",
+        allowed_domains=["example.test"])
+    class Session:
+        values = [item, discovery, env]
+        added = []
+        async def scalar(self, query):
+            return self.values.pop(0)
+        def add(self, value):
+            self.added.append(value)
+        async def commit(self):
+            pass
+    session = Session()
+    result = await approve(item.id, RevisionRequest(expectedRevision=3),
+        NS(state=NS(request_id=str(uuid4()))), session)
+    version = next(value for value in session.added if isinstance(value, Version))
+    plan = validate_execution_plan(version, env)
+    assert result["automationStatus"] == "AUTOMATABLE"
+    assert [step["action"] for step in plan.steps] == ["navigate", "assert", "click", "assert"]
+    assert plan.steps[-1]["assertionType"] == "observed_state"
+    assert plan.steps[-1]["expected"] == {"ariaPressed": "true"}
+
+
 def test_fingerprint_changes_when_observed_state_changes():
     elements = [{"name": "menu", "visible": True}]
     original = page_fingerprint("https://example.test", elements)
@@ -125,11 +166,28 @@ def test_semantic_metadata_does_not_invalidate_legacy_fingerprint():
 
 
 def test_state_observation_rejects_forms_and_dangerous_controls():
-    base = {"interactable": True, "role": "tab", "ariaSelected": "false", "insideForm": False}
+    base = {"interactable": True, "role": "tab", "ariaSelected": "false", "insideForm": False,
+        "visible": True, "enabled": True, "matchCount": 1}
     assert safe_state_candidate({**base, "name": "PC"})
     assert not safe_state_candidate({**base, "name": "Delete account"})
     assert not safe_state_candidate({**base, "name": "PC", "insideForm": True})
     assert not safe_state_candidate({**base, "name": "PC", "interactable": False})
+
+
+def test_safe_general_button_and_bounded_area_fingerprint_changes():
+    button = {"role": "button", "name": "#모바일", "interactable": True, "insideForm": False,
+        "visible": True, "enabled": True, "matchCount": 1}
+    assert safe_state_candidate(button)
+    assert not safe_state_candidate({**button, "name": "저장"})
+    assert not safe_state_candidate({**button, "matchCount": 2})
+    before = area_fingerprints([{"visible": True, "areaKind": "main", "areaName": "게임 목록",
+        "selector": "text=Game A", "name": "Game A", "role": "link", "enabled": True}])
+    after = area_fingerprints([{"visible": True, "areaKind": "main", "areaName": "게임 목록",
+        "selector": "text=Game B", "name": "Game B", "role": "link", "enabled": True}])
+    changes = changed_area_evidence(before, after)
+    assert len(changes) == 1
+    assert changes[0]["name"] == "게임 목록"
+    assert changes[0]["beforeFingerprint"] != changes[0]["afterFingerprint"]
 
 
 def test_interaction_ids_reference_observed_elements():
@@ -149,16 +207,18 @@ def test_observed_state_change_creates_deduplicated_function_candidate_and_cover
     change = {"id": "state-change-1", "interactionId": "interaction-1",
         "before": {"url": "https://example.test", "ariaPressed": "false", "ariaSelected": None, "checked": None},
         "after": {"url": "https://example.test", "ariaPressed": "true", "ariaSelected": None, "checked": None},
-        "source": "PLAYWRIGHT_OBSERVED"}
+        "changedAreas": [{"kind": "main", "name": "게임 목록", "beforeItemCount": 10,
+            "afterItemCount": 4, "beforeFingerprint": "a", "afterFingerprint": "b"}],
+        "restored": True, "source": "PLAYWRIGHT_OBSERVED"}
     candidates = build_scenario_candidates(areas, interactions, [change, change])
     assert len(candidates) == 1
     candidate = candidates[0]
     assert candidate["steps"][0] == {"action": "click", "interactionId": "interaction-1",
         "selector": 'role=button[name="#모바일"]'}
-    assert candidate["steps"][1]["assertion"]["changedFields"] == ["ariaPressed"]
+    assert candidate["steps"][1]["assertion"]["changedFields"] == ["ariaPressed", "areas"]
     assert candidate["evidence"] == {"elementIds": ["element-7"], "interactionIds": ["interaction-1"],
         "stateChangeIds": ["state-change-1"]}
-    assert candidate["automationStatus"] == "MANUAL_REVIEW_REQUIRED"
+    assert candidate["automationStatus"] == "AUTOMATABLE"
     assert coverage_summary(candidates)["MISSING_IN_TC"] == 1
 
     partial = compare_candidate_coverage(candidates, {"actions": ["#모바일 클릭"], "expectedResults": []})
@@ -171,6 +231,21 @@ def test_observed_state_change_creates_deduplicated_function_candidate_and_cover
 def test_unobserved_or_unknown_interaction_never_creates_candidate():
     assert build_scenario_candidates([], [], [{"interactionId": "missing", "source": "PLAYWRIGHT_OBSERVED"}]) == []
     assert build_scenario_candidates([], [{"id": "i1"}], [{"interactionId": "i1", "source": "AI"}]) == []
+
+
+def test_automatable_candidate_is_saved_to_new_revision_and_manual_candidate_is_blocked():
+    payload, _ = fixture_payload()
+    payload["scenarioCandidates"] = [{"id": "candidate-1", "automationStatus": "AUTOMATABLE",
+        "coverage": "MISSING_IN_TC"}]
+    updated = apply_function_candidate(payload, "candidate-1", 1)
+    assert updated["revision"] == 2
+    assert updated["selectedCandidateIds"] == ["candidate-1"]
+    assert updated["scenarioCandidates"][0]["coverage"] == "COVERED"
+    assert payload["scenarioCandidates"][0]["coverage"] == "MISSING_IN_TC"
+    payload["scenarioCandidates"][0]["automationStatus"] = "MANUAL_REVIEW_REQUIRED"
+    with pytest.raises(DomainError) as error:
+        apply_function_candidate(payload, "candidate-1", 1)
+    assert error.value.code == "SCENARIO_CANDIDATE_NOT_AUTOMATABLE"
 
 
 def test_empty_or_table_tc_is_rejected():
@@ -253,6 +328,7 @@ def test_http_scenario_routes_require_authentication(monkeypatch):
         for method, path in [("post", "/test-cases/extract"),
             ("post", f"/page-scenarios/{uuid4()}/compare"),
             ("patch", f"/page-scenarios/{uuid4()}/review"),
+            ("post", f"/page-scenarios/{uuid4()}/candidates/candidate-1/apply"),
             ("post", f"/page-scenarios/{uuid4()}/approve")]:
             response = getattr(client, method)("/api/v1" + path, json={})
             assert response.status_code == 401

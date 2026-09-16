@@ -60,6 +60,7 @@ class ScenarioResponse(BaseModel):
     comparisons: list[dict] = Field(default_factory=list)
     scenarioCandidates: list[dict] = Field(default_factory=list)
     coverage: dict = Field(default_factory=dict)
+    selectedCandidateIds: list[str] = Field(default_factory=list)
     extractedTestCase: dict | None = None
     versionId: str | None = None
     environmentId: str | None = None
@@ -368,8 +369,11 @@ def build_scenario_candidates(areas: list[dict], interactions: list[dict], state
         seen.add(key)
         after = change.get("after") or {}
         before = change.get("before") or {}
-        changed = [field for field in ("url", "ariaPressed", "ariaSelected", "checked")
+        changed = [field for field in ("url", "ariaPressed", "ariaSelected", "checked", "pageFingerprint")
             if before.get(field) != after.get(field)]
+        changed_areas = change.get("changedAreas") or []
+        if changed_areas:
+            changed.append("areas")
         if not changed:
             continue
         stable = hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:12]
@@ -382,10 +386,11 @@ def build_scenario_candidates(areas: list[dict], interactions: list[dict], state
             "steps": [
                 {"action": "click", "interactionId": interaction["id"], "selector": interaction["selector"]},
                 {"action": "assert", "assertion": {"type": "observed_state", "changedFields": changed,
-                    "expected": {field: after.get(field) for field in changed}}},
+                    "expected": {field: (changed_areas if field == "areas" else after.get(field)) for field in changed}}},
             ], "evidence": {"elementIds": [interaction["elementId"]],
                 "interactionIds": [interaction["id"]], "stateChangeIds": [state_change_id]},
-            "automationStatus": "MANUAL_REVIEW_REQUIRED", "confidence": 1,
+            "automationStatus": "AUTOMATABLE" if change.get("restored") else "MANUAL_REVIEW_REQUIRED",
+            "confidence": 1 if change.get("restored") else 0.5,
             "coverage": "MISSING_IN_TC", "source": "RULE_BASED_OBSERVED"})
     return candidates
 
@@ -412,41 +417,100 @@ def compare_candidate_coverage(candidates: list[dict], extracted: dict) -> list[
 
 
 def safe_state_candidate(element: dict) -> bool:
-    if not element.get("interactable") or element.get("insideForm"):
+    if (not element.get("interactable") or element.get("insideForm") or not element.get("visible")
+            or not element.get("enabled") or element.get("matchCount") != 1):
         return False
-    if re.search(r"logout|log out|signout|sign out|delete|remove|checkout|payment|purchase|unsubscribe|탈퇴|삭제|결제|로그아웃", element.get("name", ""), re.I):
+    if re.search(r"logout|log out|signout|sign out|delete|remove|checkout|payment|purchase|unsubscribe|submit|save|send|download|탈퇴|삭제|결제|로그아웃|저장|전송|다운로드", element.get("name", ""), re.I):
         return False
-    return element.get("role") in {"checkbox", "radio", "tab"} or any(
+    return element.get("role") in {"button", "checkbox", "radio", "tab"} or any(
         element.get(key) is not None for key in ("ariaPressed", "ariaSelected")
     )
 
 
+def area_fingerprints(elements: list[dict]) -> dict[str, dict]:
+    """Return bounded, value-free signatures for visible elements grouped by observed landmark."""
+    grouped: dict[str, list[dict]] = {}
+    labels: dict[str, tuple[str, str]] = {}
+    for element in elements:
+        if not element.get("visible"):
+            continue
+        kind = element.get("areaKind") or "content"
+        name = element.get("areaName") or kind
+        key = json.dumps([kind, name], ensure_ascii=False, separators=(",", ":"))
+        labels[key] = (kind, name)
+        grouped.setdefault(key, []).append({field: element.get(field) for field in (
+            "selector", "name", "role", "enabled", "ariaPressed", "ariaSelected")})
+    result = {}
+    for key, values in grouped.items():
+        kind, name = labels[key]
+        canonical = json.dumps(values, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        result[key] = {"kind": kind, "name": name, "itemCount": len(values),
+            "fingerprint": hashlib.sha256(canonical.encode()).hexdigest()}
+    return result
+
+
+def changed_area_evidence(before: dict[str, dict], after: dict[str, dict]) -> list[dict]:
+    changes = []
+    for key in sorted(set(before) | set(after)):
+        left, right = before.get(key), after.get(key)
+        if left == right:
+            continue
+        source = right or left or {}
+        changes.append({"kind": source.get("kind", "content"), "name": source.get("name", "content"),
+            "beforeItemCount": (left or {}).get("itemCount", 0), "afterItemCount": (right or {}).get("itemCount", 0),
+            "beforeFingerprint": (left or {}).get("fingerprint"),
+            "afterFingerprint": (right or {}).get("fingerprint")})
+    return changes[:10]
+
+
 async def observe_state_changes(page, elements: list[dict], interactions: list[dict] | None = None) -> list[dict]:
-    """Click only explicit, non-form toggle controls and retain bounded state evidence."""
+    """Observe bounded safe controls and restore the starting page before the next click."""
     changes = []
     interaction_ids = {item["elementId"]: item["id"] for item in (interactions or [])}
+    initial_url = page.url
+    initial_fingerprint = page_fingerprint(initial_url, elements)
     for element in [item for item in elements if safe_state_candidate(item)][:10]:
         locator = page.locator(element["selector"]) if element["selector"].startswith("[") else page.get_by_role(
             element["role"], name=element["name"], exact=True)
         if await locator.count() != 1:
             continue
         try:
+            before_elements = await collect_elements(page)
+            before_areas = area_fingerprints(before_elements)
             before = {"url": page.url, "ariaPressed": await locator.get_attribute("aria-pressed"),
                 "ariaSelected": await locator.get_attribute("aria-selected"), "checked": await locator.is_checked()
-                if element.get("role") in {"checkbox", "radio"} else None}
+                if element.get("role") in {"checkbox", "radio"} else None,
+                "pageFingerprint": page_fingerprint(page.url, before_elements)}
             await locator.click(timeout=1000)
-            await page.wait_for_timeout(150)
+            await page.wait_for_timeout(300)
+            after_elements = await collect_elements(page)
+            after_areas = area_fingerprints(after_elements)
             after = {"url": page.url, "ariaPressed": await locator.get_attribute("aria-pressed"),
                 "ariaSelected": await locator.get_attribute("aria-selected"), "checked": await locator.is_checked()
-                if element.get("role") in {"checkbox", "radio"} else None}
+                if element.get("role") in {"checkbox", "radio"} else None,
+                "pageFingerprint": page_fingerprint(page.url, after_elements)}
         except Exception:
             continue
+        area_changes = changed_area_evidence(before_areas, after_areas)
+        restored = False
+        try:
+            if urlsplit(initial_url).scheme in {"http", "https"}:
+                await page.goto(initial_url, wait_until="domcontentloaded", timeout=10_000)
+                await page.wait_for_timeout(300)
+                restored = page_fingerprint(page.url, await collect_elements(page)) == initial_fingerprint
+            else:
+                await locator.click(timeout=1000)
+                await page.wait_for_timeout(150)
+                restored = page_fingerprint(page.url, await collect_elements(page)) == initial_fingerprint
+        except Exception:
+            restored = False
         if before != after:
             changes.append({"id": f"state-change-{len(changes) + 1}",
                 "interactionId": interaction_ids.get(element["elementId"], element["elementId"]),
                 "selector": element["selector"],
-                "before": before, "after": after, "source": "PLAYWRIGHT_OBSERVED"})
-        if before["url"] != after["url"]:
+                "before": before, "after": after, "changedAreas": area_changes,
+                "restored": restored, "source": "PLAYWRIGHT_OBSERVED"})
+        if not restored:
             break
     return changes
 

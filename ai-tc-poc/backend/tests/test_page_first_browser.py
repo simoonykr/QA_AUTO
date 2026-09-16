@@ -29,7 +29,7 @@ async def test_real_browser_collect_review_assert_and_detect_change():
             page = await context.new_page()
             await page.set_content('''<h1>Main content</h1>
                 <button aria-label="Next">Next</button>
-                <button role="tab" aria-selected="false" onclick="this.setAttribute('aria-selected','true')">PC</button>
+                <button role="tab" aria-selected="false" onclick="this.setAttribute('aria-selected',this.getAttribute('aria-selected')==='true'?'false':'true')">PC</button>
                 <button data-testid="menu" aria-label="Menu">Menu</button>
                 <span data-testid="hidden" hidden>Hidden</span>
                 <span data-testid="duplicate">One</span><span data-testid="duplicate">Two</span>
@@ -47,6 +47,15 @@ async def test_real_browser_collect_review_assert_and_detect_change():
             assert changes[0]["after"]["ariaSelected"] == "true"
             assert changes[0]["interactionId"] == next(item["id"] for item in interactions if item["name"] == "PC")
             assert changes[0]["id"] == "state-change-1"
+            assert changes[0]["restored"] is True
+            assert changes[0]["changedAreas"]
+            pc_selector = next(item["selector"] for item in interactions if item["name"] == "PC")
+            await execute_step(page, {"action": "click", "selector": pc_selector}, page.url)
+            observed = await execute_step(page, {"action": "assert", "selector": pc_selector,
+                "assertionType": "observed_state", "expected": {
+                    **changes[0]["after"], "areas": changes[0]["changedAreas"]}}, page.url)
+            assert observed.assertion["type"] == "observed_state"
+            await execute_step(page, {"action": "click", "selector": pc_selector}, page.url)
             fingerprint = page_fingerprint(page.url, elements)
             result = {"elements": elements, "fingerprint": fingerprint,
                 "pages": [{"url": page.url, "fingerprint": fingerprint}]}
