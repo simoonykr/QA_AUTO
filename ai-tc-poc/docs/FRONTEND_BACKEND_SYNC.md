@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-16 기능 자동화 전환 작업 순서
+
+- 백엔드가 먼저 `scenarioCandidates`, 기능 단위 coverage, 안전한 일반 버튼 클릭 전후 근거, click/assert 실행 계획과 Worker 계약을 확정한다.
+- 프론트는 독립 P0인 TC 목록 행별 version 선택·이전 `activeVersionId` 초기화를 병행하고, 백엔드 계약 반영 후 기능 후보 검토·TC 보강·실행 증적 UI를 연결한다.
+- KakaoGames 실검증에서 29개 표시 assertion만 생성되고 `#모바일` 클릭은 실행되지 않았다. 상세 계약과 완료 조건은 [`KAKAOGAMES_FUNCTIONAL_AUTOMATION_WORKPLAN.md`](KAKAOGAMES_FUNCTIONAL_AUTOMATION_WORKPLAN.md) 기준이다.
+
 ## 2026-09-15 discovery 경고 프론트 표시 완료
 
 - 완료 응답의 기존 `warnings[].code/message`를 분석 범위·제외 항목 카드에 모두 표시한다. `PAGE_SKIPPED`를 포함한 서버 경고가 더 이상 성공 상태 뒤에 숨지 않는다.

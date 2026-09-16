@@ -1,6 +1,14 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-15
+마지막 갱신: 2026-09-16
+
+## 2026-09-16 KakaoGames 실환경 기능 자동화 갭 검증·작업 계획
+
+- Temporary Staging에서 KakaoGames 현재 페이지와 내부 링크 범위 분석, page scenario 승인, 실행 계획, Worker 실행까지 검증했다. 요소 29개·영역 7개·상호작용 후보 25개를 수집했지만 상태 변화는 0개였고 Worker는 `NAVIGATE → #모바일 visible ASSERT`만 수행해 2/2 PASS했다.
+- 내부 링크 최대 3페이지·깊이 1 설정도 실제 방문은 1페이지였다. 현재 PASS는 필터 클릭·선택 상태·목록 갱신 검증을 포함하지 않는다.
+- TC 목록에서 KG-WEB-021 실행을 눌러도 직전 page scenario의 전역 `activeVersionId`가 재사용되는 프론트 P0을 재현했다.
+- 상세 프론트/백엔드 분담, 공통 계약과 KG-WEB-021 완료 조건은 [`KAKAOGAMES_FUNCTIONAL_AUTOMATION_WORKPLAN.md`](KAKAOGAMES_FUNCTIONAL_AUTOMATION_WORKPLAN.md)를 따른다.
+- 순서: 백엔드 기능 후보·상태 변화·Worker 계약이 주 선행이며, 프론트 TC 행별 실행 연결 P0은 즉시 병행한다. 실제 AI 호출 0회.
 
 ## 2026-09-15 분석 범위·제외 사유 프론트 표시
 
