@@ -314,6 +314,17 @@ assertion 검증 규칙:
 
 ## 페이지 분석·selector 해결 계약
 
+### 페이지 기능 후보·TC 커버리지 계약 (2026-09-16)
+
+- 페이지 탐색 상세와 시나리오 draft는 선택 필드 `scenarioCandidates`와 `coverage`를 반환한다. 기존 필드는 변경하지 않아 기존 프론트와 호환된다.
+- 후보는 Playwright가 `PLAYWRIGHT_OBSERVED`로 확인한 상태 변화와 서버가 수집한 `areaId`, `interactionId`, `elementId`만 사용한다. AI가 selector나 URL을 새로 만들지 않는다.
+- `scenarioCandidates[]`는 `id`, `areaId`, `areaName`, `purpose`, `preconditions`, `steps`, `evidence`, `automationStatus`, `confidence`, `coverage`, `source`를 포함한다.
+- 현재 단계 계약은 검증된 selector를 쓰는 `click`과 클릭 뒤 관찰된 `url`, `ariaPressed`, `ariaSelected`, `checked` 변화에 대한 `observed_state` assertion이다.
+- `evidence`는 후보를 만든 `elementIds`, `interactionIds`, `stateChangeIds`를 제공한다. 같은 영역·selector의 중복 후보는 하나로 병합한다.
+- `POST /api/v1/page-scenarios/{scenarioId}/compare-tc` 호출 시 추출된 TC의 action·expected result와 후보를 비교해 `COVERED`, `PARTIAL`, `MISSING_IN_TC`를 계산한다. 전체 enum은 향후 비교를 위해 `TC_ONLY`, `NOT_AUTOMATABLE`도 포함한다.
+- 아직 일반 버튼 클릭 후 목록·카드·URL fingerprint 재현과 Worker 실행 계획 연결이 완료되지 않았으므로 후보의 `automationStatus`는 `MANUAL_REVIEW_REQUIRED`이다. 프론트는 이를 즉시 실행 가능한 상태로 표시하거나 승인·실행하지 않는다.
+- 다음 백엔드 작업은 안전한 일반 버튼 클릭 전후의 영역·목록 fingerprint 관찰, 상태 복구, click/assert 실행 계획 저장 및 Worker 재현이다.
+
 - 구조화 단계는 `targetDescription`, `selectorHint`, `resolutionStatus`를 반환한다. 원문 근거가 없는 selector는 저장하지 않으며 초기 상태는 `UNRESOLVED`이다.
 - `POST /api/v1/test-case-versions/{versionId}/discover`: `{ environmentId, maxPages: 1..3, maxAiCalls: 0..1 }`, HTTP 202 `{ discoveryId, status: "QUEUED" }`
 - `GET /api/v1/test-case-versions/{versionId}/discoveries/{discoveryId}`: `QUEUED → PROVISIONING → SCANNING → MAPPING → VALIDATING → COMPLETED|NEEDS_REVIEW|FAILED` 상태와 페이지 fingerprint, 단계별 후보를 반환한다.

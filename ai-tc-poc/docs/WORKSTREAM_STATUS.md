@@ -363,6 +363,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 ## 최근 검증
 
+- 2026-09-16 페이지 기능 후보·커버리지 백엔드 계약: Playwright가 실제로 관찰한 상태 변화만 `scenarioCandidates`로 승격하고 영역·목적·click/assert 단계·근거 ID를 반환한다. TC 비교 후 `COVERED`, `PARTIAL`, `MISSING_IN_TC`를 보수적으로 계산하며 전체 상태 집계 계약도 추가했다. 임의 selector·URL·기능은 생성하지 않고 Worker 재현 연결 전까지 `MANUAL_REVIEW_REQUIRED`를 유지한다. 보존 중인 OneDrive 충돌 복사본을 제외한 정식 백엔드 전체 테스트 `111 passed, 1 skipped`(경고 4건), TypeScript 타입 검사 및 `git diff --check` 통과, 실제 AI 호출 0회다.
+
 - 2026-09-11 실행 화면 연결: Worker가 PASS 직전 마지막 페이지를 `SUCCESS_SCREENSHOT`으로 저장하고 실행 모니터가 최신 PNG 증적을 표시하도록 연결했다. 기존 증적 없는 실행은 새 실행 안내를 유지한다. 백엔드 `103 passed, 1 skipped`(경고 4건), TypeScript 및 Vite 프로덕션 빌드 통과, 실제 AI 호출 0회다.
 
 - 페이지 우선 프론트 Mock/API 연결: TypeScript 5.9 타입 검사 및 `git diff --check` 통과. 저장소 Vite 8은 기존 Windows 접근 위반, Vite 6 임시 검증은 pnpm store의 `picomatch` 누락으로 번들 검증 대기

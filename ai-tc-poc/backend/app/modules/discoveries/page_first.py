@@ -58,6 +58,8 @@ class ScenarioResponse(BaseModel):
     executable: bool = False
     aiUsage: dict
     comparisons: list[dict] = Field(default_factory=list)
+    scenarioCandidates: list[dict] = Field(default_factory=list)
+    coverage: dict = Field(default_factory=dict)
     extractedTestCase: dict | None = None
     versionId: str | None = None
     environmentId: str | None = None
@@ -103,6 +105,8 @@ def safe_text(value: str) -> str:
 
 def scenario_payload(discovery: PageDiscovery) -> dict:
     result = discovery.result or {}
+    candidates = result.get("scenarioCandidates") or build_scenario_candidates(
+        result.get("areas", []), result.get("interactions", []), result.get("stateChanges", []))
     steps = []
     for element in result.get("elements", []):
         if not (element.get("matchCount") == 1 and element.get("visible") and element.get("selector")):
@@ -115,6 +119,7 @@ def scenario_payload(discovery: PageDiscovery) -> dict:
     return {"scenarioId": str(uuid4()), "discoveryId": str(discovery.id), "revision": 1,
         "status": "REVIEW_REQUIRED", "purpose": "탐색 페이지의 검증된 요소 표시 확인",
         "pages": result.get("pages", []), "steps": steps[:50],
+        "scenarioCandidates": candidates, "coverage": coverage_summary(candidates),
         "comparisons": [{"id": f"comparison-{index + 1}", "result": "PAGE_ONLY",
             "text": step["targetDescription"], "draft": step["targetDescription"],
             "decision": "PENDING", "stepId": step["id"], "source": "PAGE_DISCOVERY",
@@ -178,6 +183,8 @@ async def get(discovery_id: UUID, session: AsyncSession = Depends(get_session)):
             "areas": (item.result or {}).get("areas", []),
             "interactions": (item.result or {}).get("interactions", []),
             "stateChanges": (item.result or {}).get("stateChanges", []),
+            "scenarioCandidates": (item.result or {}).get("scenarioCandidates", []),
+            "coverage": (item.result or {}).get("coverage", coverage_summary([])),
             "warnings": (item.result or {}).get("warnings", []),
             "scope": {"includeInternalLinks": bool(item.settings.get("includeInternalLinks", False)),
                 "maxDepth": int(item.settings.get("maxDepth", 0)), "maxPages": int(item.settings.get("maxPages", 1))},
@@ -281,9 +288,12 @@ async def scan(discovery_id: UUID):
                     await page.goto(pages[0]["url"], wait_until="domcontentloaded", timeout=20000)
                     await wait_for_render(page, 10_000)
                     state_changes = await observe_state_changes(page, root_elements, root_interactions)
+                    scenario_candidates = build_scenario_candidates(root_areas, root_interactions, state_changes)
                     item.result = {"pages": pages, "elements": root_elements,
                         "areas": root_areas, "interactions": root_interactions,
                         "stateChanges": state_changes,
+                        "scenarioCandidates": scenario_candidates,
+                        "coverage": coverage_summary(scenario_candidates),
                         "fingerprint": root_fingerprint, "warnings": warnings}
                 finally:
                     await browser.close()
@@ -330,6 +340,77 @@ def feature_inventory(elements: list[dict]) -> tuple[list[dict], list[dict]]:
     return list(areas_by_key.values()), interactions
 
 
+COVERAGE_STATUSES = ("COVERED", "PARTIAL", "MISSING_IN_TC", "TC_ONLY", "NOT_AUTOMATABLE")
+
+
+def coverage_summary(candidates: list[dict]) -> dict[str, int]:
+    summary = {status: 0 for status in COVERAGE_STATUSES}
+    for candidate in candidates:
+        status = candidate.get("coverage")
+        if status in summary:
+            summary[status] += 1
+    return summary
+
+
+def build_scenario_candidates(areas: list[dict], interactions: list[dict], state_changes: list[dict]) -> list[dict]:
+    """Create feature candidates only from Playwright-observed state transitions."""
+    area_by_id = {area.get("id"): area for area in areas}
+    interaction_by_id = {item.get("id"): item for item in interactions}
+    candidates, seen = [], set()
+    for change in state_changes:
+        interaction = interaction_by_id.get(change.get("interactionId"))
+        if not interaction or change.get("source") != "PLAYWRIGHT_OBSERVED":
+            continue
+        area = area_by_id.get(interaction.get("areaId")) or {}
+        key = (interaction.get("areaId"), interaction.get("selector"))
+        if key in seen:
+            continue
+        seen.add(key)
+        after = change.get("after") or {}
+        before = change.get("before") or {}
+        changed = [field for field in ("url", "ariaPressed", "ariaSelected", "checked")
+            if before.get(field) != after.get(field)]
+        if not changed:
+            continue
+        stable = hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:12]
+        state_change_id = change.get("id") or f"state-change-{len(candidates) + 1}"
+        name = interaction.get("name") or interaction.get("elementId")
+        area_name = area.get("name") or area.get("kind") or "content"
+        candidates.append({"id": f"candidate-{stable}", "areaId": interaction.get("areaId"),
+            "areaName": area_name, "purpose": f"{name} 선택 시 {area_name} 상태 변경 확인",
+            "preconditions": [f"{area_name} 영역과 {name} 컨트롤이 표시되고 활성화됨"],
+            "steps": [
+                {"action": "click", "interactionId": interaction["id"], "selector": interaction["selector"]},
+                {"action": "assert", "assertion": {"type": "observed_state", "changedFields": changed,
+                    "expected": {field: after.get(field) for field in changed}}},
+            ], "evidence": {"elementIds": [interaction["elementId"]],
+                "interactionIds": [interaction["id"]], "stateChangeIds": [state_change_id]},
+            "automationStatus": "MANUAL_REVIEW_REQUIRED", "confidence": 1,
+            "coverage": "MISSING_IN_TC", "source": "RULE_BASED_OBSERVED"})
+    return candidates
+
+
+def compare_candidate_coverage(candidates: list[dict], extracted: dict) -> list[dict]:
+    """Conservatively compare observed functions with extracted TC clauses."""
+    actions = extracted.get("actions") or []
+    expected = extracted.get("expectedResults") or []
+    compared = []
+    for candidate in candidates:
+        result = dict(candidate)
+        interaction_name = ""
+        steps = candidate.get("steps") or []
+        if steps:
+            # Candidate purpose begins with the observed accessible name.
+            interaction_name = candidate.get("purpose", "").split(" 선택 시 ", 1)[0]
+        action_match = bool(interaction_name and any(
+            interaction_name in clause and re.search(r"클릭|선택|click|press", clause, re.I) for clause in actions))
+        expectation_match = bool(any(re.search(r"선택|활성|변경|필터|목록|selected|active|change|filter|list", clause, re.I)
+            for clause in expected))
+        result["coverage"] = "COVERED" if action_match and expectation_match else "PARTIAL" if action_match or expectation_match else "MISSING_IN_TC"
+        compared.append(result)
+    return compared
+
+
 def safe_state_candidate(element: dict) -> bool:
     if not element.get("interactable") or element.get("insideForm"):
         return False
@@ -361,7 +442,8 @@ async def observe_state_changes(page, elements: list[dict], interactions: list[d
         except Exception:
             continue
         if before != after:
-            changes.append({"interactionId": interaction_ids.get(element["elementId"], element["elementId"]),
+            changes.append({"id": f"state-change-{len(changes) + 1}",
+                "interactionId": interaction_ids.get(element["elementId"], element["elementId"]),
                 "selector": element["selector"],
                 "before": before, "after": after, "source": "PLAYWRIGHT_OBSERVED"})
         if before["url"] != after["url"]:

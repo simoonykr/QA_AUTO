@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session
 from app.core.errors import DomainError
 from app.db.models import Environment, PageDiscovery, PageScenario, TestCase, TestCaseVersion
-from app.modules.discoveries.page_first import scope, audit, allowed_url, ScenarioResponse
+from app.modules.discoveries.page_first import (scope, audit, allowed_url, compare_candidate_coverage,
+    coverage_summary, ScenarioResponse)
 from app.modules.test_cases.execution_plan import validate_execution_plan
 
 router = APIRouter(tags=["scenario-review"])
@@ -170,6 +171,9 @@ async def compare_tc(scenario_id: UUID, body: CompareRequest, request: Request, 
     payload = deepcopy(item.payload)
     payload["extractedTestCase"] = extract(body.rawText)
     payload["comparisons"] = compare(payload, payload["extractedTestCase"])
+    payload["scenarioCandidates"] = compare_candidate_coverage(
+        payload.get("scenarioCandidates", []), payload["extractedTestCase"])
+    payload["coverage"] = coverage_summary(payload["scenarioCandidates"])
     payload["revision"] += 1
     payload["executable"] = False
     payload["warnings"] = [{"code": "SCENARIO_REVIEW_REQUIRED", "message": "모든 비교 항목을 검토해 주세요."}]

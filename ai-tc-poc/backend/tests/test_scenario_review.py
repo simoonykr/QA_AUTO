@@ -6,7 +6,8 @@ from uuid import uuid4
 import pytest
 from app.core.errors import DomainError
 from app.db.models import TestCaseVersion as Version
-from app.modules.discoveries.page_first import feature_inventory, safe_state_candidate, scenario_payload, page_fingerprint
+from app.modules.discoveries.page_first import (build_scenario_candidates, compare_candidate_coverage,
+    coverage_summary, feature_inventory, safe_state_candidate, scenario_payload, page_fingerprint)
 from app.modules.discoveries.review import (extract, compare, apply_selections, ReviewRequest, Selection,
     selected_steps, editable, approve, RevisionRequest)
 from app.modules.test_cases.execution_plan import validate_execution_plan, ExecutionPlanError
@@ -138,6 +139,38 @@ def test_interaction_ids_reference_observed_elements():
     _, interactions = feature_inventory([element])
     assert interactions[0]["id"] == "interaction-1"
     assert interactions[0]["elementId"] == "element-7"
+
+
+def test_observed_state_change_creates_deduplicated_function_candidate_and_coverage():
+    areas = [{"id": "area-1", "kind": "main", "name": "전체게임 필터", "elementIds": ["element-7"]}]
+    interactions = [{"id": "interaction-1", "areaId": "area-1", "elementId": "element-7",
+        "kind": "button", "name": "#모바일", "selector": 'role=button[name="#모바일"]',
+        "enabled": True, "risk": "READ_ONLY_CANDIDATE", "source": "PAGE_DISCOVERY"}]
+    change = {"id": "state-change-1", "interactionId": "interaction-1",
+        "before": {"url": "https://example.test", "ariaPressed": "false", "ariaSelected": None, "checked": None},
+        "after": {"url": "https://example.test", "ariaPressed": "true", "ariaSelected": None, "checked": None},
+        "source": "PLAYWRIGHT_OBSERVED"}
+    candidates = build_scenario_candidates(areas, interactions, [change, change])
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate["steps"][0] == {"action": "click", "interactionId": "interaction-1",
+        "selector": 'role=button[name="#모바일"]'}
+    assert candidate["steps"][1]["assertion"]["changedFields"] == ["ariaPressed"]
+    assert candidate["evidence"] == {"elementIds": ["element-7"], "interactionIds": ["interaction-1"],
+        "stateChangeIds": ["state-change-1"]}
+    assert candidate["automationStatus"] == "MANUAL_REVIEW_REQUIRED"
+    assert coverage_summary(candidates)["MISSING_IN_TC"] == 1
+
+    partial = compare_candidate_coverage(candidates, {"actions": ["#모바일 클릭"], "expectedResults": []})
+    assert partial[0]["coverage"] == "PARTIAL"
+    covered = compare_candidate_coverage(candidates, {
+        "actions": ["#모바일 클릭"], "expectedResults": ["모바일 필터 선택 후 게임 목록 변경 확인"]})
+    assert covered[0]["coverage"] == "COVERED"
+
+
+def test_unobserved_or_unknown_interaction_never_creates_candidate():
+    assert build_scenario_candidates([], [], [{"interactionId": "missing", "source": "PLAYWRIGHT_OBSERVED"}]) == []
+    assert build_scenario_candidates([], [{"id": "i1"}], [{"interactionId": "i1", "source": "AI"}]) == []
 
 
 def test_empty_or_table_tc_is_rejected():

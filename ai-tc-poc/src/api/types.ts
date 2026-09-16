@@ -302,12 +302,31 @@ export interface PageFirstInteraction {
   source: 'PAGE_DISCOVERY'
 }
 export interface PageFirstStateChange {
+  id?: string
   interactionId: string
   selector: string
   before: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null}
   after: {url: string; ariaPressed: string | null; ariaSelected: string | null; checked: boolean | null}
   source: 'PLAYWRIGHT_OBSERVED'
 }
+export type FunctionalCoverageStatus = 'COVERED' | 'PARTIAL' | 'MISSING_IN_TC' | 'TC_ONLY' | 'NOT_AUTOMATABLE'
+export interface PageScenarioCandidate {
+  id: string
+  areaId: string
+  areaName: string
+  purpose: string
+  preconditions: string[]
+  steps: Array<
+    | {action: 'click'; interactionId: string; selector: string}
+    | {action: 'assert'; assertion: {type: 'observed_state'; changedFields: string[]; expected: Record<string, string | boolean | null>}}
+  >
+  evidence: {elementIds: string[]; interactionIds: string[]; stateChangeIds: string[]}
+  automationStatus: 'MANUAL_REVIEW_REQUIRED'
+  confidence: number
+  coverage: FunctionalCoverageStatus
+  source: 'RULE_BASED_OBSERVED'
+}
+export type FunctionalCoverageSummary = Record<FunctionalCoverageStatus, number>
 export interface PageFirstDiscovery {
   discoveryId: string
   status: 'QUEUED' | 'SCANNING' | 'COMPLETED' | 'FAILED'
@@ -317,6 +336,8 @@ export interface PageFirstDiscovery {
   areas?: PageFirstArea[]
   interactions?: PageFirstInteraction[]
   stateChanges?: PageFirstStateChange[]
+  scenarioCandidates?: PageScenarioCandidate[]
+  coverage?: FunctionalCoverageSummary
   warnings: Array<{code: string; message: string}>
   scope?: {includeInternalLinks: boolean; maxDepth: number; maxPages: number}
   aiUsage: {source: 'RULE_BASED'; callCount: 0}
@@ -342,6 +363,8 @@ export interface PageScenarioDraft {
   executable: boolean
   aiUsage: {source: 'RULE_BASED'; callCount: 0; inputTokens: 0; outputTokens: 0; costUsd: string}
   comparisons?: ScenarioComparison[]
+  scenarioCandidates?: PageScenarioCandidate[]
+  coverage?: FunctionalCoverageSummary
   extractedTestCase?: TCExtraction | null
   versionId?: string | null
   environmentId?: string | null

@@ -46,6 +46,7 @@ async def test_real_browser_collect_review_assert_and_detect_change():
             assert len(changes) == 1 and changes[0]["before"]["ariaSelected"] == "false"
             assert changes[0]["after"]["ariaSelected"] == "true"
             assert changes[0]["interactionId"] == next(item["id"] for item in interactions if item["name"] == "PC")
+            assert changes[0]["id"] == "state-change-1"
             fingerprint = page_fingerprint(page.url, elements)
             result = {"elements": elements, "fingerprint": fingerprint,
                 "pages": [{"url": page.url, "fingerprint": fingerprint}]}
