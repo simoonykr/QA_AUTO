@@ -92,6 +92,7 @@ def extract(raw: str) -> dict:
 
 def compare(payload: dict, extracted: dict) -> list[dict]:
     rows, matched = [], set()
+    functional_candidates = payload.get("scenarioCandidates") or []
     clauses = ([extracted["target"]] if extracted["target"] else []) + extracted["actions"] + extracted["expectedResults"]
     for text in clauses:
         # Only exact visibility statements can count as verified matches.
@@ -100,12 +101,18 @@ def compare(payload: dict, extracted: dict) -> list[dict]:
         visible = step and text.strip() in {f'{step["targetDescription"]} 표시', f'{step["targetDescription"]} 표시 확인', f'{step["targetDescription"]} is visible'}
         unsupported = bool(re.search(r"삭제|결제|게시|업로드|자연스럽|보기 좋|디자인|\b(delete|payment|upload)\b", text, re.I))
         visible = visible and not unsupported
-        status = "NOT_AUTOMATABLE" if unsupported else "MATCHED" if visible else "CONFLICT" if candidates else "TC_ONLY"
+        functional = next((candidate for candidate in functional_candidates
+            if candidate.get("purpose", "").split(" 선택 시 ", 1)[0] in text
+            and (re.search(r"클릭|선택|click|press", text, re.I)
+                or re.search(r"선택|활성|변경|갱신|필터|목록|selected|active|change|refresh|filter|list", text, re.I))), None)
+        status = "NOT_AUTOMATABLE" if unsupported else "MATCHED" if visible or functional else "CONFLICT" if candidates else "TC_ONLY"
         if visible:
             matched.add(step["id"])
         rows.append({"id": f"comparison-{len(rows)+1}", "result": status, "text": text, "draft": text,
             "decision": "PENDING", "stepId": step["id"] if visible else None,
-            "source": "TEST_CASE", "evidence": "페이지 표시 근거 일치" if visible else "업무 기대 결과는 자동 확정하지 않았습니다."})
+            "candidateId": functional.get("id") if functional else None,
+            "source": "TEST_CASE", "evidence": "페이지 표시 근거 일치" if visible else
+                "Playwright가 관찰한 기능 후보와 일치" if functional else "업무 기대 결과는 자동 확정하지 않았습니다."})
     for step in payload["steps"]:
         if step["id"] not in matched:
             rows.append({"id": f"comparison-{len(rows)+1}", "result": "PAGE_ONLY", "text": step["targetDescription"],

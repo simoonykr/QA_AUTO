@@ -336,6 +336,15 @@ assertion 검증 규칙:
 - Worker는 기능 click 직전 `INTERACTION_BEFORE_SCREENSHOT`, 직후 `INTERACTION_AFTER_SCREENSHOT` PNG를 저장한다. 최종 성공·실패 증적 계약도 그대로 유지한다.
 - 프론트 다음 연결: `AUTOMATABLE` 카드의 `추가 후 테스트`에서 후보 apply API 호출 → 반환 revision/coverage/selectedCandidateIds 반영 → 기존 승인 API 호출 → 반환 versionId로 실행 설정 이동. `MANUAL_REVIEW_REQUIRED`는 apply 버튼을 비활성화한다.
 
+### observed-state 실행 계획 응답 수정 (2026-09-17)
+
+- `ExecutionPlanStep.expected`는 기존 문자열뿐 아니라 `observed_state`의 객체 기대값도 반환한다. `assertionType`은 기존 `url|text|element`에 `observed_state`가 추가됐다.
+- 프론트 실행 계획 화면은 객체 기대값을 안전하게 JSON 문자열로 표시하고 “관찰 상태 검증”으로 안내한다. 자동 생성된 observed-state를 기존 문자열 단계 편집기로 암묵 변환하지 않는다.
+- 재현 Version `cc384675-876b-403f-bb06-bbd56b3d0cc4`는 `READY`, plan revision `35`, `navigate → element assert → click → observed_state assert`로 정상 저장돼 있었으며 500 원인은 공개 응답 DTO 직렬화 제한이었다.
+- 자연어 TC의 기능 후보 accessible name과 클릭/선택/목록 갱신 문구가 일치하면 비교 결과를 `MATCHED`로 반환하고 `candidateId`와 Playwright 관찰 근거를 제공한다. 기능 coverage의 `COVERED`와 TC 비교 `CONFLICT`가 동시에 나타나던 모순을 제거했다.
+- 페이지 탐색 제한 경고는 “일반 버튼 미수행” 대신 “고유하고 안전한 일반 버튼·토글만 제한 관찰”로 최신 정책과 일치시켰다.
+- 최대 3페이지 요청이 KakaoGames에서 1페이지만 방문하는 현상은 이번 500 수정과 독립적이며, JS 이동 후보·방문 제외 사유 집계가 필요한 P1 다중 페이지 탐색 범위로 유지한다.
+
 ### 일반 버튼 기능 후보 실행 프론트 연결 완료 (2026-09-16)
 
 - 후보 apply API를 연결하고 응답의 최신 revision, coverage, selectedCandidateIds, warnings를 화면 상태에 반영한다.

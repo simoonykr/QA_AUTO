@@ -365,6 +365,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 ## 최근 검증
 
+- 2026-09-17 observed-state 실행 계획 500 수정: Version `cc384675-876b-403f-bb06-bbd56b3d0cc4`는 DB에 `READY`, revision `35`, `navigate → element assert → click → observed_state assert`로 정상 저장되어 있었으나 공개 `ExecutionPlanStep` DTO가 객체 `expected`와 `observed_state`를 허용하지 않아 응답 직렬화에서 Pydantic ValidationError가 발생했다. 응답·프론트 타입과 표시를 확장하고 실제 TC 문구가 관찰 기능 후보와 일치하면 `MATCHED`로 비교하도록 수정했다. 구버전 “일반 버튼 미수행” 경고도 안전한 일반 버튼 제한 관찰 문구로 교체했다. 실제 Chromium 포함 백엔드 `117 passed`(경고 4건), TypeScript 및 diff 검사 통과, AI 호출 0회다. 내부 링크 최대 3페이지 요청이 실제 1페이지에 머무는 문제는 별도 P1 탐색 확장 범위로 남는다.
+
 - 2026-09-16 관찰 기능 실행 프론트 연결: Mock에서 상태 복구·영역 목록 변화가 확인된 후보 적용, 중복 병합, `MISSING_IN_TC → COVERED`, 승인 후 `AUTOMATABLE` 전환을 재현했다. 번들 Node 런타임으로 TypeScript 검사와 Vite 8 프로덕션 빌드, `git diff --check` 통과. 실제 AI 호출 0회다.
 
 - 2026-09-16 일반 버튼 기능 관찰·Worker 계약: 폼 밖의 고유·표시·활성 버튼을 위험 문구 차단과 최대 10회 제한 안에서 관찰하고, 클릭 전후 URL·ARIA/checked·페이지 fingerprint·영역별 item count/signature를 저장한다. 시작 상태 복구까지 확인된 후보만 `AUTOMATABLE`로 승격하며 후보 apply API로 새 revision에 선택 저장한다. 승인 계획은 `navigate → click → observed_state assert`로 변환되고 Worker는 클릭 전후 PNG와 상태·목록 signature를 재검증한다. 정식 백엔드 전체 테스트(실제 Chromium 포함) `115 passed`(경고 4건), TypeScript 검사 및 `git diff --check` 통과, 실제 AI 호출 0회다.

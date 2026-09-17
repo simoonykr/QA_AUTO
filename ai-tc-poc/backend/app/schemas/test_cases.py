@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 from pydantic import BaseModel, Field
 
@@ -129,8 +129,8 @@ class ExecutionPlanStep(BaseModel):
     value: str | None = None
     secretRef: str | None = None
     operator: str | None = None
-    expected: str | None = None
-    assertionType: Literal["url", "text", "element"] | None = None
+    expected: Any | None = None
+    assertionType: Literal["url", "text", "element", "observed_state"] | None = None
     timeoutMs: int
     targetDescription: str | None = None
     selectorHint: dict[str, str] = Field(default_factory=dict)

@@ -284,7 +284,7 @@ async def scan(discovery_id: UUID):
                                 raise
                             warnings.append({"code": "PAGE_SKIPPED", "message": "연결된 내부 페이지 1개를 안전하게 분석하지 못해 제외했습니다."})
                     warnings.insert(0, {"code": "LIMITED_READ_ONLY_DISCOVERY",
-                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 시작 페이지의 명시적 토글만 클릭 전후 상태를 관찰하며 일반 버튼·폼·위험 행동·iframe·AI 기능 추론은 수행하지 않습니다."})
+                        "message": f"최대 {max_pages}페이지·깊이 {max_depth}를 탐색했습니다. 시작 페이지의 고유하고 안전한 일반 버튼·토글만 제한적으로 관찰하며 폼·위험 행동·iframe·AI 기능 추론은 수행하지 않습니다."})
                     root_areas, root_interactions = feature_inventory(root_elements)
                     await page.goto(pages[0]["url"], wait_until="domcontentloaded", timeout=20000)
                     await wait_for_render(page, 10_000)

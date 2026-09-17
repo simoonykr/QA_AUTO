@@ -228,6 +228,17 @@ def test_observed_state_change_creates_deduplicated_function_candidate_and_cover
     assert covered[0]["coverage"] == "COVERED"
 
 
+def test_observed_function_clauses_are_matched_in_tc_comparison():
+    payload, _ = fixture_payload()
+    payload["scenarioCandidates"] = [{"id": "candidate-mobile",
+        "purpose": "#모바일 선택 시 게임 목록 상태 변경 확인"}]
+    rows = compare(payload, extract(
+        "#모바일 필터를 클릭한다.\n#모바일 필터가 선택되고 게임 목록이 갱신된다."))
+    assert [row["result"] for row in rows[:2]] == ["MATCHED", "MATCHED"]
+    assert all(row["candidateId"] == "candidate-mobile" for row in rows[:2])
+    assert all(row["evidence"] == "Playwright가 관찰한 기능 후보와 일치" for row in rows[:2])
+
+
 def test_unobserved_or_unknown_interaction_never_creates_candidate():
     assert build_scenario_candidates([], [], [{"interactionId": "missing", "source": "PLAYWRIGHT_OBSERVED"}]) == []
     assert build_scenario_candidates([], [{"id": "i1"}], [{"interactionId": "i1", "source": "AI"}]) == []

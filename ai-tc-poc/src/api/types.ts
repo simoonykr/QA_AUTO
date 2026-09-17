@@ -98,8 +98,8 @@ export interface ExecutionPlanStep {
   value?: string | null
   secretRef?: string | null
   operator?: string | null
-  expected?: string | null
-  assertionType?: 'url' | 'text' | 'element' | null
+  expected?: string | Record<string, unknown> | null
+  assertionType?: 'url' | 'text' | 'element' | 'observed_state' | null
   timeoutMs: number
   targetDescription?: string | null
   resolutionStatus?: ResolutionStatus | null

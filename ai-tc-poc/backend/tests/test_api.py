@@ -16,7 +16,7 @@ from app.modules.ai.service import rule_based_structure
 from app.modules.test_cases.execution_plan import ExecutionPlanError, validate_execution_plan
 from app.modules.auth.service import validate_demo_auth_config
 from app.schemas.executions import CreateExecutionRequest, ExecutionDetailsResponse, ExecutionResponse
-from app.schemas.test_cases import ImportedTestCaseItem, StructureRequest, TestCaseSummary
+from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCaseItem, StructureRequest, TestCaseSummary
 from app.schemas.resources import EnvironmentSummary, TestAccountSummary
 from app.workers.playwright_worker import WorkerExecutionError, _assert_allowed_url, _assert_plan_snapshot, _parse_viewport, _safe_discovery_url, _sanitize_discovery_elements
 from app.workers.step_executor import StepDefinitionError, execute_step
@@ -982,6 +982,19 @@ def test_execution_plan_validates_parameters_hash_and_masks_values() -> None:
     assert plan.steps[0]["url"] == "http://demo-target"
     assert plan.public_steps[1]["value"] == "***"
     assert plan.steps[1]["value"] == "private"
+
+
+def test_execution_plan_response_serializes_observed_state_object():
+    expected = {"pageFingerprint": "f" * 64, "ariaPressed": "true", "areas": [{
+        "kind": "main", "name": "게임 목록", "afterItemCount": 8, "afterFingerprint": "a" * 64}]}
+    response = ExecutionPlanResponse(versionId=str(_plan_version([]).id), status="READY", revision=35,
+        planHash="b" * 64, environment={"id": str(_plan_environment().id), "name": "Staging",
+            "baseUrl": "http://demo-target"}, steps=[{"stepNo": 3, "id": "candidate-assert",
+            "title": "모바일 필터", "action": "assert", "selector": 'role=button[name="#모바일"]',
+            "expected": expected, "assertionType": "observed_state", "timeoutMs": 10_000}],
+        executable=True, source="RULE_BASED", automationStatus="AUTOMATABLE")
+    assert response.steps[0].expected == expected
+    assert response.steps[0].assertionType == "observed_state"
 
 
 def test_url_assertion_does_not_require_selector() -> None:
