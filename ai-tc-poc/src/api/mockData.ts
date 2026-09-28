@@ -1,10 +1,10 @@
 import type { StructuredStep, TestCaseSummary } from './types'
 
 export const mockTestCases: TestCaseSummary[] = [
-  { id: 'TC-142', title: '신규 사용자 이메일 회원가입', group: 'Authentication', status: 'READY', passRate: 96, lastExecutedAt: '12분 전' },
-  { id: 'TC-138', title: '상품 검색 및 가격 필터 적용', group: 'Search', status: 'READY', passRate: 89, lastExecutedAt: '어제' },
+  { id: 'TC-142', title: '신규 사용자 이메일 회원가입', group: 'Authentication', status: 'READY', latestVersionId: '00000000-0000-0000-0000-000000000501', passRate: 96, lastExecutedAt: '12분 전' },
+  { id: 'TC-138', title: '상품 검색 및 가격 필터 적용', group: 'Search', status: 'READY', latestVersionId: '00000000-0000-0000-0000-000000000502', passRate: 89, lastExecutedAt: '어제' },
   { id: 'TC-131', title: '장바구니 수량 변경 후 합계 검증', group: 'Checkout', status: 'REVIEW_REQUIRED', passRate: 72, lastExecutedAt: '2일 전' },
-  { id: 'TC-127', title: '만료된 세션에서 로그인 화면 이동', group: 'Authentication', status: 'READY', passRate: 100, lastExecutedAt: '4일 전' },
+  { id: 'TC-127', title: '만료된 세션에서 로그인 화면 이동', group: 'Authentication', status: 'READY', latestVersionId: '00000000-0000-0000-0000-000000000503', passRate: 100, lastExecutedAt: '4일 전' },
 ]
 
 export const mockSteps: StructuredStep[] = [

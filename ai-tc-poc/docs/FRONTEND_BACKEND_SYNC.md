@@ -1,5 +1,12 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-28 다중 TC Batch·Suite 계약 요청
+
+- XLSX에서 여러 TC가 감지돼도 현재 계약은 선택한 1건만 독립 Version으로 구조화·승인·실행한다. 프론트는 `선택 1 / 전체 N`, 미처리 건수와 선택 TC ID를 명시해 전체 실행으로 오인하지 않게 한다.
+- 테스트 목록의 READY 행을 정확히 실행하기 위해 `GET /api/v1/test-cases` 응답에 선택 필드 `latestVersionId`를 추가했다. 프론트는 전역의 직전 Version을 재사용하지 않고 클릭한 행의 `latestVersionId`로 실행 계획을 조회한다. null 또는 READY가 아닌 행은 실행 불가다.
+- 파일 전체 처리는 TC들을 한 Version으로 합치지 않고 Import/Structure Batch 및 Execution Suite로 묶어야 한다. 항목별 revision·오류·부분 성공, idempotency, 409 수동 재시도, Suite별 Execution 연결 계약이 필요하다.
+- 상세 endpoint, 상태 모델, 동시성 규칙과 21건 완료 조건은 [`TC_BATCH_AUTOMATION_PLAN.md`](TC_BATCH_AUTOMATION_PLAN.md)를 따른다.
+
 ## 2026-09-16 기능 자동화 전환 작업 순서
 
 - 백엔드가 먼저 `scenarioCandidates`, 기능 단위 coverage, 안전한 일반 버튼 클릭 전후 근거, click/assert 실행 계획과 Worker 계약을 확정한다.

@@ -1,6 +1,15 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-16
+마지막 갱신: 2026-09-28
+
+## 2026-09-28 다중 TC 처리 범위 명확화·행별 실행 P0
+
+- XLSX가 21개 TC를 감지해도 현재 제품은 선택한 TC 1건만 독립 Version으로 구조화·승인·실행한다. 감지 건수는 실행 건수가 아니며, 파일 전체 실행 기능은 아직 없다.
+- 프론트는 감지된 TC를 세로 목록으로 노출하고 `선택 1 / 전체 N`, 이번 처리 ID, 미처리 건수와 단건 처리 정책을 지속 표시한다. 구조화 버튼에도 선택 TC ID를 표시한다.
+- 테스트 케이스 목록 실행은 클릭 행의 `latestVersionId`를 사용하도록 변경했다. READY가 아니거나 최신 Version ID가 없으면 실행을 차단해 직전 페이지 시나리오/다른 TC Version 재사용 문제를 제거한다.
+- 백엔드 목록 응답에 호환 가능한 선택 필드 `latestVersionId`를 추가했다. 파일 전체 처리는 TC별 Version 계보를 유지한 `StructureBatch`와 승인 Version별 Execution을 묶는 `ExecutionSuite`가 필요하다.
+- 상세 사용자 흐름, API·상태·동시성 계약 및 KakaoGames 21건 완료 조건은 [`TC_BATCH_AUTOMATION_PLAN.md`](TC_BATCH_AUTOMATION_PLAN.md)를 따른다.
+- 검증: 백엔드 **116 passed, 1 skipped**, TypeScript 검사와 Python 구문 검사 통과. 프로덕션 빌드는 기존 로컬 Rolldown 선택적 네이티브 바인딩 문제로 Windows 종료 코드 `3221225477`이 발생해 Docker/배포 환경 재검증이 필요하다.
 
 ## 2026-09-16 KakaoGames 실환경 기능 자동화 갭 검증·작업 계획
 

@@ -41,6 +41,7 @@ export interface TestCaseSummary {
   title: string
   group: string
   status: TestCaseStatus
+  latestVersionId?: string | null
   passRate: number
   lastExecutedAt: string
 }

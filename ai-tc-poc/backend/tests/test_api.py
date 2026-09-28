@@ -33,7 +33,7 @@ class FakeTestCaseRepository:
         pass
 
     async def list(self):
-        return [TestCaseSummary(id="TC-142", title="회원가입", group="Authentication", status="READY", passRate=96, lastExecutedAt="12분 전")]
+        return [TestCaseSummary(id="TC-142", title="회원가입", group="Authentication", status="READY", latestVersionId="00000000-0000-0000-0000-000000000501", passRate=96, lastExecutedAt="12분 전")]
 
     async def save_structured(self, _body, result, _imported=None):
         self.versions[result.versionId] = "REVIEW_REQUIRED"
@@ -289,7 +289,8 @@ def test_list_test_cases_matches_frontend_contract() -> None:
     response = client.get("/api/v1/test-cases")
     assert response.status_code == 200
     first = response.json()[0]
-    assert {"id", "title", "group", "status", "passRate", "lastExecutedAt"} <= first.keys()
+    assert {"id", "title", "group", "status", "latestVersionId", "passRate", "lastExecutedAt"} <= first.keys()
+    assert first["latestVersionId"] == "00000000-0000-0000-0000-000000000501"
 
 
 def test_structure_test_case() -> None:

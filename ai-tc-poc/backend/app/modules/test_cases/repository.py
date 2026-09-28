@@ -32,8 +32,15 @@ class SqlTestCaseRepository:
             .limit(1)
             .scalar_subquery()
         )
+        latest_version_id = (
+            select(TestCaseVersion.id)
+            .where(TestCaseVersion.test_case_id == TestCase.id)
+            .order_by(desc(TestCaseVersion.version_no))
+            .limit(1)
+            .scalar_subquery()
+        )
         rows = (await self.session.execute(
-            select(TestCase, latest_version.label("status"))
+            select(TestCase, latest_version.label("status"), latest_version_id.label("latest_version_id"))
             .where(
                 TestCase.organization_id == self.organization_id,
                 *([TestCase.project_id == self.project_id] if self.project_id else []),
@@ -45,7 +52,7 @@ class SqlTestCaseRepository:
             ExecutionStatus.PASS, ExecutionStatus.FAIL, ExecutionStatus.BLOCKED, ExecutionStatus.NEEDS_REVIEW,
             ExecutionStatus.CANCELLED, ExecutionStatus.SYSTEM_ERROR,
         ]
-        for item, status in rows:
+        for item, status, version_id in rows:
             execution_rows = (await self.session.execute(
                 select(Execution.status, Execution.ended_at, Execution.queued_at)
                 .join(TestCaseVersion, TestCaseVersion.id == Execution.test_case_version_id)
@@ -60,6 +67,7 @@ class SqlTestCaseRepository:
                 title=item.title,
                 group=item.group_name,
                 status=status or "DRAFT",
+                latestVersionId=version_id,
                 passRate=pass_rate,
                 lastExecutedAt=last_at,
             ))

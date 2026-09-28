@@ -11,6 +11,7 @@ class TestCaseSummary(BaseModel):
     title: str
     group: str
     status: TestCaseStatus
+    latestVersionId: UUID | None = None
     passRate: int = Field(ge=0, le=100)
     lastExecutedAt: str
 
