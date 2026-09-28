@@ -15,6 +15,7 @@ jira_config.json
 **/.env.public
 *.local.json
 session_cookies.json
+crawl_log_check_config.json
 
 # Build outputs
 build/

@@ -1,0 +1,23 @@
+{
+  "admin_url": "",
+  "currency_map": {
+    "FREE_GOLD": "골드",
+    "PAID_GOLD": "골드",
+    "FREE_GEM": "스타젬",
+    "PAID_GEM": "스타젬",
+    "HEART": "하트"
+  },
+  "action_value_reasons": [
+    "levelUp",
+    "ex_gain",
+    "toploader_like",
+    "toploader_report",
+    "toploader_cheer",
+    "toploader_cheer_cancle",
+    "toploader_share"
+  ],
+  "ignore_missing_fields": [
+    "itemName",
+    "itemGrade"
+  ]
+}
