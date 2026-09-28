@@ -188,6 +188,15 @@ export interface ImportedTestCaseItem {
   auditFields: Record<string,string>
 }
 
+export interface ImportBatchItemState {
+  itemId:string; testCase:ImportedTestCaseItem; testCaseId?:string|null; latestVersionId?:string|null
+  revision?:number|null; status:'IMPORTED'|'STRUCTURING'|'REVIEW_REQUIRED'|'READY'|'FAILED'|'CONFLICT'
+}
+export interface ImportBatchDetail {
+  importBatchId:string; fileName:string; format:string; title:string; warnings:string[]
+  detectedTestCaseCount:number; items:ImportBatchItemState[]; createdAt:string
+}
+
 export interface ExecutionHistoryItem {
   id:string; testCaseId:string; testCaseTitle:string; testCaseVersionId:string; status:ExecutionStatus
   errorCode?:string|null; plannedStepCount:number; actualStepCount:number; queuedAt:string

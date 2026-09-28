@@ -9,6 +9,7 @@ from app.modules.ai.service import StructureService
 from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
 from app.modules.test_cases.execution_plan import ExecutionPlanError
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError
+from app.modules.test_cases.import_batches import ImportBatchRepository
 from app.schemas.batches import BatchApprovalResponse, BatchApprovalResult, ExecutionSuiteItemResponse, ExecutionSuiteResponse, StructureBatchItemResponse, StructureBatchResponse
 from app.schemas.executions import CreateExecutionRequest
 from app.schemas.test_cases import StructureRequest
@@ -36,6 +37,7 @@ class BatchRepository:
         for source in body.items:
             item = await self.session.scalar(select(StructureBatchItem).where(StructureBatchItem.batch_id == batch.id, StructureBatchItem.item_id == source.itemId))
             item.status = "STRUCTURING"; await self.session.commit()
+            await self._imports().set_status(source.itemId, "STRUCTURING")
             try:
                 request = StructureRequest(title=source.testCase.title, rawText=source.testCase.rawText)
                 result = await StructureService(self.session, self.settings).structure(request, uuid4())
@@ -44,10 +46,12 @@ class BatchRepository:
                 item.version_id, item.test_case_id = version.id, version.test_case_id
                 item.revision, item.status, item.completed_at = int((version.structured_spec or {}).get("planRevision") or 1), "REVIEW_REQUIRED", datetime.now(UTC)
                 await self.session.commit()
+                await self._imports().link_version(source.itemId, version.id, "REVIEW_REQUIRED")
             except (TestCaseVersionRuleError, DomainError) as exc:
                 await self.session.rollback(); item = await self.session.scalar(select(StructureBatchItem).where(StructureBatchItem.batch_id == batch.id, StructureBatchItem.item_id == source.itemId))
                 item.status = "CONFLICT" if getattr(exc, "code", "").endswith("CONFLICT") else "FAILED"
                 item.error_code, item.error_message, item.completed_at = getattr(exc, "code", "STRUCTURE_FAILED"), getattr(exc, "message", "구조화하지 못했습니다."), datetime.now(UTC); await self.session.commit()
+                await self._imports().set_status(source.itemId, item.status)
         rows = await self._items(batch.id); statuses = {x.status for x in rows}; batch = await self.session.get(StructureBatch, batch.id)
         batch.status = "COMPLETED" if statuses <= {"REVIEW_REQUIRED", "READY"} else "FAILED" if statuses <= {"FAILED", "CONFLICT"} else "PARTIAL_SUCCESS"
         batch.completed_at = datetime.now(UTC); await self.session.commit(); return await self.structure_batch(batch.id)
@@ -68,7 +72,7 @@ class BatchRepository:
             version=await self.session.get(TestCaseVersion,req.versionId); actual=int((version.structured_spec or {}).get("planRevision") or 1) if version else None
             if actual!=req.expectedRevision: output.append(BatchApprovalResult(versionId=req.versionId,expectedRevision=req.expectedRevision,status="CONFLICT",errorCode="TC_VERSION_CONFLICT",reason=f"현재 revision은 {actual}입니다.")); continue
             try:
-                await self._tc().approve(req.versionId); item=await self.session.get(StructureBatchItem,item.id); item.status="READY"; await self.session.commit(); output.append(BatchApprovalResult(versionId=req.versionId,expectedRevision=req.expectedRevision,status="READY"))
+                await self._tc().approve(req.versionId); item=await self.session.get(StructureBatchItem,item.id); item.status="READY"; await self.session.commit(); await self._imports().link_version(item.item_id,req.versionId,"READY"); output.append(BatchApprovalResult(versionId=req.versionId,expectedRevision=req.expectedRevision,status="READY"))
             except (TestCaseVersionRuleError,ExecutionPlanError) as exc:
                 await self.session.rollback(); output.append(BatchApprovalResult(versionId=req.versionId,expectedRevision=req.expectedRevision,status="EXCLUDED",errorCode=getattr(exc,"code","PLAN_NOT_EXECUTABLE"),reason=getattr(exc,"message","실행할 수 없습니다.")))
         return BatchApprovalResponse(batchId=batch_id,items=output)
@@ -104,5 +108,6 @@ class BatchRepository:
     async def _items(self,batch_id): return (await self.session.scalars(select(StructureBatchItem).where(StructureBatchItem.batch_id==batch_id).order_by(StructureBatchItem.created_at,StructureBatchItem.id))).all()
     def _tc(self): return SqlTestCaseRepository(self.session,self.organization_id,self.project_id,self.actor_id,self.request_id)
     def _exec(self): return SqlExecutionRepository(self.session,self.organization_id,self.project_id,self.actor_id,self.request_id)
+    def _imports(self): return ImportBatchRepository(self.session,self.organization_id,self.project_id)
     @staticmethod
     def _digest(body): return hashlib.sha256(json.dumps(body.model_dump(mode="json"),ensure_ascii=False,sort_keys=True,separators=(",",":")).encode()).hexdigest()

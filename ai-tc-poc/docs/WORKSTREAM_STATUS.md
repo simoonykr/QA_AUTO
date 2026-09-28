@@ -2,6 +2,15 @@
 
 마지막 갱신: 2026-09-28
 
+## 2026-09-28 ImportBatch 새로고침 복원 백엔드
+
+- 업로드 시 `ImportBatch`와 TC별 `ImportBatchItem` 원문 snapshot을 저장하고 기존 응답의 `importBatchId`·`itemId`를 영속 ID로 사용한다.
+- 단건 자동 구조화와 Structure Batch가 동일 Item에 `testCaseId`, 최신 `versionId`, revision과 상태를 연결한다. 승인·단계 수정 이후 조회는 Version의 현재 상태/revision을 사용한다.
+- `GET /api/v1/import-batches/{importBatchId}`는 파일 메타데이터와 원래 TC 목록, 항목별 `latestVersionId|revision|status`를 반환한다. 조직·프로젝트 범위를 검사하며 다른 Batch는 조회할 수 없다.
+- migration `0012_import_batch_snapshots`와 프론트 API 타입/client를 추가했다. 기존 import·단건 구조화·Batch API는 호환된다.
+- 검증: 백엔드 **127 passed, 1 skipped** 예정, TypeScript·Alembic head·Python compile·diff 검사.
+- 프론트 후속: 새로고침을 넘겨 보존할 `importBatchId`를 URL 또는 안전한 로컬 상태에 보관하고, 화면 시작 시 조회 결과로 TC별 캐시를 재구성한다.
+
 ## 2026-09-28 감지 TC 선택 자동 구조화·상태 보존
 
 - 감지된 TC 카드를 누르면 아직 구조화하지 않은 항목은 별도 버튼 없이 즉시 구조화를 시작한다.

@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportBatchDetail, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -99,6 +99,11 @@ export const api = {
     const rawText = await file.text()
     if (!rawText.trim()) throw new ApiError({ code: 'EMPTY_TEST_CASE_FILE', message: '파일에서 테스트 케이스 내용을 찾지 못했습니다.', requestId: 'mock', retryable: false }, 422)
     return { fileName: file.name, format: extension.toUpperCase(), title: file.name.replace(/\.[^.]+$/, ''), rawText, warnings: [], detectedTestCaseCount:0, testCases:[] }
+  },
+
+  async getImportBatch(importBatchId:string):Promise<ImportBatchDetail> {
+    if (!USE_MOCK_API) return request(`/import-batches/${encodeURIComponent(importBatchId)}`)
+    throw new ApiError({code:'MOCK_IMPORT_BATCH_NOT_FOUND',message:'Mock에서는 새로고침 복원을 지원하지 않습니다.',requestId:'mock',retryable:false},404)
   },
 
   async listEnvironments(): Promise<EnvironmentSummary[]> {

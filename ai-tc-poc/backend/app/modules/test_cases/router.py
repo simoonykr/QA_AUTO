@@ -9,13 +9,15 @@ from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVer
 from app.modules.test_cases.execution_plan import ExecutionPlanError
 from app.modules.executions.repository import SqlExecutionRepository
 from app.schemas.executions import ExecutionListResponse
-from app.schemas.test_cases import ExecutionPlanResponse, ImportedTestCase, SelectedImportStructureRequest, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
+from app.schemas.test_cases import ExecutionPlanResponse, ImportBatchDetail, ImportedTestCase, SelectedImportStructureRequest, StructureRequest, StructuredTestCase, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch
 from app.modules.test_cases.importer import MAX_UPLOAD_BYTES, import_test_case
+from app.modules.test_cases.import_batches import ImportBatchError, ImportBatchRepository
 from app.modules.ai.service import StructureService
 
 
 router = APIRouter(prefix="/test-cases", tags=["test-cases"])
 version_router = APIRouter(prefix="/test-case-versions", tags=["test-cases"])
+import_router = APIRouter(prefix="/import-batches", tags=["test-cases"])
 
 
 @router.get("", response_model=list[TestCaseSummary])
@@ -36,13 +38,26 @@ async def list_test_case_executions(test_case_id: str, request: Request, session
 
 
 @router.post("/import", response_model=ImportedTestCase)
-async def import_test_case_file(file: UploadFile = File(...)) -> ImportedTestCase:
+async def import_test_case_file(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)) -> ImportedTestCase:
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     imported = import_test_case(file.filename or "upload", data)
-    return imported.model_copy(update={
+    imported = imported.model_copy(update={
         "importBatchId": uuid4(),
         "testCases": [item.model_copy(update={"itemId": uuid4()}) for item in imported.testCases],
     })
+    if isinstance(session, AsyncSession):
+        settings = get_settings()
+        await ImportBatchRepository(session, UUID(settings.default_organization_id), UUID(settings.default_project_id)).create(imported)
+    return imported
+
+
+@import_router.get("/{batch_id}", response_model=ImportBatchDetail)
+async def get_import_batch(batch_id: UUID, session: AsyncSession = Depends(get_session)) -> ImportBatchDetail:
+    settings = get_settings()
+    try:
+        return await ImportBatchRepository(session, UUID(settings.default_organization_id), UUID(settings.default_project_id)).get(batch_id)
+    except ImportBatchError as exc:
+        raise DomainError(exc.code, exc.message, 404) from None
 
 
 @version_router.post("/current/structure", response_model=StructuredTestCase)
@@ -70,7 +85,12 @@ async def structure_imported_test_case(body: SelectedImportStructureRequest, req
         UUID(settings.default_user_id), UUID(request.state.request_id),
     )
     try:
-        return await repository.save_structured(structure_request, structured, body.testCase)
+        saved = await repository.save_structured(structure_request, structured, body.testCase)
+        if isinstance(session, AsyncSession):
+            await ImportBatchRepository(session, UUID(settings.default_organization_id), UUID(settings.default_project_id)).link_version(
+                body.testCase.itemId, UUID(saved.versionId), saved.status,
+            )
+        return saved
     except TestCaseVersionRuleError as exc:
         raise DomainError(exc.code, exc.message, 409 if exc.code.endswith("CONFLICT") else 404) from None
 

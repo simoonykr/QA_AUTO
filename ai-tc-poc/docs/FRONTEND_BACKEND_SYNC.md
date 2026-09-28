@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-28 ImportBatch 새로고침 복원 계약
+
+- `POST /test-cases/import`가 반환하는 `importBatchId`와 `testCases[].itemId`는 이제 DB에 영속화된다.
+- `GET /api/v1/import-batches/{importBatchId}` 응답: `{importBatchId,fileName,format,title,warnings,detectedTestCaseCount,createdAt,items}`.
+- `items[]`: `{itemId,testCase,testCaseId,latestVersionId,revision,status}`. `testCase`는 업로드 시점의 최소 원문 snapshot이며 상태는 `IMPORTED|STRUCTURING|REVIEW_REQUIRED|READY|FAILED|CONFLICT`다.
+- 단건 `/test-case-versions/imported/structure`도 기존 `testCase.itemId`만으로 Item에 생성 Version을 연결한다. 별도 필수 요청 필드는 없다.
+- 프론트는 새로고침 후 보존된 `importBatchId`로 조회하고 `itemId` 기준으로 원래 목록과 구조화 캐시를 복원한다. `latestVersionId`가 없는 항목은 미구조화 상태다.
+
 ## 2026-09-28 감지 TC 자동 구조화·세션 상태 보존
 
 - 프론트는 import의 `itemId`를 TC별 상태 키로 사용한다. 카드 최초 선택 시 단건 구조화를 자동 시작하고, 재선택 시 기존 Version과 검토·승인 상태를 복원한다.

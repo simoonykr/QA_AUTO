@@ -491,6 +491,8 @@ def test_import_xlsx_test_case() -> None:
         files={"file": ("login.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert response.status_code == 200
+    assert UUID(response.json()["importBatchId"])
+    assert UUID(response.json()["testCases"][0]["itemId"])
     assert response.json()["testCases"][0]["steps"] == ["로그인"]
     assert response.json()["testCases"][0]["expected"] == "대시보드 노출"
 
@@ -806,7 +808,12 @@ def test_execution_request_digest_is_stable() -> None:
 
 
 def test_required_database_models_are_registered() -> None:
-    assert len(Base.metadata.tables) == 21
+    assert len(Base.metadata.tables) == 23
+
+
+def test_openapi_exposes_import_batch_restore_contract() -> None:
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/api/v1/import-batches/{batch_id}" in paths
 
 
 def test_execution_resource_ids_require_real_uuids() -> None:

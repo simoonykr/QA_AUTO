@@ -47,6 +47,26 @@ class ImportedTestCaseItem(BaseModel):
     auditFields: dict[str, str] = Field(default_factory=dict)
 
 
+class ImportBatchItemState(BaseModel):
+    itemId: UUID
+    testCase: ImportedTestCaseItem
+    testCaseId: UUID | None = None
+    latestVersionId: UUID | None = None
+    revision: int | None = None
+    status: Literal["IMPORTED", "STRUCTURING", "REVIEW_REQUIRED", "READY", "FAILED", "CONFLICT"]
+
+
+class ImportBatchDetail(BaseModel):
+    importBatchId: UUID
+    fileName: str
+    format: Literal["txt", "csv", "xlsx", "docx"]
+    title: str
+    warnings: list[str]
+    detectedTestCaseCount: int
+    items: list[ImportBatchItemState]
+    createdAt: str
+
+
 class SelectedImportStructureRequest(BaseModel):
     testCase: ImportedTestCaseItem
 
