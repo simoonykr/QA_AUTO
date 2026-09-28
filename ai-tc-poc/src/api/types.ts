@@ -218,6 +218,12 @@ export interface StructureBatchResult {
 export interface BatchApprovalResult {
   versionId:string; expectedRevision:number; status:'READY'|'EXCLUDED'|'CONFLICT'|'FAILED'; errorCode?:string|null; reason?:string|null
 }
+export interface BatchApprovalResponse { batchId:string; items:BatchApprovalResult[] }
+export interface CreateExecutionSuiteRequest {
+  testCaseVersionIds:string[]; environmentId:string; retryPolicy:'MANUAL'
+  browser:'Chromium'|'Firefox'|'WebKit'; accountId?:string|null; viewport:string; locale:string
+  limits:{timeoutMinutes:number;maxAiCalls:number;retryCount:number}; requireRiskApproval:boolean
+}
 export interface ExecutionSuiteItem {
   testCaseVersionId:string; executionId?:string|null; status:string; errorCode?:string|null; reason?:string|null
 }

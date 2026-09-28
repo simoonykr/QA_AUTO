@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -39,6 +39,8 @@ const mockPlanKey = (versionId:string,environmentId:string) => `${versionId}:${e
 const mockDiscoveries = new Map<string,{polls:number;value:PageDiscovery}>()
 const mockPageFirstDiscoveries = new Map<string,{polls:number;value:PageFirstDiscovery}>()
 const mockPageScenarios = new Map<string,PageScenarioDraft>()
+const mockStructureBatches = new Map<string,StructureBatchResult>()
+const mockExecutionSuites = new Map<string,ExecutionSuite>()
 
 export const api = {
   subscribeExecution(id: string, onDetails: (details: ExecutionDetails) => void, onError: () => void): () => void {
@@ -281,6 +283,50 @@ export const api = {
     const pending=comparisons.some(item=>item.decision==='PENDING')
     const updated={...current,revision:current.revision+1,comparisons,warnings:pending?[{code:'SCENARIO_REVIEW_REQUIRED',message:'모든 비교 항목의 처리 방식을 선택해 주세요.'}]:[]}
     mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
+  },
+
+  async createStructureBatch(importBatchId:string|null,items:ImportedTestCaseItem[],idempotencyKey:string):Promise<StructureBatchResult> {
+    if (!USE_MOCK_API) return request('/test-case-structure-batches',{method:'POST',headers:{'Idempotency-Key':idempotencyKey},body:JSON.stringify({importBatchId,items:items.map(testCase=>({itemId:testCase.itemId,testCase})),maxConcurrency:3,maxAiCallsPerCase:0})})
+    await wait(600)
+    const batchId=crypto.randomUUID()
+    const result:StructureBatchResult={batchId,status:'COMPLETED',items:items.map(item=>({itemId:item.itemId??crypto.randomUUID(),externalId:item.externalId,testCaseId:crypto.randomUUID(),versionId:crypto.randomUUID(),revision:1,status:'REVIEW_REQUIRED'})),counts:{REVIEW_REQUIRED:items.length},createdAt:new Date().toISOString(),completedAt:new Date().toISOString()}
+    mockStructureBatches.set(batchId,result)
+    return structuredClone(result)
+  },
+
+  async getStructureBatch(batchId:string):Promise<StructureBatchResult> {
+    if (!USE_MOCK_API) return request(`/test-case-structure-batches/${batchId}`)
+    const result=mockStructureBatches.get(batchId)
+    if(!result)throw new ApiError({code:'STRUCTURE_BATCH_NOT_FOUND',message:'구조화 Batch를 찾을 수 없습니다.',requestId:'mock',retryable:false},404)
+    return structuredClone(result)
+  },
+
+  async approveStructureBatch(batchId:string,items:Array<{versionId:string;expectedRevision:number}>):Promise<BatchApprovalResponse> {
+    if (!USE_MOCK_API) return request(`/test-case-structure-batches/${batchId}/approve`,{method:'POST',body:JSON.stringify({items})})
+    const batch=await this.getStructureBatch(batchId)
+    const versions=new Set(items.map(item=>item.versionId))
+    const updatedItems=batch.items.map(item=>item.versionId&&versions.has(item.versionId)?{...item,status:'READY' as const}:item)
+    const updated={...batch,items:updatedItems,counts:updatedItems.reduce<Record<string,number>>((counts,item)=>({...counts,[item.status]:(counts[item.status]??0)+1}),{})}
+    mockStructureBatches.set(batchId,updated)
+    return {batchId,items:items.map(item=>({...item,status:'READY'}))}
+  },
+
+  async createExecutionSuite(input:CreateExecutionSuiteRequest,idempotencyKey:string):Promise<ExecutionSuite> {
+    if (!USE_MOCK_API) return request('/execution-suites',{method:'POST',headers:{'Idempotency-Key':idempotencyKey},body:JSON.stringify(input)})
+    await wait(350)
+    const executionSuiteId=crypto.randomUUID()
+    const result:ExecutionSuite={executionSuiteId,status:'QUEUED',items:input.testCaseVersionIds.map(testCaseVersionId=>({testCaseVersionId,executionId:crypto.randomUUID(),status:'QUEUED'})),counts:{QUEUED:input.testCaseVersionIds.length},createdAt:new Date().toISOString()}
+    mockExecutionSuites.set(executionSuiteId,result)
+    return structuredClone(result)
+  },
+
+  async getExecutionSuite(suiteId:string):Promise<ExecutionSuite> {
+    if (!USE_MOCK_API) return request(`/execution-suites/${suiteId}`)
+    const current=mockExecutionSuites.get(suiteId)
+    if(!current)throw new ApiError({code:'EXECUTION_SUITE_NOT_FOUND',message:'실행 Suite를 찾을 수 없습니다.',requestId:'mock',retryable:false},404)
+    const result={...current,status:'PASS',items:current.items.map(item=>({...item,status:'PASS'})),counts:{PASS:current.items.length}}
+    mockExecutionSuites.set(suiteId,result)
+    return structuredClone(result)
   },
 
   async applyPageScenarioCandidate(scenarioId:string,candidateId:string,input:ScenarioApproveRequest):Promise<PageScenarioDraft> {

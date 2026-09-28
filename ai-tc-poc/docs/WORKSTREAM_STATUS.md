@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-28
 
+## 2026-09-28 다중 TC Batch·Suite 프론트 1차
+
+- 백엔드 `4562921`의 Import/Structure Batch/일괄 승인/Execution Suite 계약을 자연어 TC 작성 화면에 연결했다.
+- 감지 TC 전체 선택·해제와 일부 선택, 요청 중 잠금, Batch 상태 집계, TC별 Version·오류, 부분 실패·충돌 수동 재선택을 제공한다.
+- 승인 대기 항목만 `versionId + expectedRevision`으로 일괄 승인하며 READY 항목만 선택 환경의 Suite로 실행한다. Suite 집계와 TC별 Execution ID를 표시하고 `FAIL|SYSTEM_ERROR`만 새 Suite로 재실행한다.
+- 모든 구조화와 실행은 AI 호출 0회 설정을 고정하며 TC별 Version/Execution 계보를 유지한다. 실시간 항목 진행률과 `maxConcurrency` 병렬 처리는 백엔드 후속 계약 이후 연결한다.
+- 검증: 백엔드 로컬 **116 passed, 1 skipped**, TypeScript·diff 검사 통과. 로컬 프로덕션 빌드는 기존 Rolldown 네이티브 바인딩 종료 코드 `3221225477`이 지속돼 배포 환경 재검증이 필요하다.
+
 ## 2026-09-28 다중 TC 백엔드 Batch·Suite 계약 구현
 
 - import 응답에 선택 필드 `importBatchId`, `testCases[].itemId`를 추가하고 기존 단건 계약을 유지했다.

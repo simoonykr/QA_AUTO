@@ -8,7 +8,7 @@ import {
   Download, ExternalLink, RefreshCw, Eye, ChevronRight, Trash2,
 } from 'lucide-react'
 import { api, apiConfig, ApiError } from './api/client'
-import type { AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, EnvironmentSummary, Execution, ExecutionDetails, ExecutionHistoryItem, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, FunctionalCoverageSummary, ImportedTestCaseItem, PageDiscovery, PageFirstDiscovery, PageScenarioCandidate, PageScenarioDraft, ScenarioComparison, ScenarioComparisonResult, ScenarioDecision, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
+import type { AuthenticatedUser, CreateExecutionRequest, DiscoverySelection, EnvironmentSummary, Execution, ExecutionDetails, ExecutionHistoryItem, ExecutionPlan, ExecutionPlanStep, ExecutionPolicy, ExecutionStepRun, ExecutionSuite, FunctionalCoverageSummary, ImportedTestCaseItem, PageDiscovery, PageFirstDiscovery, PageScenarioCandidate, PageScenarioDraft, ScenarioComparison, ScenarioComparisonResult, ScenarioDecision, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseSummary, TestCaseVersionStepPatch } from './api/types'
 
 type View = 'dashboard' | 'cases' | 'history' | 'page-first' | 'author' | 'configure' | 'plan' | 'run' | 'result' | 'environments' | 'accounts' | 'policies'
 type RunState = 'idle' | 'running' | 'paused' | 'done' | 'failed'
@@ -504,6 +504,12 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [importWarnings,setImportWarnings] = useState<string[]>([])
   const [importedTestCases,setImportedTestCases] = useState<ImportedTestCaseItem[]>([])
   const [selectedImportedId,setSelectedImportedId] = useState('')
+  const [importBatchId,setImportBatchId] = useState<string|null>(null)
+  const [selectedBatchItemIds,setSelectedBatchItemIds] = useState<string[]>([])
+  const [batchResult,setBatchResult] = useState<StructureBatchResult|null>(null)
+  const [batchBusy,setBatchBusy] = useState(false)
+  const [suite,setSuite] = useState<ExecutionSuite|null>(null)
+  const [suiteBusy,setSuiteBusy] = useState(false)
   const [excludedMetadataLines,setExcludedMetadataLines] = useState(0)
   const [excludedResultColumns,setExcludedResultColumns] = useState(0)
   const [splitReview,setSplitReview] = useState<{detectedTestCaseCount:number;rawTextLength:number}|null>(null)
@@ -525,6 +531,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [discoveryApplying,setDiscoveryApplying] = useState(false)
   const [discoveryError,setDiscoveryError] = useState<{code:string;message:string}|null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const structureRequestRef = useRef(0)
   useEffect(()=>{
     if (stage!=='review') return
     api.listEnvironments().then(items=>{
@@ -557,8 +564,15 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     void poll()
     return()=>{active=false;if(timer)window.clearTimeout(timer)}
   },[stage,structured?.versionId,discoveryId])
+  useEffect(()=>{
+    if(!suite||['PASS','FAIL','BLOCKED'].includes(suite.status)) return
+    let active=true
+    const timer=window.setInterval(()=>void api.getExecutionSuite(suite.executionSuiteId).then(result=>{if(active)setSuite(result)}).catch(()=>undefined),2000)
+    return()=>{active=false;window.clearInterval(timer)}
+  },[suite?.executionSuiteId,suite?.status])
   const importFile = async (file?: File) => {
     if (!file) return
+    structureRequestRef.current+=1
     const extension = file.name.split('.').pop()?.toLowerCase()
     if (!['csv','xlsx','docx','txt'].includes(extension ?? '')) return onToast('지원하지 않는 파일 형식입니다.')
     if (file.size > 10 * 1024 * 1024) return onToast('파일 크기는 최대 10MB까지 지원합니다.')
@@ -575,6 +589,9 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       setRaw(imported.rawText)
       setImportWarnings(imported.warnings)
       setImportedTestCases(imported.testCases)
+      setImportBatchId(imported.importBatchId??null)
+      setSelectedBatchItemIds(imported.testCases.flatMap(item=>item.itemId?[item.itemId]:[]))
+      setBatchResult(null);setSuite(null)
       const first=imported.testCases[0]
       setSelectedImportedId(first?.externalId??'')
       if(first){setTitle(first.title);setRaw(first.rawText)}
@@ -592,8 +609,10 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     setExcludedMetadataLines(prepared.excludedLineCount)
     setExcludedResultColumns(prepared.excludedResultColumns)
     setStage('structuring')
-    try { const selected=importedTestCases.find(item=>item.externalId===selectedImportedId); const result=selected?await api.structureImportedTestCase({...selected,title:title.trim(),rawText:prepared.rawText}):await api.structureTestCase(title.trim(),prepared.rawText); setStructured(result); setReviewPlan(null); setEditingStep(null); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
+    const requestId=++structureRequestRef.current
+    try { const selected=importedTestCases.find(item=>item.externalId===selectedImportedId); const result=selected?await api.structureImportedTestCase({...selected,title:title.trim(),rawText:prepared.rawText}):await api.structureTestCase(title.trim(),prepared.rawText); if(requestId!==structureRequestRef.current)return; setStructured(result); setReviewPlan(null); setEditingStep(null); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
     catch (error) {
+      if(requestId!==structureRequestRef.current)return
       if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
         const count=Number(error.body.details?.detectedTestCaseCount)
         const length=Number(error.body.details?.rawTextLength)
@@ -613,6 +632,40 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       const ready={...structured,status:approved.status}; setStructured(ready); onStructured(ready); onVersion(approved.versionId); setStage('ready')
       onToast('검토 승인이 완료되었습니다.')
     } catch (error) { onToast(error instanceof ApiError ? error.body.message : '검토 승인에 실패했습니다.') }
+  }
+  const structureBatch = async () => {
+    const selected=importedTestCases.filter(item=>item.itemId&&selectedBatchItemIds.includes(item.itemId))
+    if(!selected.length)return onToast('일괄 구조화할 TC를 선택해 주세요.')
+    if(selected.some(item=>!item.itemId))return onToast('itemId가 없는 TC는 일괄 구조화할 수 없습니다. 파일을 다시 가져와 주세요.')
+    setBatchBusy(true);setBatchResult(null);setSuite(null);onVersion(null);onStructured(null)
+    try {
+      const result=await api.createStructureBatch(importBatchId,selected,crypto.randomUUID())
+      setBatchResult(result)
+      if(!reviewEnvironments.length){const environments=await api.listEnvironments();setReviewEnvironments(environments);setReviewEnvironmentId(environments[0]?.id??'')}
+      onToast(`일괄 구조화 완료: 검토 ${result.counts.REVIEW_REQUIRED??0}건, 실패·충돌 ${(result.counts.FAILED??0)+(result.counts.CONFLICT??0)}건`)
+    } catch(error){onToast(error instanceof ApiError?error.body.message:'일괄 구조화에 실패했습니다.')}
+    finally{setBatchBusy(false)}
+  }
+  const approveBatch = async () => {
+    if(!batchResult)return
+    const items=batchResult.items.flatMap(item=>item.status==='REVIEW_REQUIRED'&&item.versionId&&item.revision?[{versionId:item.versionId,expectedRevision:item.revision}]:[])
+    if(!items.length)return onToast('승인 대기 중인 실행 가능 TC가 없습니다.')
+    setBatchBusy(true)
+    try {
+      const result=await api.approveStructureBatch(batchResult.batchId,items)
+      setBatchResult(await api.getStructureBatch(batchResult.batchId))
+      onToast(`일괄 승인 결과: READY ${result.items.filter(item=>item.status==='READY').length}건, 제외·실패 ${result.items.filter(item=>item.status!=='READY').length}건`)
+    } catch(error){onToast(error instanceof ApiError?error.body.message:'일괄 승인에 실패했습니다.')}
+    finally{setBatchBusy(false)}
+  }
+  const startSuite = async (failedOnly=false) => {
+    if(!batchResult||!reviewEnvironmentId)return onToast('실행 환경과 승인 결과를 확인해 주세요.')
+    const source=failedOnly&&suite?suite.items.filter(item=>['FAIL','SYSTEM_ERROR'].includes(item.status)).map(item=>item.testCaseVersionId):batchResult.items.filter(item=>item.status==='READY'&&item.versionId).map(item=>item.versionId as string)
+    if(!source.length)return onToast(failedOnly?'재실행할 실패 TC가 없습니다.':'Suite에 포함할 READY TC가 없습니다.')
+    setSuiteBusy(true)
+    try {setSuite(await api.createExecutionSuite({testCaseVersionIds:source,environmentId:reviewEnvironmentId,retryPolicy:'MANUAL',browser:'Chromium',accountId:null,viewport:'1440x900',locale:'ko-KR',limits:{timeoutMinutes:10,maxAiCalls:0,retryCount:0},requireRiskApproval:true},crypto.randomUUID()));onToast(`${source.length}개 TC Suite 실행을 시작했습니다.`)}
+    catch(error){onToast(error instanceof ApiError?error.body.message:'Suite 실행을 시작하지 못했습니다.')}
+    finally{setSuiteBusy(false)}
   }
   const openStepEditor = (step:ExecutionPlanStep) => {
     setEditingStep(step)
@@ -684,9 +737,9 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     } catch(error){onToast(error instanceof ApiError?error.body.message:'페이지 분석 결과를 적용하지 못했습니다.')}
     finally{setDiscoveryApplying(false)}
   }
-  const selectImported = (item:ImportedTestCaseItem) => {setSelectedImportedId(item.externalId??'');setTitle(item.title);setRaw(item.rawText);setStructured(null);setDiscoveryError(null);onStructured(null);onVersion(null);setStage('draft')}
-  const editTitle = (value:string) => { setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
-  const editRaw = (value:string) => { setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
+  const selectImported = (item:ImportedTestCaseItem) => {structureRequestRef.current+=1;setSelectedImportedId(item.externalId??'');setTitle(item.title);setRaw(item.rawText);setStructured(null);setDiscoveryError(null);onStructured(null);onVersion(null);setStage('draft')}
+  const editTitle = (value:string) => { structureRequestRef.current+=1;setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
+  const editRaw = (value:string) => { structureRequestRef.current+=1;setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   const displayedAutomationStatus=stage==='review'&&reviewPlan?.executable!==true?'MANUAL_REVIEW_REQUIRED':structured?.automationStatus
   const displayedAutomationReason=stage==='review'&&reviewPlan?.executable!==true?'실행 계획에 미해결 항목이 있어 페이지 분석 또는 직접 검토가 필요합니다.':structured?.automationReason
   const selectedImported=importedTestCases.find(item=>item.externalId===selectedImportedId)
@@ -694,7 +747,22 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()} disabled={reviewPlan?.executable!==true||planLoading||savingStep} title={reviewPlan?.executable?'검토 승인':'누락된 단계 필드를 먼저 수정해 주세요.'}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
-      <article className="panel editor-panel"><div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>{importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{setImportedFile('');setImportWarnings([]);setImportedTestCases([]);setSelectedImportedId('');setExcludedMetadataLines(0);setExcludedResultColumns(0);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing}><XCircle size={14}/></button></div>}{importedTestCases.length>0&&<div className="imported-tc-list"><div className="imported-tc-heading"><div><b>감지된 TC {importedTestCases.length}개</b><p>현재는 TC별 검토 안전성을 위해 선택한 1건만 독립 Version으로 구조화·승인·실행합니다.</p></div><span>선택 1 / {importedTestCases.length}</span></div><div className="imported-tc-grid">{importedTestCases.map(item=><button key={item.externalId??item.title} className={selectedImportedId===(item.externalId??'')?'selected':''} onClick={()=>selectImported(item)} aria-pressed={selectedImportedId===(item.externalId??'')}><span>{item.externalId??'ID 없음'}</span><small>{item.title}</small></button>)}</div><div className="imported-tc-scope"><ShieldCheck/><div><b>이번 처리 대상: {selectedImported?.externalId??'선택 없음'}</b><p>나머지 {Math.max(importedTestCases.length-1,0)}건은 자동으로 구조화되거나 실행되지 않습니다. 파일 단위 일괄 처리는 후속 Suite 기능에서 제공합니다.</p></div></div></div>}{importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}{(excludedMetadataLines>0||excludedResultColumns>0)&&<div className="metadata-filter"><ShieldCheck/><div><b>결과 집계 {excludedMetadataLines}개 행 · 결과 기록 {excludedResultColumns}개 열 제외</b><p>실제 TC의 ID, 계층, 전제조건, Step, Expected Result만 구조화에 사용했습니다.</p></div></div>}<label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>editTitle(e.target.value)} disabled={importing}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>editRaw(e.target.value)} disabled={importing}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> {selectedImported?.externalId?`${selectedImported.externalId} 구조화`:'선택한 TC 구조화'} <ArrowRight/></>}</button></article>
+      <article className="panel editor-panel">
+        <div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing||batchBusy||stage==='structuring'}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>
+        {importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{structureRequestRef.current+=1;setImportedFile('');setImportWarnings([]);setImportedTestCases([]);setSelectedImportedId('');setImportBatchId(null);setSelectedBatchItemIds([]);setBatchResult(null);setSuite(null);setExcludedMetadataLines(0);setExcludedResultColumns(0);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing||batchBusy||stage==='structuring'}><XCircle size={14}/></button></div>}
+        {importedTestCases.length>0&&<div className="imported-tc-list">
+          <div className="imported-tc-heading"><div><b>감지된 TC {importedTestCases.length}개</b><p>단건은 카드를 눌러 검토하고, 체크한 TC는 각각 독립 Version으로 일괄 구조화합니다.</p></div><span>일괄 선택 {selectedBatchItemIds.length} / {importedTestCases.length}</span></div>
+          <div className="batch-select-actions"><button className="text-button" onClick={()=>setSelectedBatchItemIds(importedTestCases.flatMap(item=>item.itemId?[item.itemId]:[]))}>전체 선택</button><button className="text-button" onClick={()=>setSelectedBatchItemIds([])}>전체 해제</button></div>
+          <div className="imported-tc-grid">{importedTestCases.map(item=>{const key=item.itemId??item.externalId??item.title;const checked=Boolean(item.itemId&&selectedBatchItemIds.includes(item.itemId));return <div className={`imported-tc-choice ${selectedImportedId===(item.externalId??'')?'selected':''}`} key={key}><input type="checkbox" checked={checked} disabled={!item.itemId||batchBusy||stage==='structuring'} aria-label={`${item.externalId??item.title} 일괄 선택`} onChange={()=>item.itemId&&setSelectedBatchItemIds(current=>current.includes(item.itemId as string)?current.filter(id=>id!==item.itemId):[...current,item.itemId as string])}/><button onClick={()=>selectImported(item)} disabled={batchBusy||stage==='structuring'}><span>{item.externalId??'ID 없음'}</span><small>{item.title}</small></button></div>})}</div>
+          <div className="imported-tc-scope"><ShieldCheck/><div><b>단건 검토: {selectedImported?.externalId??'선택 없음'} · 일괄 처리: {selectedBatchItemIds.length}건</b><p>일괄 처리도 TC별 Version과 결과를 분리합니다. 실패·충돌 항목은 다른 TC의 처리를 취소하지 않습니다.</p></div></div>
+          <button className="secondary batch-primary" onClick={()=>void structureBatch()} disabled={batchBusy||selectedBatchItemIds.length===0}>{batchBusy?<Activity className="spin"/>:<ListChecks/>} 선택한 {selectedBatchItemIds.length}개 TC 일괄 구조화</button>
+        </div>}
+        {batchResult&&<div className="batch-workflow"><div className="batch-summary"><div><b>Structure Batch</b><small>{batchResult.batchId}</small></div><span className={`pill ${batchResult.status==='COMPLETED'?'pass':'review'}`}>{batchResult.status.replace('_',' ')}</span></div><div className="batch-counts">{Object.entries(batchResult.counts).map(([status,count])=><span key={status}><b>{count}</b>{status.replace('_',' ')}</span>)}</div><div className="batch-items">{batchResult.items.map(item=><div key={item.itemId}><span className={`batch-state ${item.status.toLowerCase()}`}>{item.status}</span><div><b>{item.externalId??item.itemId}</b><small>{item.versionId??item.errorCode??'Version 미생성'}{item.errorMessage&&` · ${item.errorMessage}`}</small></div></div>)}</div><div className="batch-actions"><label>Suite 환경<select value={reviewEnvironmentId} onChange={event=>setReviewEnvironmentId(event.target.value)} disabled={batchBusy||suiteBusy}>{reviewEnvironments.map(environment=><option key={environment.id} value={environment.id}>{environment.name}</option>)}</select></label>{batchResult.items.some(item=>['FAILED','CONFLICT'].includes(item.status))&&<button className="secondary" onClick={()=>setSelectedBatchItemIds(batchResult.items.filter(item=>['FAILED','CONFLICT'].includes(item.status)).map(item=>item.itemId))}>실패·충돌만 다시 선택</button>}<button className="secondary" onClick={()=>void approveBatch()} disabled={batchBusy||!batchResult.items.some(item=>item.status==='REVIEW_REQUIRED')}>검토 대기 일괄 승인</button><button className="primary" onClick={()=>void startSuite()} disabled={suiteBusy||!reviewEnvironmentId||!batchResult.items.some(item=>item.status==='READY')}>{suiteBusy?<Activity className="spin"/>:<Play/>} READY Suite 실행</button></div></div>}
+        {suite&&<div className="suite-result"><div className="batch-summary"><div><b>Execution Suite</b><small>{suite.executionSuiteId}</small></div><span className={`pill ${suite.status==='PASS'?'pass':['FAIL','BLOCKED'].includes(suite.status)?'fail':'running'}`}>{suite.status}</span></div><div className="batch-counts">{Object.entries(suite.counts).map(([status,count])=><span key={status}><b>{count}</b>{status}</span>)}</div><div className="batch-items">{suite.items.map(item=><div key={item.testCaseVersionId}><span className={`batch-state ${item.status.toLowerCase()}`}>{item.status}</span><div><b>{item.testCaseVersionId}</b><small>{item.executionId??item.errorCode??'Execution 미생성'}{item.reason&&` · ${item.reason}`}</small></div></div>)}</div>{suite.items.some(item=>['FAIL','SYSTEM_ERROR'].includes(item.status))&&<button className="secondary batch-retry" onClick={()=>void startSuite(true)} disabled={suiteBusy}><RefreshCw/> 실패 TC만 새 Suite로 재실행</button>}</div>}
+        {importWarnings.length>0&&<div className="ambiguity"><AlertTriangle/><div><b>가져오기 경고 {importWarnings.length}개</b>{importWarnings.map(item=><p key={item}>{item}</p>)}</div></div>}
+        {(excludedMetadataLines>0||excludedResultColumns>0)&&<div className="metadata-filter"><ShieldCheck/><div><b>결과 집계 {excludedMetadataLines}개 행 · 결과 기록 {excludedResultColumns}개 열 제외</b><p>실제 TC의 ID, 계층, 전제조건, Step, Expected Result만 구조화에 사용했습니다.</p></div></div>}
+        <label className="field-label">테스트 이름</label><input className="field-input" value={title} onChange={e=>editTitle(e.target.value)} disabled={importing||batchBusy}/><label className="field-label">원문 TC</label><textarea className="tc-editor" value={raw} onChange={e=>editRaw(e.target.value)} disabled={importing||batchBusy}/><div className="editor-meta"><span>{raw.length}자</span><span>CSV · XLSX · DOCX · TXT · 최대 10MB</span></div><button className="ai-button" onClick={structure} disabled={stage==='structuring'||importing||batchBusy}>{stage==='structuring'?<><Activity className="spin"/> TC를 구조화하고 있습니다...</>:<><WandSparkles/> {selectedImported?.externalId?`${selectedImported.externalId} 단건 구조화`:'선택한 TC 구조화'} <ArrowRight/></>}</button>
+      </article>
       <article className={`panel review-panel ${(stage==='draft'||stage==='split-review')?'empty-review':''}`}>
         {stage==='draft'&&<div className="review-empty"><div><Bot/></div><h2>구조화 결과가 여기에 표시됩니다.</h2><p>현재는 AI 토큰 없이 전제조건, 실행 단계와 기대 결과를 안전한 규칙으로 분리합니다.</p><ul><li><Check/> 허용된 action으로 변환</li><li><Check/> 규칙 기반 assertion 생성</li><li><Check/> 위험 행동 자동 감지</li></ul></div>}
         {stage==='split-review'&&splitReview&&<div className="review-empty split-review"><div><ListChecks/></div><h2>TC별 분리가 필요합니다.</h2><p>하나의 파일에서 여러 테스트 케이스가 감지되어 단일 실행 단계로 구조화하지 않았습니다.</p><div className="split-review-stats"><span><b>{splitReview.detectedTestCaseCount.toLocaleString()}개</b> 감지된 TC</span><span><b>{splitReview.rawTextLength.toLocaleString()}자</b> 원문 길이</span></div><div className="ambiguity"><AlertTriangle/><div><b>검토가 필요한 상태입니다.</b><p>현재 원문을 TC별로 분리한 뒤 각각 구조화해야 합니다. 이 결과는 승인하거나 실행할 수 없습니다.</p></div></div></div>}

@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-28 다중 TC Batch·Suite 프론트 1차 연결
+
+- import의 `importBatchId`, `testCases[].itemId`로 전체/일부 TC를 선택하고 `POST /test-case-structure-batches`에 연결했다. 요청 중 파일 교체·원문 편집·중복 클릭을 잠그며 TC별 상태, Version, 오류를 같은 화면에 표시한다.
+- 부분 실패와 409 충돌은 자동 재시도하지 않는다. `FAILED|CONFLICT` 항목만 다시 선택한 뒤 사용자가 새 Batch를 명시적으로 시작한다.
+- `REVIEW_REQUIRED`의 `versionId + revision`만 일괄 승인하고, 새 조회 결과의 `READY` Version만 Execution Suite에 포함한다. 제외·실패 항목은 이유를 유지한다.
+- Suite는 2초 간격으로 집계 상태를 조회하고 TC Version별 Execution ID·상태를 표시한다. `FAIL|SYSTEM_ERROR` 항목만 선택해 새 Suite로 재실행할 수 있다.
+- 1차 UI는 기존 자연어 TC 작성 화면 안에서 제공한다. 백엔드가 순차 처리 후 응답하므로 실시간 항목 진행률은 요청 중 표시와 최종 항목 결과까지이며, 스트리밍 진행은 후속 계약 대상이다.
+
 ## 2026-09-28 다중 TC Batch·Suite API 구현
 
 - import 선택 필드: 최상위 `importBatchId`, `testCases[].itemId`.
