@@ -22,6 +22,7 @@ class StructureRequest(BaseModel):
 
 
 class ImportedTestCase(BaseModel):
+    importBatchId: UUID | None = None
     fileName: str
     format: Literal["txt", "csv", "xlsx", "docx"]
     title: str
@@ -32,6 +33,7 @@ class ImportedTestCase(BaseModel):
 
 
 class ImportedTestCaseItem(BaseModel):
+    itemId: UUID | None = None
     externalId: str | None = None
     title: str
     depth1: str | None = None

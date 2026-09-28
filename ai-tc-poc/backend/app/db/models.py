@@ -128,6 +128,40 @@ class TestCaseVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class StructureBatch(Base):
+    __tablename__ = "structure_batches"
+    __table_args__ = (UniqueConstraint("organization_id", "idempotency_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    import_batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="QUEUED")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class StructureBatchItem(Base):
+    __tablename__ = "structure_batch_items"
+    __table_args__ = (UniqueConstraint("batch_id", "item_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("structure_batches.id", ondelete="CASCADE"), nullable=False)
+    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    external_id: Mapped[str | None] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    test_case_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("test_cases.id"))
+    version_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("test_case_versions.id"))
+    revision: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="QUEUED")
+    error_code: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class PageDiscovery(Base):
     __tablename__ = "page_discoveries"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -175,6 +209,33 @@ class Execution(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     parent_execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("executions.id"))
+
+
+class ExecutionSuite(Base):
+    __tablename__ = "execution_suites"
+    __table_args__ = (UniqueConstraint("organization_id", "idempotency_key"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    environment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("environments.id"), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="QUEUED")
+    retry_policy: Mapped[str] = mapped_column(Text, nullable=False, default="MANUAL")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class ExecutionSuiteItem(Base):
+    __tablename__ = "execution_suite_items"
+    __table_args__ = (UniqueConstraint("suite_id", "test_case_version_id"),)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"), nullable=False)
+    suite_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("execution_suites.id", ondelete="CASCADE"), nullable=False)
+    test_case_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("test_case_versions.id"), nullable=False)
+    execution_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("executions.id"))
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(Text)
+    error_message: Mapped[str | None] = mapped_column(Text)
 
 
 class StepRun(Base):

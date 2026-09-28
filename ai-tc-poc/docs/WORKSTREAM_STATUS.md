@@ -2,6 +2,16 @@
 
 마지막 갱신: 2026-09-28
 
+## 2026-09-28 다중 TC 백엔드 Batch·Suite 계약 구현
+
+- import 응답에 선택 필드 `importBatchId`, `testCases[].itemId`를 추가하고 기존 단건 계약을 유지했다.
+- `POST/GET /test-case-structure-batches`는 TC별 독립 Version, 항목별 상태·오류·부분 성공과 idempotency를 제공한다. 409 항목은 자동 재시도하지 않는다.
+- `POST /test-case-structure-batches/{batchId}/approve`는 `versionId + expectedRevision` 단위로 승인하고 충돌·실행 불가 제외 사유를 반환한다.
+- `POST/GET /execution-suites`는 승인 Version마다 별도 Execution/Outbox를 만들고 Suite 상태를 집계한다. 실행 불가 Version은 다른 항목을 취소하지 않고 `EXCLUDED`로 남긴다.
+- migration `0011_tc_batches_and_suites`와 프론트 공통 타입을 추가했다. 실제 AI 호출은 0회이며 Batch/Suite AI 한도는 0만 허용한다.
+- 검증: 백엔드 **126 passed, 1 skipped**, TypeScript 검사, Python compile, diff 검사 통과.
+- 프론트 후속: 다중 선택 요청, Batch 진행·부분 성공·409 UI, 승인 대기열, Suite 집계 및 실패 Version 선택 재실행 연결.
+
 ## 2026-09-28 다중 TC 처리 범위 명확화·행별 실행 P0
 
 - XLSX가 21개 TC를 감지해도 현재 제품은 선택한 TC 1건만 독립 Version으로 구조화·승인·실행한다. 감지 건수는 실행 건수가 아니며, 파일 전체 실행 기능은 아직 없다.

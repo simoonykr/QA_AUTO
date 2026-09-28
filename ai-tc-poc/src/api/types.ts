@@ -163,6 +163,7 @@ export interface DiscoveryStartResponse { discoveryId:string; status:'QUEUED' }
 export interface DiscoverySelection { stepId:string; candidateId:string }
 
 export interface TestCaseImportResponse {
+  importBatchId?: string | null
   fileName: string
   format: string
   title: string
@@ -173,6 +174,7 @@ export interface TestCaseImportResponse {
 }
 
 export interface ImportedTestCaseItem {
+  itemId?: string | null
   externalId?: string | null
   title: string
   depth1?: string | null
@@ -197,11 +199,30 @@ export interface CreateExecutionRequest {
   testCaseVersionId: string
   environmentId: string
   browser: 'Chromium' | 'Firefox' | 'WebKit'
-  accountId: string
+  accountId?: string | null
   viewport: string
   locale: string
   limits: { timeoutMinutes: number; maxAiCalls: number; retryCount: number }
   requireRiskApproval: boolean
+}
+
+export type StructureBatchItemStatus = 'QUEUED'|'STRUCTURING'|'REVIEW_REQUIRED'|'READY'|'FAILED'|'CONFLICT'|'CANCELLED'
+export interface StructureBatchItemResult {
+  itemId:string; externalId?:string|null; testCaseId?:string|null; versionId?:string|null
+  revision?:number|null; status:StructureBatchItemStatus; errorCode?:string|null; errorMessage?:string|null
+}
+export interface StructureBatchResult {
+  batchId:string; status:'QUEUED'|'PROCESSING'|'COMPLETED'|'PARTIAL_SUCCESS'|'FAILED'
+  items:StructureBatchItemResult[]; counts:Record<string,number>; createdAt:string; completedAt?:string|null
+}
+export interface BatchApprovalResult {
+  versionId:string; expectedRevision:number; status:'READY'|'EXCLUDED'|'CONFLICT'|'FAILED'; errorCode?:string|null; reason?:string|null
+}
+export interface ExecutionSuiteItem {
+  testCaseVersionId:string; executionId?:string|null; status:string; errorCode?:string|null; reason?:string|null
+}
+export interface ExecutionSuite {
+  executionSuiteId:string; status:string; items:ExecutionSuiteItem[]; counts:Record<string,number>; createdAt:string
 }
 
 export interface Execution {

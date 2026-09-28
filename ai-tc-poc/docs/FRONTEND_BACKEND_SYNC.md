@@ -1,5 +1,15 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-28 다중 TC Batch·Suite API 구현
+
+- import 선택 필드: 최상위 `importBatchId`, `testCases[].itemId`.
+- 구조화: `POST /api/v1/test-case-structure-batches` + `Idempotency-Key`. 요청 `{importBatchId?, items:[{itemId,testCase}], maxConcurrency, maxAiCallsPerCase:0}`, 조회 `GET /api/v1/test-case-structure-batches/{batchId}`.
+- 항목 상태: `QUEUED|STRUCTURING|REVIEW_REQUIRED|READY|FAILED|CONFLICT|CANCELLED`; 항목별 `testCaseId`, `versionId`, `revision`, 오류를 반환한다.
+- 승인: `POST /api/v1/test-case-structure-batches/{batchId}/approve`, `{items:[{versionId,expectedRevision}]}`. 항목별 `READY|EXCLUDED|CONFLICT|FAILED`와 사유를 반환한다.
+- Suite: `POST /api/v1/execution-suites` + `Idempotency-Key`, 조회 `GET /api/v1/execution-suites/{id}`. 최소 요청은 `testCaseVersionIds`, `environmentId`; 실행 설정은 기존 단건 계약과 같고 `maxAiCalls=0`만 허용한다.
+- 각 Version은 별도 `executionId`를 받는다. 모든 포함 Execution이 PASS일 때만 Suite PASS이며 실행 불가 항목은 `EXCLUDED`와 오류 사유로 표시한다.
+- 불변식: `TC 1건 = Version 계보 1개 = Execution 1개`; Batch/Suite는 독립 리소스를 묶을 뿐 합치거나 덮어쓰지 않는다.
+
 ## 2026-09-28 다중 TC Batch·Suite 계약 요청
 
 - XLSX에서 여러 TC가 감지돼도 현재 계약은 선택한 1건만 독립 Version으로 구조화·승인·실행한다. 프론트는 `선택 1 / 전체 N`, 미처리 건수와 선택 TC ID를 명시해 전체 실행으로 오인하지 않게 한다.

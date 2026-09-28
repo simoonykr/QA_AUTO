@@ -38,7 +38,11 @@ async def list_test_case_executions(test_case_id: str, request: Request, session
 @router.post("/import", response_model=ImportedTestCase)
 async def import_test_case_file(file: UploadFile = File(...)) -> ImportedTestCase:
     data = await file.read(MAX_UPLOAD_BYTES + 1)
-    return import_test_case(file.filename or "upload", data)
+    imported = import_test_case(file.filename or "upload", data)
+    return imported.model_copy(update={
+        "importBatchId": uuid4(),
+        "testCases": [item.model_copy(update={"itemId": uuid4()}) for item in imported.testCases],
+    })
 
 
 @version_router.post("/current/structure", response_model=StructuredTestCase)

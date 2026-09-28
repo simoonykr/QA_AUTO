@@ -435,7 +435,9 @@ def test_import_txt_test_case() -> None:
         files={"file": ("login.txt", "로그인 페이지 접속\n아이디와 비밀번호 입력\n대시보드 확인".encode(), "text/plain")},
     )
     assert response.status_code == 200
-    assert response.json() == {
+    payload = response.json()
+    assert UUID(payload.pop("importBatchId"))
+    assert payload == {
         "fileName": "login.txt",
         "format": "txt",
         "title": "login",
@@ -804,7 +806,7 @@ def test_execution_request_digest_is_stable() -> None:
 
 
 def test_required_database_models_are_registered() -> None:
-    assert len(Base.metadata.tables) == 17
+    assert len(Base.metadata.tables) == 21
 
 
 def test_execution_resource_ids_require_real_uuids() -> None:

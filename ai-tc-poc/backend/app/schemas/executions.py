@@ -19,7 +19,7 @@ class CreateExecutionRequest(BaseModel):
     testCaseVersionId: str
     environmentId: str
     browser: Literal["Chromium", "Firefox", "WebKit"]
-    accountId: str
+    accountId: str | None = None
     viewport: str
     locale: str
     limits: ExecutionLimits
