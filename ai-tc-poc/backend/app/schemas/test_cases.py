@@ -82,7 +82,7 @@ class StructuredStep(BaseModel):
     value: str | None = None
     operator: str | None = None
     expected: str | None = None
-    assertionType: Literal["url", "text", "element"] | None = None
+    assertionType: Literal["url", "page_title", "text", "element"] | None = None
     timeoutMs: int | None = Field(default=None, ge=100, le=60_000)
     targetDescription: str | None = None
     selectorHint: dict[str, str] = Field(default_factory=dict)
@@ -133,7 +133,7 @@ class TestCaseVersionStepPatch(BaseModel):
     expected: str | None = None
     value: str | None = None
     secretRef: str | None = None
-    assertionType: Literal["url", "text", "element"] | None = None
+    assertionType: Literal["url", "page_title", "text", "element"] | None = None
 
 
 class ExecutionPlanEnvironment(BaseModel):
@@ -153,7 +153,7 @@ class ExecutionPlanStep(BaseModel):
     secretRef: str | None = None
     operator: str | None = None
     expected: Any | None = None
-    assertionType: Literal["url", "text", "element", "observed_state"] | None = None
+    assertionType: Literal["url", "page_title", "text", "element", "observed_state"] | None = None
     timeoutMs: int
     targetDescription: str | None = None
     selectorHint: dict[str, str] = Field(default_factory=dict)

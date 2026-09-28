@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-28 selector 없는 메타 assertion·기능 후보 보수화
+
+- `assertionType`에 선택 값 `page_title`을 추가했다. `url|page_title` assertion은 selector가 필요 없으며 Worker가 현재 URL 또는 `page.title()`을 직접 검증한다.
+- 동일 항목 수에서 fingerprint만 달라진 영역은 `observed_state.areas` 기대값에 포함하지 않는다. 직접 상태 변화도 없는 fingerprint-only 후보는 자동 실행하지 않고 `MANUAL_REVIEW_REQUIRED`로 반환한다.
+- 기존 `url|text|element|observed_state` 계약은 유지되며 프론트 타입에 `page_title`만 호환 확장했다.
+
 ## 2026-09-28 ImportBatch 새로고침 복원 계약
 
 - `POST /test-cases/import`가 반환하는 `importBatchId`와 `testCases[].itemId`는 이제 DB에 영속화된다.

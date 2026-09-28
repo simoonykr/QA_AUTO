@@ -228,6 +228,22 @@ def test_observed_state_change_creates_deduplicated_function_candidate_and_cover
     assert covered[0]["coverage"] == "COVERED"
 
 
+def test_same_count_fingerprint_churn_is_not_an_executable_area_assertion():
+    areas = [{"id": "area-1", "kind": "footer", "name": "footer", "elementIds": ["element-1"]}]
+    interactions = [{"id": "interaction-1", "areaId": "area-1", "elementId": "element-1",
+        "kind": "button", "name": "도움말", "selector": 'role=button[name="도움말"]'}]
+    change = {"id": "state-change-1", "interactionId": "interaction-1",
+        "before": {"url": "https://example.test", "pageFingerprint": "a"},
+        "after": {"url": "https://example.test", "pageFingerprint": "b"},
+        "changedAreas": [{"kind": "main", "name": "게임 목록", "beforeItemCount": 3,
+            "afterItemCount": 3, "beforeFingerprint": "a", "afterFingerprint": "b"}],
+        "restored": True, "source": "PLAYWRIGHT_OBSERVED"}
+    candidates = build_scenario_candidates(areas, interactions, [change])
+    assert candidates[0]["steps"][1]["assertion"]["changedFields"] == ["pageFingerprint"]
+    assert candidates[0]["automationStatus"] == "MANUAL_REVIEW_REQUIRED"
+    assert "areas" not in candidates[0]["steps"][1]["assertion"]["expected"]
+
+
 def test_observed_function_clauses_are_matched_in_tc_comparison():
     payload, _ = fixture_payload()
     payload["scenarioCandidates"] = [{"id": "candidate-mobile",

@@ -1104,6 +1104,9 @@ class FakePage:
     def locator(self, selector):
         return self.locators.setdefault(selector, FakeLocator())
 
+    async def title(self):
+        return "카카오게임즈"
+
 
 @pytest.mark.asyncio
 async def test_step_executor_runs_navigate_fill_and_click() -> None:
@@ -1115,6 +1118,14 @@ async def test_step_executor_runs_navigate_fill_and_click() -> None:
     assert page.locators["#email"].filled == "qa@example.test"
     assert page.locators["#submit"].clicked is True
     assert fill.action["value"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_step_executor_asserts_page_title_without_selector() -> None:
+    result = await execute_step(FakePage(), {
+        "action": "assert", "assertionType": "page_title", "operator": "contains", "expected": "카카오",
+    }, "http://demo-target")
+    assert result.assertion == {"type": "page_title", "operator": "contains", "expected": "카카오"}
 
 
 @pytest.mark.asyncio

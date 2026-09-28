@@ -57,7 +57,7 @@ export interface StructuredStep {
   value?: string | null
   operator?: string | null
   expected?: string | null
-  assertionType?: 'url' | 'text' | 'element' | null
+  assertionType?: 'url' | 'page_title' | 'text' | 'element' | null
   timeoutMs?: number | null
   targetDescription?: string | null
   selectorHint?: Record<string,string> | null
@@ -100,7 +100,7 @@ export interface ExecutionPlanStep {
   secretRef?: string | null
   operator?: string | null
   expected?: string | Record<string, unknown> | null
-  assertionType?: 'url' | 'text' | 'element' | 'observed_state' | null
+  assertionType?: 'url' | 'page_title' | 'text' | 'element' | 'observed_state' | null
   timeoutMs: number
   targetDescription?: string | null
   resolutionStatus?: ResolutionStatus | null
@@ -127,7 +127,7 @@ export interface TestCaseVersionStepPatch {
   expected?: string | null
   value?: string | null
   secretRef?: string | null
-  assertionType?: 'url' | 'text' | 'element' | null
+  assertionType?: 'url' | 'page_title' | 'text' | 'element' | null
 }
 
 export interface SelectorCandidate {

@@ -371,11 +371,15 @@ def build_scenario_candidates(areas: list[dict], interactions: list[dict], state
         before = change.get("before") or {}
         changed = [field for field in ("url", "ariaPressed", "ariaSelected", "checked", "pageFingerprint")
             if before.get(field) != after.get(field)]
-        changed_areas = change.get("changedAreas") or []
+        # Same-count fingerprint churn is often caused by unrelated banners, timers,
+        # or footer content. It remains diagnostic evidence but is not executable.
+        changed_areas = [item for item in (change.get("changedAreas") or [])
+            if item.get("beforeItemCount") != item.get("afterItemCount")]
         if changed_areas:
             changed.append("areas")
         if not changed:
             continue
+        strong_change = any(field in changed for field in ("url", "ariaPressed", "ariaSelected", "checked", "areas"))
         stable = hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()[:12]
         state_change_id = change.get("id") or f"state-change-{len(candidates) + 1}"
         name = interaction.get("name") or interaction.get("elementId")
@@ -389,8 +393,8 @@ def build_scenario_candidates(areas: list[dict], interactions: list[dict], state
                     "expected": {field: (changed_areas if field == "areas" else after.get(field)) for field in changed}}},
             ], "evidence": {"elementIds": [interaction["elementId"]],
                 "interactionIds": [interaction["id"]], "stateChangeIds": [state_change_id]},
-            "automationStatus": "AUTOMATABLE" if change.get("restored") else "MANUAL_REVIEW_REQUIRED",
-            "confidence": 1 if change.get("restored") else 0.5,
+            "automationStatus": "AUTOMATABLE" if change.get("restored") and strong_change else "MANUAL_REVIEW_REQUIRED",
+            "confidence": 1 if change.get("restored") and strong_change else 0.5,
             "coverage": "MISSING_IN_TC", "source": "RULE_BASED_OBSERVED"})
     return candidates
 

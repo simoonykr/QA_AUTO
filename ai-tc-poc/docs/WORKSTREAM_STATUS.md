@@ -2,6 +2,14 @@
 
 마지막 갱신: 2026-09-28
 
+## 2026-09-28 최신 다중 TC 재배포·assertion/후보 판정 보완
+
+- Temporary Staging을 최신 `030647a` 기준 public compose로 재빌드하고 migration `0012_import_batch_snapshots` 적용을 확인했다. 외부 번들에 Structure Batch, 자동 구조화 상태, READY Suite 실행 UI가 포함됐다.
+- 규칙 기반 구조화에서 `브라우저 탭 제목 확인`은 selector 없는 `page_title` assertion, `주소/URL 확인`은 selector 없는 `url` assertion으로 생성한다. URL의 `.com`을 CSS selector로 오인하지 않는다.
+- 실행 계획과 Worker가 `page_title`을 지원하며 URL assertion은 현재 URL 검증에 불필요한 `url` 필드를 강제하지 않는다.
+- 기능 후보는 동일 항목 수의 fingerprint 변화만으로 영역 변경을 자동화 근거로 사용하지 않는다. 직접 URL/ARIA/checked 변화나 항목 수 변화가 없는 fingerprint-only 후보는 `MANUAL_REVIEW_REQUIRED`다.
+- 검증: 백엔드 **130 passed, 1 skipped**, TypeScript 검사 통과, 실제 AI 호출 0회.
+
 ## 2026-09-28 ImportBatch 새로고침 복원 백엔드
 
 - 업로드 시 `ImportBatch`와 TC별 `ImportBatchItem` 원문 snapshot을 저장하고 기존 응답의 `importBatchId`·`itemId`를 영속 ID로 사용한다.

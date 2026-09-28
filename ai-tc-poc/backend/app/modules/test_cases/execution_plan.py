@@ -95,13 +95,13 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
         elif action == "assert":
             assertion_type = step.get("assertionType") or ("url" if step.get("url") and not step.get("selector") else "text")
             step["assertionType"] = assertion_type
-            required = (["url", "operator", "expected"] if assertion_type == "url" else
+            required = (["operator", "expected"] if assertion_type in {"url", "page_title"} else
                 ["selector", "expected"] if assertion_type == "observed_state" else ["selector", "operator", "expected"])
             _require(step, required, step_no)
             if assertion_type == "observed_state" and not isinstance(step.get("expected"), dict):
                 raise ExecutionPlanError("STEP_PARAMETER_INVALID", "observed_state expected는 객체여야 합니다.",
                     step_no=step_no, step_id=step["id"])
-            if assertion_type == "url":
+            if assertion_type == "url" and step.get("url"):
                 _validate_target_url(step["url"], environment.allowed_domains, step_no, step["id"])
         normalized.append(step)
 

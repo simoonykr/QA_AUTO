@@ -516,7 +516,7 @@ async def discover(discovery_id: UUID) -> None:
                     await session.commit()
                 step_results = []
                 for step in source_steps:
-                    if step.get("action") not in {"fill", "click", "assert"} or step.get("assertionType") == "url":
+                    if step.get("action") not in {"fill", "click", "assert"} or step.get("assertionType") in {"url", "page_title"}:
                         continue
                     description = str(step.get("targetDescription") or step.get("title") or "")
                     hints = step.get("selectorHint") or {}

@@ -194,7 +194,7 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         hint_values = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
         hint_text = hint_values[-1] if hint_values else segment[:120]
         step["selectorHint"] = {"text": hint_text}
-        if action in {"navigate", "wait"} or (action == "assert" and step.get("url")):
+        if action in {"navigate", "wait"} or (action == "assert" and (step.get("url") or step.get("assertionType") in {"url", "page_title"})):
             step["resolutionStatus"] = "RESOLVED"
         else:
             step["resolutionStatus"] = "RESOLVED" if step.get("selector") else "UNRESOLVED"
@@ -233,9 +233,9 @@ def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> Str
         if step.selector and step.selector not in raw_text:
             assumptions.append(f"{step.id}: 원문 근거가 없는 selector를 제거했습니다. 승인 전에 selector를 입력해 주세요.")
             updated = step.model_copy(update={"selector": None})
-        if updated.action in {"fill", "click", "assert"} and updated.assertionType != "url":
+        if updated.action in {"fill", "click", "assert"} and updated.assertionType not in {"url", "page_title"}:
             updated = updated.model_copy(update={"resolutionStatus": "RESOLVED" if updated.selector else "UNRESOLVED"})
-        if updated.action in {"fill", "click", "assert"} and updated.assertionType != "url" and not updated.selector:
+        if updated.action in {"fill", "click", "assert"} and updated.assertionType not in {"url", "page_title"} and not updated.selector:
             assumptions.append(f"{updated.id}: selector가 없어 승인 전에 검토·수정이 필요합니다.")
         steps.append(updated)
     automation_status, automation_reason = _automation_assessment(raw_text)
@@ -288,6 +288,10 @@ def _action_for(segment: str) -> str:
     lowered = segment.lower()
     if re.search(r'(로딩|loading|load).*(대기|wait)|대기.*로딩', lowered):
         return 'wait'
+    if re.search(r"(?:브라우저\s*)?(?:탭\s*)?제목|page\s*title|document\s*title", lowered):
+        return "assert"
+    if re.search(r"(?:주소|url).*(?:확인|검증|표시)|(?:확인|검증).*(?:주소|url)", lowered):
+        return "assert"
     if re.match(r'^(?:기대\s*결과|expected(?:\s+results?)?)\s*[:：]', lowered) or any(word in lowered for word in ('되는지', '되어야', '표시 확인', '이동 확인', '접속 확인')):
         return 'assert'
     if any(keyword in lowered for keyword in ("접속", "이동", "진입", "navigate", "open", "url")):
@@ -315,6 +319,19 @@ def _execution_fields(segment: str, action: str) -> dict:
     if action == "fill" and quoted:
         fields["value"] = quoted[-1]
     if action == "assert":
+        if re.search(r"(?:브라우저\s*)?(?:탭\s*)?제목|page\s*title|document\s*title", segment, re.I):
+            fields.pop("selector", None)
+            fields["assertionType"] = "page_title"
+            fields["operator"] = "contains"
+            fields["expected"] = quoted[-1] if quoted else re.sub(r".*?(?:제목|title)\s*(?:은|는|이|가|:)?\s*", "", segment, flags=re.I).strip()
+            return fields
+        if re.search(r"(?:주소|URL).*(?:확인|검증|표시)|(?:확인|검증).*(?:주소|URL)", segment, re.I):
+            fields.pop("selector", None)
+            url_match = re.search(r"https?://[^\s]+", segment)
+            fields["assertionType"] = "url"
+            fields["operator"] = "contains"
+            fields["expected"] = (url_match.group(0).rstrip(".,)") if url_match else quoted[-1] if quoted else segment)
+            return fields
         fields["operator"] = "contains"
         fields["expected"] = quoted[-1] if quoted else segment
     return fields

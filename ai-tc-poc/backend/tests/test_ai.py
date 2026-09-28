@@ -84,6 +84,16 @@ def test_disabled_ai_uses_rule_based_structure_without_tokens() -> None:
     assert result.assertions[0].expected in BODY.rawText
 
 
+def test_rule_based_structure_uses_selector_free_url_and_page_title_assertions() -> None:
+    result = rule_based_structure(StructureRequest(
+        title="페이지 메타 검증",
+        rawText='1. 브라우저 탭 제목 "카카오게임즈" 확인\n2. 주소 URL "kakaogames.com" 확인',
+    ))
+    assert [step.assertionType for step in result.steps] == ["page_title", "url"]
+    assert all(step.selector is None and step.resolutionStatus == "RESOLVED" for step in result.steps)
+    assert [step.expected for step in result.steps] == ["카카오게임즈", "kakaogames.com"]
+
+
 def test_structure_request_preserves_full_9613_character_raw_text() -> None:
     raw_text = "가" * 9_613
     request = StructureRequest(title="KakaoGames", rawText=raw_text)

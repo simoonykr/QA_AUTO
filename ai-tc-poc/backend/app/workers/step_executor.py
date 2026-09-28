@@ -65,6 +65,18 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
         assertion = {"type": "url", "operator": operator, "expected": expected}
         return StepResult(action={"type": "assert", "url": page.url}, assertion=assertion)
 
+    if action_type == "assert" and step.get("assertionType") == "page_title":
+        operator = step.get("operator", "contains")
+        expected = str(_required(step, "expected"))
+        actual = await page.title()
+        if operator == "equals" and actual != expected:
+            raise AssertionError(f"Page title does not equal expected value: {expected}")
+        if operator in {"contains", "matches"} and expected not in actual:
+            raise AssertionError(f"Page title does not contain expected value: {expected}")
+        if operator not in {"equals", "contains", "matches"}:
+            raise StepDefinitionError(f"지원하지 않는 page-title assertion operator입니다: {operator}")
+        return StepResult(action={"type": "assert", "title": actual}, assertion={"type": "page_title", "operator": operator, "expected": expected})
+
     if action_type == "assert" and step.get("assertionType") == "observed_state":
         from app.modules.discoveries.page_first import area_fingerprints, collect_elements, page_fingerprint
         selector = _required(step, "selector")
