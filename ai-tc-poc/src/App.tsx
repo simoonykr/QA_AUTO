@@ -22,6 +22,7 @@ const workerSteps = [
   { title: '격리 브라우저 준비', note: 'Chromium 컨텍스트와 viewport를 생성합니다.', type: 'PROVISION' },
   { title: '대상 페이지 접속', note: '허용 도메인을 검사하고 DOM 로드를 확인합니다.', type: 'NAVIGATE' },
 ]
+const importedTestCaseKey = (item:ImportedTestCaseItem) => item.itemId??item.externalId??item.title
 function executionPresentation(status: Execution['status']): { runState: RunState; activeStep: number } {
   if (status === 'PASS') return { runState: 'done', activeStep: 3 }
   if (['FAIL','BLOCKED','NEEDS_REVIEW','CANCELLED','SYSTEM_ERROR'].includes(status)) return { runState: 'failed', activeStep: 3 }
@@ -532,6 +533,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [discoveryError,setDiscoveryError] = useState<{code:string;message:string}|null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const structureRequestRef = useRef(0)
+  const structuredCacheRef = useRef(new Map<string,{structured:StructuredTestCase;stage:'review'|'ready'}>())
   useEffect(()=>{
     if (stage!=='review') return
     api.listEnvironments().then(items=>{
@@ -570,6 +572,10 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     const timer=window.setInterval(()=>void api.getExecutionSuite(suite.executionSuiteId).then(result=>{if(active)setSuite(result)}).catch(()=>undefined),2000)
     return()=>{active=false;window.clearInterval(timer)}
   },[suite?.executionSuiteId,suite?.status])
+  useEffect(()=>{
+    if(!structured||!['review','ready'].includes(stage)||!selectedImportedId)return
+    structuredCacheRef.current.set(selectedImportedId,{structured,stage:stage as 'review'|'ready'})
+  },[selectedImportedId,stage,structured])
   const importFile = async (file?: File) => {
     if (!file) return
     structureRequestRef.current+=1
@@ -581,6 +587,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     setExcludedMetadataLines(0)
     setExcludedResultColumns(0)
     setSplitReview(null)
+    structuredCacheRef.current.clear()
     onVersion(null); onStructured(null)
     setImporting(true)
     try {
@@ -593,7 +600,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       setSelectedBatchItemIds(imported.testCases.flatMap(item=>item.itemId?[item.itemId]:[]))
       setBatchResult(null);setSuite(null)
       const first=imported.testCases[0]
-      setSelectedImportedId(first?.externalId??'')
+      setSelectedImportedId(first?importedTestCaseKey(first):'')
       if(first){setTitle(first.title);setRaw(first.rawText)}
       setStage('draft')
       onToast(`${imported.fileName} 분석을 완료했습니다.`)
@@ -603,21 +610,21 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       onToast(error instanceof ApiError ? error.body.message : '파일을 가져오지 못했습니다.')
     } finally { setImporting(false) }
   }
-  const structure = async () => {
-    if (!title.trim() || raw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
-    const prepared=prepareStructureRawText(raw)
+  const runStructure = async (selected:ImportedTestCaseItem|undefined,nextTitle:string,nextRaw:string) => {
+    if (!nextTitle.trim() || nextRaw.trim().length < 10) return onToast('테스트 이름과 10자 이상의 원문을 입력해 주세요.')
+    const prepared=prepareStructureRawText(nextRaw)
     setExcludedMetadataLines(prepared.excludedLineCount)
     setExcludedResultColumns(prepared.excludedResultColumns)
     setStage('structuring')
     const requestId=++structureRequestRef.current
-    try { const selected=importedTestCases.find(item=>item.externalId===selectedImportedId); const result=selected?await api.structureImportedTestCase({...selected,title:title.trim(),rawText:prepared.rawText}):await api.structureTestCase(title.trim(),prepared.rawText); if(requestId!==structureRequestRef.current)return; setStructured(result); setReviewPlan(null); setEditingStep(null); onStructured(result); onVersion(null); setSplitReview(null); setStage('review') }
+    try { const result=selected?await api.structureImportedTestCase({...selected,title:nextTitle.trim(),rawText:prepared.rawText}):await api.structureTestCase(nextTitle.trim(),prepared.rawText); if(requestId!==structureRequestRef.current)return; setStructured(result); setReviewPlan(null); setEditingStep(null); onStructured(result); onVersion(null); setSplitReview(null); setStage('review');if(selected)structuredCacheRef.current.set(importedTestCaseKey(selected),{structured:result,stage:'review'}) }
     catch (error) {
       if(requestId!==structureRequestRef.current)return
       if (error instanceof ApiError && error.body.code==='MULTIPLE_TEST_CASES_REVIEW_REQUIRED') {
         const count=Number(error.body.details?.detectedTestCaseCount)
         const length=Number(error.body.details?.rawTextLength)
         setStructured(null); onStructured(null)
-        setSplitReview({detectedTestCaseCount:Number.isFinite(count)?count:0,rawTextLength:Number.isFinite(length)?length:raw.trim().length})
+        setSplitReview({detectedTestCaseCount:Number.isFinite(count)?count:0,rawTextLength:Number.isFinite(length)?length:nextRaw.trim().length})
         setStage('split-review')
         onToast('여러 테스트 케이스가 감지되어 TC별 분리가 필요합니다.')
         return
@@ -625,11 +632,15 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
       setStage('draft'); onToast(error instanceof ApiError ? error.body.message : 'TC 구조화에 실패했습니다. 다시 시도해 주세요.')
     }
   }
+  const structure = async () => {
+    const selected=importedTestCases.find(item=>importedTestCaseKey(item)===selectedImportedId)
+    await runStructure(selected,title,raw)
+  }
   const approve = async () => {
     if (!structured||reviewPlan?.executable!==true) return onToast('실행 계획의 누락 항목을 먼저 수정해 주세요.')
     try {
       const approved=await api.approveTestCaseVersion(structured.versionId)
-      const ready={...structured,status:approved.status}; setStructured(ready); onStructured(ready); onVersion(approved.versionId); setStage('ready')
+      const ready={...structured,status:approved.status}; if(selectedImportedId)structuredCacheRef.current.set(selectedImportedId,{structured:ready,stage:'ready'});setStructured(ready); onStructured(ready); onVersion(approved.versionId); setStage('ready')
       onToast('검토 승인이 완료되었습니다.')
     } catch (error) { onToast(error instanceof ApiError ? error.body.message : '검토 승인에 실패했습니다.') }
   }
@@ -737,23 +748,30 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     } catch(error){onToast(error instanceof ApiError?error.body.message:'페이지 분석 결과를 적용하지 못했습니다.')}
     finally{setDiscoveryApplying(false)}
   }
-  const selectImported = (item:ImportedTestCaseItem) => {structureRequestRef.current+=1;setSelectedImportedId(item.externalId??'');setTitle(item.title);setRaw(item.rawText);setStructured(null);setDiscoveryError(null);onStructured(null);onVersion(null);setStage('draft')}
-  const editTitle = (value:string) => { structureRequestRef.current+=1;setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
-  const editRaw = (value:string) => { structureRequestRef.current+=1;setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
+  const selectImported = (item:ImportedTestCaseItem) => {
+    structureRequestRef.current+=1
+    const key=importedTestCaseKey(item)
+    const cached=structuredCacheRef.current.get(key)
+    setSelectedImportedId(key);setTitle(item.title);setRaw(item.rawText);setDiscoveryError(null);setDiscoveryId(null);setDiscovery(null);setReviewPlan(null);setEditingStep(null);setSplitReview(null)
+    if(cached){setStructured(cached.structured);onStructured(cached.structured);onVersion(cached.stage==='ready'?cached.structured.versionId:null);setStage(cached.stage);onToast(`${item.externalId??item.title}의 기존 구조화 결과를 불러왔습니다.`);return}
+    setStructured(null);onStructured(null);onVersion(null);setStage('draft');void runStructure(item,item.title,item.rawText)
+  }
+  const editTitle = (value:string) => { structureRequestRef.current+=1;if(selectedImportedId)structuredCacheRef.current.delete(selectedImportedId);setTitle(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
+  const editRaw = (value:string) => { structureRequestRef.current+=1;if(selectedImportedId)structuredCacheRef.current.delete(selectedImportedId);setRaw(value); setStructured(null); onStructured(null); setSplitReview(null); setExcludedMetadataLines(0); setExcludedResultColumns(0); onVersion(null); setStage('draft') }
   const displayedAutomationStatus=stage==='review'&&reviewPlan?.executable!==true?'MANUAL_REVIEW_REQUIRED':structured?.automationStatus
   const displayedAutomationReason=stage==='review'&&reviewPlan?.executable!==true?'실행 계획에 미해결 항목이 있어 페이지 분석 또는 직접 검토가 필요합니다.':structured?.automationReason
-  const selectedImported=importedTestCases.find(item=>item.externalId===selectedImportedId)
+  const selectedImported=importedTestCases.find(item=>importedTestCaseKey(item)===selectedImportedId)
   return <section className="page author-page">
     <div className="author-top"><button className="back-button" onClick={onBack}>← 테스트 케이스</button><div className="author-actions"><button className="secondary" onClick={()=>onToast('초안을 저장했습니다.')}><Save size={15}/> 초안 저장</button>{stage==='review'&&<button className="primary" onClick={()=>void approve()} disabled={reviewPlan?.executable!==true||planLoading||savingStep} title={reviewPlan?.executable?'검토 승인':'누락된 단계 필드를 먼저 수정해 주세요.'}><Check size={15}/> 검토 승인</button>}{stage==='ready'&&<button className="primary" onClick={onRun}><Play size={15}/> 실행 설정</button>}</div></div>
     <div className="author-heading"><div><span className={`stage-badge ${stage}`}>{stage==='draft'?'DRAFT':stage==='structuring'?'STRUCTURING':stage==='split-review'?'SPLIT REVIEW REQUIRED':stage==='review'?'REVIEW REQUIRED':'READY'}</span><h1>{title}</h1><p>TC-NEW · Storefront QA · Version 1</p></div><div className="progress-steps"><span className="complete"><Check/>원문 작성</span><i/><span className={stage!=='draft'?'complete':''}><WandSparkles/>규칙 기반 구조화</span><i/><span className={stage==='ready'?'complete':''}><ShieldCheck/>검토 승인</span></div></div>
     <div className="author-grid">
       <article className="panel editor-panel">
         <div className="section-head"><div><h2>자연어 테스트 케이스</h2><p>사람이 이해하기 쉬운 방식으로 수행 조건과 기대 결과를 작성하세요.</p></div><button className="secondary" onClick={()=>fileInput.current?.click()} disabled={importing||batchBusy||stage==='structuring'}>{importing?<Activity className="spin" size={15}/>:<Upload size={15}/>} {importing?'업로드·분석 중':'파일 가져오기'}</button><input ref={fileInput} className="file-input" type="file" accept=".csv,.xlsx,.docx,.txt" onChange={e=>void importFile(e.target.files?.[0])}/></div>
-        {importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{structureRequestRef.current+=1;setImportedFile('');setImportWarnings([]);setImportedTestCases([]);setSelectedImportedId('');setImportBatchId(null);setSelectedBatchItemIds([]);setBatchResult(null);setSuite(null);setExcludedMetadataLines(0);setExcludedResultColumns(0);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing||batchBusy||stage==='structuring'}><XCircle size={14}/></button></div>}
+        {importedFile&&<div className="imported-file"><FileText size={14}/><span>{importedFile}</span><button onClick={()=>{structureRequestRef.current+=1;structuredCacheRef.current.clear();setImportedFile('');setImportWarnings([]);setImportedTestCases([]);setSelectedImportedId('');setImportBatchId(null);setSelectedBatchItemIds([]);setBatchResult(null);setSuite(null);setExcludedMetadataLines(0);setExcludedResultColumns(0);onVersion(null);setStage('draft');if(fileInput.current)fileInput.current.value=''}} aria-label="가져온 파일 제거" disabled={importing||batchBusy||stage==='structuring'}><XCircle size={14}/></button></div>}
         {importedTestCases.length>0&&<div className="imported-tc-list">
-          <div className="imported-tc-heading"><div><b>감지된 TC {importedTestCases.length}개</b><p>단건은 카드를 눌러 검토하고, 체크한 TC는 각각 독립 Version으로 일괄 구조화합니다.</p></div><span>일괄 선택 {selectedBatchItemIds.length} / {importedTestCases.length}</span></div>
+          <div className="imported-tc-heading"><div><b>감지된 TC {importedTestCases.length}개</b><p>TC 카드를 누르면 미처리 항목은 자동 구조화되고, 완료 항목은 기존 Version과 검토 상태를 복원합니다.</p></div><span>일괄 선택 {selectedBatchItemIds.length} / {importedTestCases.length}</span></div>
           <div className="batch-select-actions"><button className="text-button" onClick={()=>setSelectedBatchItemIds(importedTestCases.flatMap(item=>item.itemId?[item.itemId]:[]))}>전체 선택</button><button className="text-button" onClick={()=>setSelectedBatchItemIds([])}>전체 해제</button></div>
-          <div className="imported-tc-grid">{importedTestCases.map(item=>{const key=item.itemId??item.externalId??item.title;const checked=Boolean(item.itemId&&selectedBatchItemIds.includes(item.itemId));return <div className={`imported-tc-choice ${selectedImportedId===(item.externalId??'')?'selected':''}`} key={key}><input type="checkbox" checked={checked} disabled={!item.itemId||batchBusy||stage==='structuring'} aria-label={`${item.externalId??item.title} 일괄 선택`} onChange={()=>item.itemId&&setSelectedBatchItemIds(current=>current.includes(item.itemId as string)?current.filter(id=>id!==item.itemId):[...current,item.itemId as string])}/><button onClick={()=>selectImported(item)} disabled={batchBusy||stage==='structuring'}><span>{item.externalId??'ID 없음'}</span><small>{item.title}</small></button></div>})}</div>
+          <div className="imported-tc-grid">{importedTestCases.map(item=>{const key=importedTestCaseKey(item);const checked=Boolean(item.itemId&&selectedBatchItemIds.includes(item.itemId));const cached=structuredCacheRef.current.get(key);return <div className={`imported-tc-choice ${selectedImportedId===key?'selected':''}`} key={key}><input type="checkbox" checked={checked} disabled={!item.itemId||batchBusy} aria-label={`${item.externalId??item.title} 일괄 선택`} onChange={()=>item.itemId&&setSelectedBatchItemIds(current=>current.includes(item.itemId as string)?current.filter(id=>id!==item.itemId):[...current,item.itemId as string])}/><button onClick={()=>selectImported(item)} disabled={batchBusy}><span>{item.externalId??'ID 없음'}{cached&&<em>{cached.stage==='ready'?'승인 완료':'구조화 완료'}</em>}</span><small>{item.title}</small></button></div>})}</div>
           <div className="imported-tc-scope"><ShieldCheck/><div><b>단건 검토: {selectedImported?.externalId??'선택 없음'} · 일괄 처리: {selectedBatchItemIds.length}건</b><p>일괄 처리도 TC별 Version과 결과를 분리합니다. 실패·충돌 항목은 다른 TC의 처리를 취소하지 않습니다.</p></div></div>
           <button className="secondary batch-primary" onClick={()=>void structureBatch()} disabled={batchBusy||selectedBatchItemIds.length===0}>{batchBusy?<Activity className="spin"/>:<ListChecks/>} 선택한 {selectedBatchItemIds.length}개 TC 일괄 구조화</button>
         </div>}

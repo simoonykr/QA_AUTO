@@ -1,5 +1,11 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-28 감지 TC 자동 구조화·세션 상태 보존
+
+- 프론트는 import의 `itemId`를 TC별 상태 키로 사용한다. 카드 최초 선택 시 단건 구조화를 자동 시작하고, 재선택 시 기존 Version과 검토·승인 상태를 복원한다.
+- 진행 중 선택 변경은 이전 응답을 무시한다. 새 파일이나 원문 변경만 새 Version 생성 의도로 간주한다.
+- 현재 보존 범위는 같은 화면·업로드 세션이다. 새로고침 이후 복구하려면 ImportBatch item별 최신 Version·revision·상태 조회 API가 추가로 필요하다.
+
 ## 2026-09-28 다중 TC Batch·Suite 프론트 1차 연결
 
 - import의 `importBatchId`, `testCases[].itemId`로 전체/일부 TC를 선택하고 `POST /test-case-structure-batches`에 연결했다. 요청 중 파일 교체·원문 편집·중복 클릭을 잠그며 TC별 상태, Version, 오류를 같은 화면에 표시한다.
