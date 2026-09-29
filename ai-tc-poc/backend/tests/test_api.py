@@ -1015,6 +1015,29 @@ def test_url_assertion_does_not_require_selector() -> None:
     assert plan.steps[0]["assertionType"] == "url"
 
 
+def test_execution_plan_orders_navigation_wait_and_metadata_before_other_steps() -> None:
+    plan = validate_execution_plan(_plan_version([
+        {"id": "element", "title": "화면 검증", "action": "assert", "selector": "#main", "operator": "visible", "expected": "true"},
+        {"id": "url", "title": "주소 확인", "action": "assert", "assertionType": "url", "operator": "contains", "expected": "demo-target"},
+        {"id": "title", "title": "제목 확인", "action": "assert", "assertionType": "page_title", "operator": "contains", "expected": "Demo"},
+        {"id": "wait", "title": "로딩 대기", "action": "wait", "operator": "domcontentloaded"},
+        {"id": "navigate", "title": "진입", "action": "navigate", "url": "http://demo-target"},
+    ]), _plan_environment())
+    assert [step["id"] for step in plan.steps] == ["navigate", "wait", "title", "url", "element"]
+    assert [step["stepNo"] for step in plan.steps] == [1, 2, 3, 4, 5]
+
+
+@pytest.mark.parametrize("assertion_type,expected", [("page_title", "확인"), ("url", "주소 확인")])
+def test_execution_plan_rejects_placeholder_metadata_expectations(assertion_type, expected) -> None:
+    with pytest.raises(ExecutionPlanError) as raised:
+        validate_execution_plan(_plan_version([{
+            "id": "metadata", "title": "메타 검증", "action": "assert",
+            "assertionType": assertion_type, "operator": "contains", "expected": expected,
+        }]), _plan_environment())
+    assert raised.value.code == "ASSERTION_EXPECTED_REQUIRED"
+    assert raised.value.missing_fields == ["expected"]
+
+
 def test_text_assertion_error_includes_step_and_missing_field() -> None:
     with pytest.raises(ExecutionPlanError) as raised:
         validate_execution_plan(_plan_version([

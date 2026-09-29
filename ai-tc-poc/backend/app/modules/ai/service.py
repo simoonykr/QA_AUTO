@@ -155,11 +155,13 @@ class StructureService:
 
 def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"), version_id: UUID | None = None) -> StructuredTestCase:
     segments = _test_segments(body.rawText)
+    metadata_expectations = _metadata_expectations(body.rawText)
     steps = []
     assertions = []
     assumptions = []
     preconditions = []
     navigate_urls = set()
+    assertion_keys = set()
     for index, segment in enumerate(segments[:20], start=1):
         segment = re.sub(r'^단계\s*\d+\s*[:：]\s*', '', segment)
         if re.match(r'^(?:TC[ _-]?ID|제목|Title|전제조건|Preconditions?)\s*[:：]', segment, re.I):
@@ -171,8 +173,6 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         if not segment.strip():
             continue
         action = _action_for(segment)
-        if action == "assert":
-            assertions.append({"type": "text", "operator": "contains", "expected": segment, "timeoutMs": 10_000})
         if any(keyword in segment.lower() for keyword in ("전제", "준비", "환경", "조건", "precondition")):
             preconditions.append(segment)
         step = {
@@ -184,6 +184,15 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
             "timeoutMs": 10_000,
         }
         step.update(_execution_fields(segment, action))
+        assertion_type = step.get("assertionType")
+        if action == "assert" and assertion_type in {"page_title", "url"}:
+            expected = metadata_expectations.get(assertion_type)
+            if expected:
+                step["expected"] = expected
+            assertion_key = (assertion_type, str(step.get("expected") or "").strip().lower())
+            if assertion_key in assertion_keys:
+                continue
+            assertion_keys.add(assertion_key)
         if action == 'navigate' and step.get('url'):
             normalized_url = step['url'].rstrip('/').lower()
             if normalized_url in navigate_urls:
@@ -199,6 +208,13 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         else:
             step["resolutionStatus"] = "RESOLVED" if step.get("selector") else "UNRESOLVED"
         steps.append(step)
+        if action == "assert":
+            assertions.append({
+                "type": assertion_type or "text",
+                "operator": step.get("operator") or "contains",
+                "expected": str(step.get("expected") or segment),
+                "timeoutMs": 10_000,
+            })
     if not steps:
         raise DomainError('TC_ACTION_REQUIRED', '메타데이터 외에 행동 또는 기대 결과를 입력해 주세요.', 422)
     if not assertions:
@@ -335,6 +351,38 @@ def _execution_fields(segment: str, action: str) -> dict:
         fields["operator"] = "contains"
         fields["expected"] = quoted[-1] if quoted else segment
     return fields
+
+
+def _metadata_expectations(raw_text: str) -> dict[str, str]:
+    """Extract concrete browser metadata expectations from the TC expected result.
+
+    Instruction-only phrases such as ``주소 확인`` must not become the literal
+    expected value.  The expected-result sentence is the source of truth for the
+    page title and URL/domain assertions.
+    """
+    result: dict[str, str] = {}
+    expected_lines = [
+        re.sub(r"^(?:기대\s*결과|expected(?:\s+results?)?)\s*[:：]\s*", "", line, flags=re.I)
+        for line in _test_segments(raw_text)
+        if re.match(r"^(?:기대\s*결과|expected(?:\s+results?)?)\s*[:：]", line, re.I)
+    ]
+    expected_text = " ".join(expected_lines)
+    if not expected_text:
+        return result
+
+    title_match = re.search(
+        r"(?:브라우저\s*)?(?:탭\s*)?제목[^'\"“”]{0,20}['\"“”]([^'\"“”]+)['\"“”]",
+        expected_text,
+        re.I,
+    )
+    if title_match:
+        result["page_title"] = title_match.group(1).strip()
+
+    url_match = re.search(r"https?://[^\s,;]+", expected_text, re.I)
+    domain_match = re.search(r"\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s,;]*)?", expected_text, re.I)
+    if url_match or domain_match:
+        result["url"] = (url_match or domain_match).group(0).rstrip(".,)")
+    return result
 
 
 def money(value: Decimal) -> str:

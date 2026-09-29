@@ -1,7 +1,7 @@
 export type TestCaseStatus = 'DRAFT' | 'REVIEW_REQUIRED' | 'READY' | 'ARCHIVED'
 export type ExecutionStatus = 'QUEUED' | 'PROVISIONING' | 'RUNNING' | 'WAITING_APPROVAL' | 'CANCEL_REQUESTED' | 'PASS' | 'FAIL' | 'BLOCKED' | 'NEEDS_REVIEW' | 'CANCELLED' | 'SYSTEM_ERROR'
 export type ActionType = 'navigate' | 'click' | 'fill' | 'select' | 'press' | 'scroll' | 'wait' | 'upload'
-export type AssertionType = 'url' | 'element' | 'text' | 'attribute' | 'count' | 'network' | 'visual_change'
+export type AssertionType = 'url' | 'page_title' | 'element' | 'text' | 'attribute' | 'count' | 'network' | 'visual_change'
 export type ResolutionStatus = 'UNRESOLVED' | 'RESOLVING' | 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND' | 'STALE'
 export type DiscoveryStatus = 'QUEUED' | 'PROVISIONING' | 'SCANNING' | 'MAPPING' | 'VALIDATING' | 'COMPLETED' | 'NEEDS_REVIEW' | 'FAILED' | 'CANCELLED'
 export type UserRole = 'OWNER' | 'QA' | 'VIEWER'

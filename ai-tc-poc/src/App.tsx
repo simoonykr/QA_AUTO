@@ -205,7 +205,7 @@ function App() {
         <nav>
           <p className="nav-label">Workspace</p>
           <Nav active={view === 'dashboard'} icon={<LayoutDashboard/>} label="대시보드" onClick={() => setView('dashboard')}/>
-          <Nav active={view === 'cases'} icon={<ListChecks/>} label="테스트 케이스" badge="24" onClick={() => setView('cases')}/>
+          <Nav active={view === 'cases'} icon={<ListChecks/>} label="테스트 케이스" badge={String(testCases.length)} onClick={() => setView('cases')}/>
           <Nav active={view === 'run'} icon={<Activity/>} label="실행 모니터" badge="3" onClick={() => setView('run')}/>
           <Nav active={view === 'history'} icon={<Clock3/>} label="실행 이력" onClick={() => setView('history')}/>
           <Nav active={view === 'page-first'} icon={<WandSparkles/>} label="AI 시나리오" onClick={() => setView('page-first')}/>
@@ -531,6 +531,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
   const [discoveryStarting,setDiscoveryStarting] = useState(false)
   const [discoveryApplying,setDiscoveryApplying] = useState(false)
   const [discoveryError,setDiscoveryError] = useState<{code:string;message:string}|null>(null)
+  const [structuringItemId,setStructuringItemId] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const structureRequestRef = useRef(0)
   const structuredCacheRef = useRef(new Map<string,{structured:StructuredTestCase;stage:'review'|'ready'}>())
@@ -617,6 +618,8 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     setExcludedResultColumns(prepared.excludedResultColumns)
     setStage('structuring')
     const requestId=++structureRequestRef.current
+    const itemKey=selected?importedTestCaseKey(selected):null
+    setStructuringItemId(itemKey)
     try { const result=selected?await api.structureImportedTestCase({...selected,title:nextTitle.trim(),rawText:prepared.rawText}):await api.structureTestCase(nextTitle.trim(),prepared.rawText); if(requestId!==structureRequestRef.current)return; setStructured(result); setReviewPlan(null); setEditingStep(null); onStructured(result); onVersion(null); setSplitReview(null); setStage('review');if(selected)structuredCacheRef.current.set(importedTestCaseKey(selected),{structured:result,stage:'review'}) }
     catch (error) {
       if(requestId!==structureRequestRef.current)return
@@ -630,6 +633,8 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
         return
       }
       setStage('draft'); onToast(error instanceof ApiError ? error.body.message : 'TC 구조화에 실패했습니다. 다시 시도해 주세요.')
+    } finally {
+      if(requestId===structureRequestRef.current)setStructuringItemId(null)
     }
   }
   const structure = async () => {
@@ -752,6 +757,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
     structureRequestRef.current+=1
     const key=importedTestCaseKey(item)
     const cached=structuredCacheRef.current.get(key)
+    setStructuringItemId(null)
     setSelectedImportedId(key);setTitle(item.title);setRaw(item.rawText);setDiscoveryError(null);setDiscoveryId(null);setDiscovery(null);setReviewPlan(null);setEditingStep(null);setSplitReview(null)
     if(cached){setStructured(cached.structured);onStructured(cached.structured);onVersion(cached.stage==='ready'?cached.structured.versionId:null);setStage(cached.stage);onToast(`${item.externalId??item.title}의 기존 구조화 결과를 불러왔습니다.`);return}
     setStructured(null);onStructured(null);onVersion(null);setStage('draft');void runStructure(item,item.title,item.rawText)
@@ -771,7 +777,7 @@ function Author({stage,setStage,onBack,onRun,onVersion,onStructured,onToast}: {s
         {importedTestCases.length>0&&<div className="imported-tc-list">
           <div className="imported-tc-heading"><div><b>감지된 TC {importedTestCases.length}개</b><p>TC 카드를 누르면 미처리 항목은 자동 구조화되고, 완료 항목은 기존 Version과 검토 상태를 복원합니다.</p></div><span>일괄 선택 {selectedBatchItemIds.length} / {importedTestCases.length}</span></div>
           <div className="batch-select-actions"><button className="text-button" onClick={()=>setSelectedBatchItemIds(importedTestCases.flatMap(item=>item.itemId?[item.itemId]:[]))}>전체 선택</button><button className="text-button" onClick={()=>setSelectedBatchItemIds([])}>전체 해제</button></div>
-          <div className="imported-tc-grid">{importedTestCases.map(item=>{const key=importedTestCaseKey(item);const checked=Boolean(item.itemId&&selectedBatchItemIds.includes(item.itemId));const cached=structuredCacheRef.current.get(key);return <div className={`imported-tc-choice ${selectedImportedId===key?'selected':''}`} key={key}><input type="checkbox" checked={checked} disabled={!item.itemId||batchBusy} aria-label={`${item.externalId??item.title} 일괄 선택`} onChange={()=>item.itemId&&setSelectedBatchItemIds(current=>current.includes(item.itemId as string)?current.filter(id=>id!==item.itemId):[...current,item.itemId as string])}/><button onClick={()=>selectImported(item)} disabled={batchBusy}><span>{item.externalId??'ID 없음'}{cached&&<em>{cached.stage==='ready'?'승인 완료':'구조화 완료'}</em>}</span><small>{item.title}</small></button></div>})}</div>
+          <div className="imported-tc-grid">{importedTestCases.map(item=>{const key=importedTestCaseKey(item);const checked=Boolean(item.itemId&&selectedBatchItemIds.includes(item.itemId));const cached=structuredCacheRef.current.get(key);const itemBusy=structuringItemId===key;return <div className={`imported-tc-choice ${selectedImportedId===key?'selected':''}`} key={key}><input type="checkbox" checked={checked} disabled={!item.itemId||batchBusy} aria-label={`${item.externalId??item.title} 일괄 선택`} onClick={event=>event.stopPropagation()} onChange={event=>{event.stopPropagation();item.itemId&&setSelectedBatchItemIds(current=>current.includes(item.itemId as string)?current.filter(id=>id!==item.itemId):[...current,item.itemId as string])}}/><button onClick={()=>selectImported(item)} disabled={batchBusy}><span>{item.externalId??'ID 없음'}{itemBusy?<em>구조화 중</em>:cached&&<em>{cached.stage==='ready'?'승인 완료':'구조화 완료'}</em>}</span><small>{item.title}</small></button></div>})}</div>
           <div className="imported-tc-scope"><ShieldCheck/><div><b>단건 검토: {selectedImported?.externalId??'선택 없음'} · 일괄 처리: {selectedBatchItemIds.length}건</b><p>일괄 처리도 TC별 Version과 결과를 분리합니다. 실패·충돌 항목은 다른 TC의 처리를 취소하지 않습니다.</p></div></div>
           <button className="secondary batch-primary" onClick={()=>void structureBatch()} disabled={batchBusy||selectedBatchItemIds.length===0}>{batchBusy?<Activity className="spin"/>:<ListChecks/>} 선택한 {selectedBatchItemIds.length}개 TC 일괄 구조화</button>
         </div>}

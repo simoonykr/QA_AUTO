@@ -1,6 +1,15 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-28
+마지막 갱신: 2026-09-29
+
+## 2026-09-29 실행 계획 순서·메타 assertion P0 수정
+
+- 규칙 기반 단건·Batch 구조화가 같은 parser를 사용하며, `브라우저 탭 제목 확인`과 `주소 확인`의 기대값을 Expected Result에서 추출한다. KG-WEB-002는 `page_title=카카오게임즈`, `url=kakaogames.com`으로 생성되고 일반 TEXT assertion 또는 `확인` 값으로 저장되지 않는다.
+- 최종 실행 계획은 원문 저장 순서와 무관하게 `NAVIGATE → WAIT → ASSERT page_title → ASSERT url → 나머지 단계` 순서를 강제하고 stepNo를 다시 부여한다.
+- URL·페이지 제목 기대값이 `확인`, `주소 확인` 같은 placeholder이면 `ASSERTION_EXPECTED_REQUIRED`로 계획 검증 및 READY 승인을 차단한다.
+- TC 카드 구조화 요청 상태를 항목별로 표시하고, 체크박스 이벤트를 카드 선택과 분리했다. 사이드바 TC 수는 실제 조회 건수를 사용한다.
+- Nginx `index.html`은 no-store로 제공하고 해시 asset만 immutable 캐시해 신규 배포 직후 구 UI가 남는 문제를 방지한다.
+- 검증: 백엔드 **134 passed, 1 skipped**, TypeScript 검사 통과. 실제 AI 호출 0회.
 
 ## 2026-09-28 최신 다중 TC 재배포·assertion/후보 판정 보완
 

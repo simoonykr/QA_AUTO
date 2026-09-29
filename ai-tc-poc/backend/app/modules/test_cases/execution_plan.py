@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -98,12 +99,21 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
             required = (["operator", "expected"] if assertion_type in {"url", "page_title"} else
                 ["selector", "expected"] if assertion_type == "observed_state" else ["selector", "operator", "expected"])
             _require(step, required, step_no)
+            if assertion_type in {"url", "page_title"} and _is_placeholder_expectation(step.get("expected")):
+                raise ExecutionPlanError(
+                    "ASSERTION_EXPECTED_REQUIRED", "URL·페이지 제목 검증에는 구체적인 기대값이 필요합니다.",
+                    step_no=step_no, step_id=step["id"], missing_fields=["expected"],
+                )
             if assertion_type == "observed_state" and not isinstance(step.get("expected"), dict):
                 raise ExecutionPlanError("STEP_PARAMETER_INVALID", "observed_state expected는 객체여야 합니다.",
                     step_no=step_no, step_id=step["id"])
             if assertion_type == "url" and step.get("url"):
                 _validate_target_url(step["url"], environment.allowed_domains, step_no, step["id"])
         normalized.append(step)
+
+    normalized = _order_execution_steps(normalized)
+    for step_no, step in enumerate(normalized, start=1):
+        step["stepNo"] = step_no
 
     revision = int(spec.get("planRevision") or 1)
     canonical = json.dumps({
@@ -160,6 +170,33 @@ def _require(step: dict[str, Any], fields: list[str], step_no: int) -> None:
             "STEP_PARAMETER_MISSING", f"{step['action']} 단계에 {', '.join(missing)} 값이 필요합니다.",
             step_no=step_no, step_id=step["id"], missing_fields=missing,
         )
+
+
+def _is_placeholder_expectation(value: Any) -> bool:
+    if not isinstance(value, str):
+        return value is None
+    normalized = re.sub(r"\s+", "", value).lower()
+    return normalized in {"", "확인", "검증", "주소확인", "url확인", "제목확인", "탭제목확인"}
+
+
+def _order_execution_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep stable order inside groups while enforcing page-first execution."""
+    indexed = list(enumerate(steps))
+    first_navigate = next((index for index, step in indexed if step.get("action") == "navigate"), None)
+
+    def rank(item: tuple[int, dict[str, Any]]) -> tuple[int, int]:
+        index, step = item
+        if first_navigate is not None and index == first_navigate:
+            return (0, index)
+        if step.get("action") == "wait":
+            return (1, index)
+        if step.get("action") == "assert" and step.get("assertionType") == "page_title":
+            return (2, index)
+        if step.get("action") == "assert" and step.get("assertionType") == "url":
+            return (3, index)
+        return (4, index)
+
+    return [step for _, step in sorted(indexed, key=rank)]
 
 
 def _validate_target_url(url: str, allowed_domains: list[str], step_no: int, step_id: str | None = None) -> None:

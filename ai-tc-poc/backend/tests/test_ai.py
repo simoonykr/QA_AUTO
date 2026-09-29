@@ -94,6 +94,24 @@ def test_rule_based_structure_uses_selector_free_url_and_page_title_assertions()
     assert [step.expected for step in result.steps] == ["카카오게임즈", "kakaogames.com"]
 
 
+def test_rule_based_structure_uses_expected_result_for_metadata_checks() -> None:
+    result = rule_based_structure(StructureRequest(
+        title="공통 > 접속 > 페이지 기본정보",
+        rawText=(
+            "단계 1: 1. 브라우저 탭 제목 확인\n"
+            "단계 2: 2. 주소 확인\n"
+            "기대결과: 탭 제목은 '카카오게임즈'이고 최종 URL은 kakaogames.com 도메인이다.\n"
+            "대상 URL: https://kakaogames.com/"
+        ),
+    ))
+    metadata_steps = [step for step in result.steps if step.assertionType in {"page_title", "url"}]
+    assert [(step.assertionType, step.expected) for step in metadata_steps] == [
+        ("page_title", "카카오게임즈"), ("url", "kakaogames.com")]
+    assert [(assertion.type, assertion.expected) for assertion in result.assertions] == [
+        ("page_title", "카카오게임즈"), ("url", "kakaogames.com")]
+    assert len([step for step in result.steps if step.action == "navigate"]) == 1
+
+
 def test_structure_request_preserves_full_9613_character_raw_text() -> None:
     raw_text = "가" * 9_613
     request = StructureRequest(title="KakaoGames", rawText=raw_text)

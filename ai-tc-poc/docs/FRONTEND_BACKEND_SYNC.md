@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-29 실행 계획·브라우저 메타 assertion 계약
+
+- 자연어의 브라우저 제목/주소 확인은 각각 selector 없는 `assertionType=page_title|url`로 반환한다. 구체 기대값은 Expected Result의 제목 인용값과 URL/도메인에서 추출하며 `확인` 같은 지시어를 expected로 사용하지 않는다.
+- `StructuredTestCase.assertions[].type`은 기존 enum에 `page_title`을 추가한다. `steps[]`와 assertion 요약은 같은 타입·기대값을 반환한다.
+- 서버 실행 계획의 표준 선행 순서는 `NAVIGATE`, `WAIT`, `page_title`, `url`이고 나머지 요소/action 단계는 그 뒤에서 기존 상대 순서를 유지한다.
+- `page_title|url`의 expected가 없거나 placeholder이면 계획 검증 오류 `ASSERTION_EXPECTED_REQUIRED`로 승인·Suite 생성을 차단한다.
+- 프론트 배포의 `index.html`은 캐시하지 않으며 해시가 포함된 JS/CSS asset만 immutable로 캐시한다.
+
 ## 2026-09-28 selector 없는 메타 assertion·기능 후보 보수화
 
 - `assertionType`에 선택 값 `page_title`을 추가했다. `url|page_title` assertion은 selector가 필요 없으며 Worker가 현재 URL 또는 `page.title()`을 직접 검증한다.

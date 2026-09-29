@@ -91,7 +91,7 @@ class StructuredStep(BaseModel):
 
 
 class AssertionSpec(BaseModel):
-    type: Literal["url", "element", "text", "attribute", "count", "network", "visual_change"]
+    type: Literal["url", "page_title", "element", "text", "attribute", "count", "network", "visual_change"]
     operator: str
     expected: str
     timeoutMs: int = Field(ge=100, le=60_000)
