@@ -112,6 +112,15 @@ def test_rule_based_structure_uses_expected_result_for_metadata_checks() -> None
     assert len([step for step in result.steps if step.action == "navigate"]) == 1
 
 
+def test_rule_based_structure_classifies_reload_and_loading_wait() -> None:
+    result = rule_based_structure(StructureRequest(
+        title="새로고침 복구",
+        rawText="대상 URL: https://example.test/\n1. 브라우저 새로고침\n2. 로딩 완료까지 대기",
+    ))
+    assert [step.action for step in result.steps] == ["navigate", "reload", "wait"]
+    assert result.steps[2].operator == "domcontentloaded"
+
+
 def test_structure_request_preserves_full_9613_character_raw_text() -> None:
     raw_text = "가" * 9_613
     request = StructureRequest(title="KakaoGames", rawText=raw_text)

@@ -145,6 +145,31 @@ async def find_discovery(session, discovery_id):
     return item
 
 
+async def discovery_payload(session: AsyncSession, item: PageDiscovery) -> dict:
+    scenario_id = await session.scalar(select(PageScenario.id).where(
+        PageScenario.discovery_id == item.id,
+        PageScenario.organization_id == item.organization_id,
+        PageScenario.project_id == item.project_id,
+    ).order_by(PageScenario.created_at.desc()).limit(1))
+    result = item.result or {}
+    return {"discoveryId": str(item.id), "environmentId": str(item.environment_id),
+            "scenarioId": str(scenario_id) if scenario_id else None,
+            "startUrl": str(item.settings.get("startUrl") or ""),
+            "status": item.status, "errorCode": item.error_code,
+            "createdAt": item.created_at.isoformat() if item.created_at else None,
+            "startedAt": item.started_at.isoformat() if item.started_at else None,
+            "endedAt": item.ended_at.isoformat() if item.ended_at else None,
+            "pages": result.get("pages", []), "elements": result.get("elements", []),
+            "areas": result.get("areas", []), "interactions": result.get("interactions", []),
+            "stateChanges": result.get("stateChanges", []),
+            "scenarioCandidates": result.get("scenarioCandidates", []),
+            "coverage": result.get("coverage", coverage_summary([])),
+            "warnings": result.get("warnings", []),
+            "scope": {"includeInternalLinks": bool(item.settings.get("includeInternalLinks", False)),
+                "maxDepth": int(item.settings.get("maxDepth", 0)), "maxPages": int(item.settings.get("maxPages", 1))},
+            "aiUsage": {"source": "RULE_BASED", "callCount": 0}}
+
+
 def audit(org, request, action, resource_id):
     return AuditEvent(organization_id=org, action=action, resource_type="page_first",
         resource_id=str(resource_id), request_id=UUID(request.state.request_id), metadata_json={})
@@ -176,20 +201,33 @@ async def start(body: StartRequest, request: Request, session: AsyncSession = De
     return {"discoveryId": str(item.id), "status": "QUEUED"}
 
 
+@router.get("/page-discoveries")
+async def list_discoveries(limit: int = 20, session: AsyncSession = Depends(get_session)):
+    org, project = scope()
+    bounded_limit = max(1, min(limit, 50))
+    items = (await session.scalars(select(PageDiscovery).where(
+        PageDiscovery.organization_id == org, PageDiscovery.project_id == project,
+        PageDiscovery.test_case_version_id.is_(None),
+    ).order_by(PageDiscovery.created_at.desc()).limit(bounded_limit))).all()
+    return {"items": [await discovery_payload(session, item) for item in items]}
+
+
+@router.get("/page-discoveries/latest")
+async def latest_discovery(session: AsyncSession = Depends(get_session)):
+    org, project = scope()
+    item = await session.scalar(select(PageDiscovery).where(
+        PageDiscovery.organization_id == org, PageDiscovery.project_id == project,
+        PageDiscovery.test_case_version_id.is_(None),
+    ).order_by(PageDiscovery.created_at.desc()).limit(1))
+    if not item:
+        raise DomainError("DISCOVERY_NOT_FOUND", "복원할 페이지 분석이 없습니다.", 404)
+    return await discovery_payload(session, item)
+
+
 @router.get("/page-discoveries/{discovery_id}")
 async def get(discovery_id: UUID, session: AsyncSession = Depends(get_session)):
     item = await find_discovery(session, discovery_id)
-    return {"discoveryId": str(item.id), "status": item.status, "errorCode": item.error_code,
-            "pages": (item.result or {}).get("pages", []), "elements": (item.result or {}).get("elements", []),
-            "areas": (item.result or {}).get("areas", []),
-            "interactions": (item.result or {}).get("interactions", []),
-            "stateChanges": (item.result or {}).get("stateChanges", []),
-            "scenarioCandidates": (item.result or {}).get("scenarioCandidates", []),
-            "coverage": (item.result or {}).get("coverage", coverage_summary([])),
-            "warnings": (item.result or {}).get("warnings", []),
-            "scope": {"includeInternalLinks": bool(item.settings.get("includeInternalLinks", False)),
-                "maxDepth": int(item.settings.get("maxDepth", 0)), "maxPages": int(item.settings.get("maxPages", 1))},
-            "aiUsage": {"source": "RULE_BASED", "callCount": 0}}
+    return await discovery_payload(session, item)
 
 
 @router.post("/page-discoveries/{discovery_id}/scenarios", response_model=ScenarioResponse, status_code=201)

@@ -2,6 +2,16 @@
 
 마지막 갱신: 2026-09-29
 
+## 2026-09-29 자연어 action·페이지 분석 복원 1차
+
+- 규칙 기반 구조화에서 브라우저 새로고침을 `RELOAD`, 로딩 완료 대기를 `WAIT(domcontentloaded)`로 분류하고 실행 계획·Worker까지 동일 action 계약으로 연결했다.
+- 승인 차단 원인을 `SELECTOR_REQUIRED`, `PAGE_ANALYSIS_REQUIRED`, 기존 `UNSUPPORTED_ACTION`으로 구분한다. 화면 복구·빈 영역처럼 페이지 관찰이 필요한 일반 문장은 임의 selector로 자동 승인하지 않는다.
+- 페이지 분석은 기존 DB 영속 데이터를 사용해 `GET /page-discoveries`, `GET /page-discoveries/latest`, 기존 상세 조회에서 환경·시작 URL·시각·연결 scenarioId를 반환한다. 프론트 AI 시나리오 메뉴 재진입 시 최신 분석과 시나리오 revision을 복원한다.
+- Temporary Staging navigation/resource allowlist에 `ngle.co.kr`, `www.ngle.co.kr`을 명시적으로 추가하는 migration `0013_allow_ngle_staging`을 추가했다.
+- AI 시나리오 화면에 서버가 반환한 실제 허용 도메인 목록을 표시한다. 분석 승인 후 기존 `versionId → 실행 설정 → executionId` 흐름은 유지한다.
+- 검증: 백엔드 **137 passed, 1 skipped**, Docker 프론트 프로덕션 빌드 통과, 실제 AI 호출 0회.
+- 남은 프론트 후속: 최근 분석 목록 UI, 경과 시간/timeout 표시, 카드별 승인 불가 코드 표시, 메타 assertion 단계 요약 문구 수정.
+
 ## 2026-09-29 실행 계획 순서·메타 assertion P0 수정
 
 - 규칙 기반 단건·Batch 구조화가 같은 parser를 사용하며, `브라우저 탭 제목 확인`과 `주소 확인`의 기대값을 Expected Result에서 추출한다. KG-WEB-002는 `page_title=카카오게임즈`, `url=kakaogames.com`으로 생성되고 일반 TEXT assertion 또는 `확인` 값으로 저장되지 않는다.

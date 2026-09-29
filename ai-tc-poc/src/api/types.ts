@@ -1,6 +1,6 @@
 export type TestCaseStatus = 'DRAFT' | 'REVIEW_REQUIRED' | 'READY' | 'ARCHIVED'
 export type ExecutionStatus = 'QUEUED' | 'PROVISIONING' | 'RUNNING' | 'WAITING_APPROVAL' | 'CANCEL_REQUESTED' | 'PASS' | 'FAIL' | 'BLOCKED' | 'NEEDS_REVIEW' | 'CANCELLED' | 'SYSTEM_ERROR'
-export type ActionType = 'navigate' | 'click' | 'fill' | 'select' | 'press' | 'scroll' | 'wait' | 'upload'
+export type ActionType = 'navigate' | 'reload' | 'click' | 'fill' | 'select' | 'press' | 'scroll' | 'wait' | 'upload'
 export type AssertionType = 'url' | 'page_title' | 'element' | 'text' | 'attribute' | 'count' | 'network' | 'visual_change'
 export type ResolutionStatus = 'UNRESOLVED' | 'RESOLVING' | 'RESOLVED' | 'AMBIGUOUS' | 'NOT_FOUND' | 'STALE'
 export type DiscoveryStatus = 'QUEUED' | 'PROVISIONING' | 'SCANNING' | 'MAPPING' | 'VALIDATING' | 'COMPLETED' | 'NEEDS_REVIEW' | 'FAILED' | 'CANCELLED'
@@ -28,7 +28,7 @@ export interface EnvironmentSummary {
 export interface TestAccountSummary { id: string; name: string; status: string }
 
 export interface ExecutionPolicy {
-  allowedActions: Array<'navigate' | 'click' | 'fill' | 'assert'>
+  allowedActions: Array<'navigate' | 'reload' | 'click' | 'fill' | 'assert' | 'wait'>
   supportedBrowsers: Array<'Chromium'>
   maxTimeoutMinutes: number
   maxAiCalls: number
@@ -368,6 +368,12 @@ export interface PageScenarioCandidate {
 export type FunctionalCoverageSummary = Record<FunctionalCoverageStatus, number>
 export interface PageFirstDiscovery {
   discoveryId: string
+  environmentId?: string
+  scenarioId?: string | null
+  startUrl?: string
+  createdAt?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
   status: 'QUEUED' | 'SCANNING' | 'COMPLETED' | 'FAILED'
   errorCode: string | null
   pages: Array<{url: string; title: string; fingerprint: string; depth?: number; elementCount?: number}>

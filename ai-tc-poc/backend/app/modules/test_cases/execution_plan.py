@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from app.db.models import Environment, TestCaseVersion
 
 
-SUPPORTED_ACTIONS = {"navigate", "fill", "click", "assert", "wait"}
+SUPPORTED_ACTIONS = {"navigate", "reload", "fill", "click", "assert", "wait"}
 
 
 class ExecutionPlanError(Exception):
@@ -80,24 +80,29 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
         }
         if action in {"fill", "click", "assert"} and step.get("resolutionStatus") in {"UNRESOLVED", "RESOLVING", "AMBIGUOUS", "NOT_FOUND", "STALE"}:
             raise ExecutionPlanError(
-                "SELECTOR_RESOLUTION_REQUIRED", "페이지 분석으로 화면 요소를 확정해야 합니다.",
+                "PAGE_ANALYSIS_REQUIRED", "페이지 분석으로 화면 요소를 확정해야 합니다.",
                 step_no=step_no, step_id=step["id"], missing_fields=["selector"],
             )
         if action == "navigate":
             if not step["url"]:
                 raise ExecutionPlanError("TARGET_URL_REQUIRED", "원문 대상 URL이 없는 이동 단계입니다. 대상 URL을 명시해 다시 분석해 주세요.", step_no=step_no)
             _validate_target_url(step["url"], environment.allowed_domains, step_no)
+        elif action == "reload":
+            pass
         elif action == "fill":
-            _require(step, ["selector"], step_no)
+            _require_selector(step, step_no)
             if not step.get("value") and not step.get("secretRef"):
                 raise ExecutionPlanError("STEP_PARAMETER_MISSING", "fill 단계에 value 또는 secretRef가 필요합니다.", step_no=step_no, step_id=step["id"], missing_fields=["value", "secretRef"])
         elif action == "click":
-            _require(step, ["selector"], step_no)
+            _require_selector(step, step_no)
         elif action == "assert":
             assertion_type = step.get("assertionType") or ("url" if step.get("url") and not step.get("selector") else "text")
             step["assertionType"] = assertion_type
             required = (["operator", "expected"] if assertion_type in {"url", "page_title"} else
                 ["selector", "expected"] if assertion_type == "observed_state" else ["selector", "operator", "expected"])
+            if "selector" in required:
+                _require_selector(step, step_no)
+                required = [field for field in required if field != "selector"]
             _require(step, required, step_no)
             if assertion_type in {"url", "page_title"} and _is_placeholder_expectation(step.get("expected")):
                 raise ExecutionPlanError(
@@ -172,6 +177,14 @@ def _require(step: dict[str, Any], fields: list[str], step_no: int) -> None:
         )
 
 
+def _require_selector(step: dict[str, Any], step_no: int) -> None:
+    if not step.get("selector"):
+        raise ExecutionPlanError(
+            "SELECTOR_REQUIRED", "화면 요소 단계에 검증된 selector가 필요합니다.",
+            step_no=step_no, step_id=step["id"], missing_fields=["selector"],
+        )
+
+
 def _is_placeholder_expectation(value: Any) -> bool:
     if not isinstance(value, str):
         return value is None
@@ -188,13 +201,15 @@ def _order_execution_steps(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         index, step = item
         if first_navigate is not None and index == first_navigate:
             return (0, index)
-        if step.get("action") == "wait":
+        if step.get("action") == "reload":
             return (1, index)
-        if step.get("action") == "assert" and step.get("assertionType") == "page_title":
+        if step.get("action") == "wait":
             return (2, index)
-        if step.get("action") == "assert" and step.get("assertionType") == "url":
+        if step.get("action") == "assert" and step.get("assertionType") == "page_title":
             return (3, index)
-        return (4, index)
+        if step.get("action") == "assert" and step.get("assertionType") == "url":
+            return (4, index)
+        return (5, index)
 
     return [step for _, step in sorted(indexed, key=rank)]
 

@@ -246,6 +246,14 @@ export const api = {
     return structuredClone(item.value)
   },
 
+  async getLatestPageFirstDiscovery():Promise<PageFirstDiscovery> {
+    if (!USE_MOCK_API) return request('/page-discoveries/latest')
+    const items=Array.from(mockPageFirstDiscoveries.values())
+    const item=items[items.length-1]
+    if(!item)throw new ApiError({code:'DISCOVERY_NOT_FOUND',message:'복원할 페이지 분석이 없습니다.',requestId:'mock',retryable:false},404)
+    return structuredClone(item.value)
+  },
+
   async generatePageScenario(discoveryId:string):Promise<PageScenarioDraft> {
     if (!USE_MOCK_API) return request(`/page-discoveries/${discoveryId}/scenarios`,{method:'POST',body:JSON.stringify({maxAiCalls:0})})
     const discovery=await this.getPageFirstDiscovery(discoveryId)

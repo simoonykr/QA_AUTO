@@ -75,7 +75,7 @@ class StructuredStep(BaseModel):
     id: str
     title: str
     note: str
-    action: Literal["navigate", "click", "fill", "select", "press", "scroll", "wait", "upload", "assert"]
+    action: Literal["navigate", "reload", "click", "fill", "select", "press", "scroll", "wait", "upload", "assert"]
     confidence: float | None = Field(default=None, ge=0, le=1)
     url: str | None = None
     selector: str | None = None

@@ -52,6 +52,13 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
         await wait_for_render(page, timeout)
         return StepResult(action={"type": "navigate", "url": url})
 
+    if action_type == "reload":
+        response = await page.reload(wait_until="domcontentloaded", timeout=timeout)
+        if response and response.status >= 400:
+            raise AssertionError(f"HTTP {response.status}")
+        await wait_for_render(page, timeout)
+        return StepResult(action={"type": "reload", "url": page.url})
+
     if action_type == "assert" and (step.get("assertionType") == "url" or (step.get("url") and not step.get("selector"))):
         operator = step.get("operator", "contains")
         expected = str(_required(step, "expected"))

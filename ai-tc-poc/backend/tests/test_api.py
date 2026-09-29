@@ -1027,6 +1027,24 @@ def test_execution_plan_orders_navigation_wait_and_metadata_before_other_steps()
     assert [step["stepNo"] for step in plan.steps] == [1, 2, 3, 4, 5]
 
 
+def test_execution_plan_places_reload_after_navigation() -> None:
+    plan = validate_execution_plan(_plan_version([
+        {"id": "check", "title": "화면 검증", "action": "assert", "selector": "#main", "operator": "visible", "expected": "true"},
+        {"id": "reload", "title": "브라우저 새로고침", "action": "reload"},
+        {"id": "navigate", "title": "진입", "action": "navigate", "url": "http://demo-target"},
+    ]), _plan_environment())
+    assert [step["id"] for step in plan.steps] == ["navigate", "reload", "check"]
+
+
+def test_execution_plan_returns_selector_required_code() -> None:
+    with pytest.raises(ExecutionPlanError) as raised:
+        validate_execution_plan(_plan_version([{
+            "id": "check", "title": "화면 검증", "action": "assert",
+            "assertionType": "text", "operator": "contains", "expected": "완료",
+        }]), _plan_environment())
+    assert raised.value.code == "SELECTOR_REQUIRED"
+
+
 @pytest.mark.parametrize("assertion_type,expected", [("page_title", "확인"), ("url", "주소 확인")])
 def test_execution_plan_rejects_placeholder_metadata_expectations(assertion_type, expected) -> None:
     with pytest.raises(ExecutionPlanError) as raised:
@@ -1053,7 +1071,7 @@ def test_unresolved_intent_blocks_execution_plan_before_discovery() -> None:
         validate_execution_plan(_plan_version([
             {"id": "step-1", "title": "PC 필터 선택", "action": "click", "targetDescription": "PC 필터 버튼", "resolutionStatus": "UNRESOLVED"},
         ]), _plan_environment())
-    assert raised.value.code == "SELECTOR_RESOLUTION_REQUIRED"
+    assert raised.value.code == "PAGE_ANALYSIS_REQUIRED"
     assert raised.value.step_id == "step-1"
 
 
@@ -1118,6 +1136,9 @@ class FakePage:
         self.url = url
         return FakeResponse()
 
+    async def reload(self, **_kwargs):
+        return FakeResponse()
+
     async def wait_for_load_state(self, _state, **_kwargs):
         pass
 
@@ -1141,6 +1162,14 @@ async def test_step_executor_runs_navigate_fill_and_click() -> None:
     assert page.locators["#email"].filled == "qa@example.test"
     assert page.locators["#submit"].clicked is True
     assert fill.action["value"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_step_executor_runs_reload_without_selector() -> None:
+    page = FakePage()
+    page.url = "http://demo-target/current"
+    result = await execute_step(page, {"action": "reload"}, "http://demo-target")
+    assert result.action == {"type": "reload", "url": "http://demo-target/current"}
 
 
 @pytest.mark.asyncio
