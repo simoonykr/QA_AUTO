@@ -5,17 +5,21 @@ import re
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.config import get_settings
 from app.core.errors import DomainError
 from app.db.models import Environment, PageDiscovery, PageScenario, TestCase, TestCaseVersion
 from app.modules.discoveries.page_first import (scope, audit, allowed_url, compare_candidate_coverage,
     coverage_summary, ScenarioResponse)
 from app.modules.test_cases.execution_plan import validate_execution_plan
+from app.modules.executions.repository import ExecutionRuleError, SqlExecutionRepository
+from app.modules.test_cases.execution_plan import ExecutionPlanError
+from app.schemas.executions import CreateExecutionRequest, ExecutionLimits, ExecutionResponse
 
 router = APIRouter(tags=["scenario-review"])
 
@@ -44,6 +48,25 @@ class Selection(StrictRequest):
 
 class ReviewRequest(RevisionRequest):
     selections: list[Selection] = Field(min_length=1, max_length=200)
+
+
+class ScenarioExecutionRequest(StrictRequest):
+    browser: Literal["Chromium", "Firefox", "WebKit"] = "Chromium"
+    accountId: str | None = None
+    viewport: str = Field(default="1440x900", pattern=r"^\d{2,5}x\d{2,5}$")
+    locale: str = Field(default="ko-KR", min_length=2, max_length=20)
+    limits: ExecutionLimits = Field(default_factory=lambda: ExecutionLimits(
+        timeoutMinutes=10, maxAiCalls=0, retryCount=0))
+    requireRiskApproval: bool = True
+
+
+class ScenarioExecutionResponse(BaseModel):
+    scenarioId: UUID
+    discoveryId: UUID
+    approvedVersionId: UUID
+    environmentId: UUID
+    executionId: UUID
+    execution: ExecutionResponse
 
 
 def apply_function_candidate(payload: dict, candidate_id: str, expected_revision: int) -> dict:
@@ -293,3 +316,59 @@ async def approve(scenario_id: UUID, body: RevisionRequest, request: Request, se
             "message": "선택한 표시 검증만 실행합니다. 수동·제외 항목은 실행 범위 밖입니다." if not functional_steps
                 else "검증된 클릭과 관찰 상태 assertion을 Worker 실행 계획에 반영했습니다."}])
     return await persist(session, item, payload, request, "page_scenario.approved")
+
+
+@router.post("/page-scenarios/{scenario_id}/executions", response_model=ScenarioExecutionResponse, status_code=202)
+async def execute_approved_scenario(scenario_id: UUID, body: ScenarioExecutionRequest, request: Request,
+        idempotency_key: str | None = Header(default=None), session: AsyncSession = Depends(get_session)):
+    if not idempotency_key:
+        raise DomainError("IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key 헤더가 필요합니다.", 400)
+    if body.limits.maxAiCalls != 0:
+        raise DomainError("SCENARIO_AI_CALLS_NOT_ALLOWED", "페이지 시나리오 실행의 AI 호출 한도는 0이어야 합니다.", 422)
+    item = await scenario(session, scenario_id)
+    payload = item.payload or {}
+    if payload.get("status") != "READY" or not payload.get("versionId") or not payload.get("environmentId"):
+        raise DomainError("SCENARIO_NOT_APPROVED", "시나리오 승인 후 실행할 수 있습니다.", 409)
+
+    version_id = UUID(str(payload["versionId"]))
+    environment_id = UUID(str(payload["environmentId"]))
+    version = await session.scalar(select(TestCaseVersion).where(
+        TestCaseVersion.id == version_id,
+        TestCaseVersion.organization_id == item.organization_id,
+    ))
+    page_first = (version.structured_spec or {}).get("pageFirst") if version else None
+    if not version or not page_first or page_first.get("scenarioId") != str(item.id):
+        raise DomainError("SCENARIO_VERSION_LINK_INVALID", "승인 시나리오와 Version 연결을 다시 확인해 주세요.", 409)
+
+    settings = get_settings()
+    repository = SqlExecutionRepository(
+        session, item.organization_id, item.project_id,
+        UUID(settings.default_user_id), UUID(request.state.request_id),
+    )
+    execution_request = CreateExecutionRequest(
+        testCaseVersionId=str(version_id), environmentId=str(environment_id),
+        browser=body.browser, accountId=body.accountId, viewport=body.viewport,
+        locale=body.locale, limits=body.limits, requireRiskApproval=body.requireRiskApproval,
+    )
+    try:
+        execution = await repository.create(execution_request, idempotency_key)
+    except ExecutionRuleError as exc:
+        status = 409 if exc.code in {"IDEMPOTENCY_CONFLICT", "TC_NOT_READY"} else 404 if exc.code.endswith("_NOT_FOUND") else 400
+        raise DomainError(exc.code, exc.message, status) from None
+    except ExecutionPlanError as exc:
+        raise DomainError(exc.code, exc.message, 422, retryable=False,
+            details={"stepNo": exc.step_no, "stepId": exc.step_id, "missingFields": exc.missing_fields}) from None
+
+    refreshed = await scenario(session, scenario_id, True)
+    updated_payload = deepcopy(refreshed.payload)
+    execution_ids = list(updated_payload.get("executionIds") or [])
+    if execution.id not in execution_ids:
+        execution_ids.append(execution.id)
+    updated_payload["executionIds"] = execution_ids[-50:]
+    updated_payload["latestExecutionId"] = execution.id
+    await persist(session, refreshed, updated_payload, request, "page_scenario.execution_created")
+    return ScenarioExecutionResponse(
+        scenarioId=item.id, discoveryId=item.discovery_id,
+        approvedVersionId=version_id, environmentId=environment_id,
+        executionId=UUID(execution.id), execution=execution,
+    )

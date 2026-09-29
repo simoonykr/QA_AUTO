@@ -10,7 +10,9 @@ from app.modules.discoveries.page_first import (area_fingerprints, build_scenari
     changed_area_evidence, compare_candidate_coverage, coverage_summary, feature_inventory,
     safe_state_candidate, scenario_payload, page_fingerprint)
 from app.modules.discoveries.review import (extract, compare, apply_function_candidate, apply_selections,
-    ReviewRequest, Selection, selected_steps, editable, approve, RevisionRequest)
+    ReviewRequest, Selection, selected_steps, editable, approve, RevisionRequest,
+    execute_approved_scenario, ScenarioExecutionRequest)
+from app.schemas.executions import ExecutionResponse
 from app.modules.test_cases.execution_plan import validate_execution_plan, ExecutionPlanError
 
 
@@ -67,6 +69,57 @@ def test_pending_and_empty_plan_block_approval():
     with pytest.raises(DomainError) as e:
         selected_steps(payload)
     assert e.value.code == "SCENARIO_EMPTY"
+
+
+@pytest.mark.asyncio
+async def test_scenario_execution_requires_approved_link():
+    item = NS(id=uuid4(), discovery_id=uuid4(), organization_id=uuid4(), project_id=uuid4(),
+        payload={"status": "REVIEW_REQUIRED"})
+    class Session:
+        async def scalar(self, _query):
+            return item
+    with pytest.raises(DomainError) as error:
+        await execute_approved_scenario(item.id, ScenarioExecutionRequest(),
+            NS(state=NS(request_id=str(uuid4()))), "scenario-key", Session())
+    assert error.value.code == "SCENARIO_NOT_APPROVED"
+
+
+@pytest.mark.asyncio
+async def test_scenario_execution_uses_server_linked_version_and_environment(monkeypatch):
+    scenario_id, discovery_id, version_id, environment_id = uuid4(), uuid4(), uuid4(), uuid4()
+    item = NS(id=scenario_id, discovery_id=discovery_id, organization_id=uuid4(), project_id=uuid4(),
+        payload={"status": "READY", "revision": 2,
+            "versionId": str(version_id), "environmentId": str(environment_id)})
+    version = NS(id=version_id, organization_id=item.organization_id,
+        structured_spec={"pageFirst": {"scenarioId": str(scenario_id)}})
+    class Session:
+        def __init__(self):
+            self.values = [item, version, item]
+            self.added = []
+        async def scalar(self, _query):
+            return self.values.pop(0)
+        def add(self, value):
+            self.added.append(value)
+        async def commit(self):
+            pass
+    captured = {}
+    execution_id = uuid4()
+    class Repository:
+        def __init__(self, *_args):
+            pass
+        async def create(self, body, idempotency_key):
+            captured.update(body=body, key=idempotency_key)
+            return ExecutionResponse(id=str(execution_id), status="QUEUED",
+                testCaseVersionId=str(version_id), queuedAt=datetime.now(UTC))
+    monkeypatch.setattr("app.modules.discoveries.review.SqlExecutionRepository", Repository)
+    result = await execute_approved_scenario(scenario_id, ScenarioExecutionRequest(),
+        NS(state=NS(request_id=str(uuid4()))), "scenario-key", Session())
+    assert captured["body"].testCaseVersionId == str(version_id)
+    assert captured["body"].environmentId == str(environment_id)
+    assert captured["body"].limits.maxAiCalls == 0
+    assert captured["key"] == "scenario-key"
+    assert result.executionId == execution_id
+    assert item.payload["latestExecutionId"] == str(execution_id)
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,13 @@
 
 마지막 갱신: 2026-09-29
 
+## 2026-09-29 승인 시나리오 즉시 Execution 생성 백엔드
+
+- READY page scenario 전용 `POST /page-scenarios/{scenarioId}/executions`를 추가했다. 서버 저장 계보의 Version·환경만 사용하며 클라이언트가 다른 Version을 주입할 수 없다.
+- 기존 Execution repository의 계획 검증, idempotency, Outbox, 감사 로그를 그대로 사용하고 응답에 discovery/scenario/version/environment/execution ID를 함께 반환한다.
+- Scenario payload에 최근 Execution과 최대 50개의 Execution ID를 저장해 재진입 시 실행 모니터 연결을 복원한다.
+- 기존 승인 후 실행 설정 화면과 `POST /executions` 계약은 유지된다. 프론트 후속은 승인 직후 단축 API 호출 성공 시 실행 모니터로 이동하는 연결이다.
+
 ## 2026-09-29 페이지 분석 복원·검토 UX 프론트 완료
 
 - `GET /page-discoveries?limit=10`을 연결해 최근 분석의 상태·대상 URL·생성 시각·방문 페이지·시나리오 유무를 표시하고, `이어서 검토`에서 상세 분석과 연결된 최신 scenario revision을 복원한다.

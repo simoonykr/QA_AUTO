@@ -64,6 +64,8 @@ class ScenarioResponse(BaseModel):
     extractedTestCase: dict | None = None
     versionId: str | None = None
     environmentId: str | None = None
+    latestExecutionId: str | None = None
+    executionIds: list[str] = Field(default_factory=list)
 
 
 def allowed_url(url: str, domains: list[str]) -> bool:

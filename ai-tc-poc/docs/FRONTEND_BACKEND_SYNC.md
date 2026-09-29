@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-09-29 승인 시나리오 즉시 실행 계약
+
+- `POST /api/v1/page-scenarios/{scenarioId}/executions`는 READY 시나리오가 서버에 저장한 `versionId`, `environmentId`를 재검증한 뒤 Execution을 생성한다.
+- 요청 헤더는 기존과 동일하게 `Idempotency-Key`가 필수다. Body는 `{ browser, accountId, viewport, locale, limits, requireRiskApproval }`이며 Version/환경 ID를 클라이언트가 다시 전달하지 않는다. `limits.maxAiCalls` 기본값은 0이다.
+- 응답은 `{ scenarioId, discoveryId, approvedVersionId, environmentId, executionId, execution }`이다. Scenario 상세에도 `latestExecutionId`, `executionIds`가 저장되어 분석 → 시나리오 → 승인 Version → Execution 계보를 복원할 수 있다.
+- 미승인 시 `SCENARIO_NOT_APPROVED`, Version 연결 불일치 시 `SCENARIO_VERSION_LINK_INVALID`, 중복 키 내용 불일치 시 기존 `IDEMPOTENCY_CONFLICT`를 반환한다.
+- 프론트는 승인 응답 직후 이 API를 호출하고 성공한 `executionId`를 활성 실행 ID로 저장한 뒤 실행 모니터로 이동할 수 있다. 기존 실행 설정/계획 확인 흐름은 계속 지원된다.
+
 ## 2026-09-29 페이지 분석 복원·action 오류 코드 계약
 
 - 실행 action에 `reload`를 추가했다. 자연어 `브라우저 새로고침`은 selector 없이 RELOAD로 생성되며 Worker는 현재 페이지를 다시 로드하고 렌더 완료까지 기다린다.

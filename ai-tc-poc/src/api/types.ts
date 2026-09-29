@@ -415,7 +415,19 @@ export interface PageScenarioDraft {
   extractedTestCase?: TCExtraction | null
   versionId?: string | null
   environmentId?: string | null
+  latestExecutionId?: string | null
+  executionIds?: string[]
 }
+
+export interface ScenarioExecutionResponse {
+  scenarioId: string
+  discoveryId: string
+  approvedVersionId: string
+  environmentId: string
+  executionId: string
+  execution: Execution
+}
+export type ScenarioExecutionRequest = Omit<CreateExecutionRequest, 'testCaseVersionId' | 'environmentId'>
 
 export type ScenarioComparisonResult = 'MATCHED' | 'TC_ONLY' | 'PAGE_ONLY' | 'CONFLICT' | 'NOT_AUTOMATABLE'
 export type ScenarioDecision = 'PENDING' | 'ADD' | 'MANUAL' | 'EXCLUDE' | 'IGNORE'

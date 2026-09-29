@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportBatchDetail, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstDiscoveryListResponse, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportBatchDetail, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstDiscoveryListResponse, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioExecutionRequest, ScenarioExecutionResponse, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -373,6 +373,16 @@ export const api = {
     const hasFunctionCandidate=Boolean(current.selectedCandidateIds?.length)
     const updated={...current,status:'READY' as const,executable:true,automationStatus:hasFunctionCandidate?'AUTOMATABLE' as const:'PARTIALLY_AUTOMATABLE' as const,versionId:crypto.randomUUID(),environmentId:current.environmentId??'env-staging',warnings:[{code:hasFunctionCandidate?'FUNCTION_STEPS_READY':'PARTIAL_SCOPE',message:hasFunctionCandidate?'검증된 클릭과 관찰 상태 assertion을 Worker 실행 계획에 반영했습니다.':'수동·제외 항목은 자동 실행 범위에 포함되지 않습니다.'}]}
     mockPageScenarios.set(scenarioId,updated);return structuredClone(updated)
+  },
+
+  async executePageScenario(scenarioId:string,input:ScenarioExecutionRequest,idempotencyKey:string):Promise<ScenarioExecutionResponse> {
+    if (!USE_MOCK_API) return request(`/page-scenarios/${scenarioId}/executions`,{method:'POST',headers:{'Idempotency-Key':idempotencyKey},body:JSON.stringify(input)})
+    const scenario=await this.getPageScenario(scenarioId)
+    if(scenario.status!=='READY'||!scenario.versionId||!scenario.environmentId)throw new ApiError({code:'SCENARIO_NOT_APPROVED',message:'시나리오 승인 후 실행할 수 있습니다.',requestId:'mock',retryable:false},409)
+    const execution=await this.createExecution({...input,testCaseVersionId:scenario.versionId,environmentId:scenario.environmentId})
+    const updated={...scenario,latestExecutionId:execution.id,executionIds:[...new Set([...(scenario.executionIds??[]),execution.id])]}
+    mockPageScenarios.set(scenarioId,updated)
+    return {scenarioId,discoveryId:scenario.discoveryId,approvedVersionId:scenario.versionId,environmentId:scenario.environmentId,executionId:execution.id,execution}
   },
 
   async createExecution(input: CreateExecutionRequest): Promise<Execution> {
