@@ -5,6 +5,8 @@
 - 실행 action에 `reload`를 추가했다. 자연어 `브라우저 새로고침`은 selector 없이 RELOAD로 생성되며 Worker는 현재 페이지를 다시 로드하고 렌더 완료까지 기다린다.
 - 실행 계획 차단 코드는 검증된 selector 자체가 없으면 `SELECTOR_REQUIRED`, 페이지 분석 결과가 미해결/모호/오래됨 상태이면 `PAGE_ANALYSIS_REQUIRED`, 지원하지 않는 action이면 `UNSUPPORTED_ACTION`이다.
 - `GET /api/v1/page-discoveries?limit=20`은 최근 page-first 분석 목록을 반환한다. `GET /api/v1/page-discoveries/latest`와 상세 응답에는 `environmentId`, `startUrl`, `scenarioId`, `createdAt`, `startedAt`, `endedAt`, 결과·범위가 포함된다.
+- 프론트는 최근 분석 목록에서 항목을 선택하면 상세 조회 후 `scenarioId`의 최신 revision까지 복원한다. 진행 중 항목은 `startedAt|createdAt` 기준 경과 시간과 단계·장기 대기 안내를 표시하며 클라이언트가 임의 timeout 또는 자동 재시도를 만들지 않는다.
+- 실행 계획 warning의 `SELECTOR_REQUIRED|PAGE_ANALYSIS_REQUIRED|UNSUPPORTED_ACTION|ASSERTION_EXPECTED_REQUIRED`는 선택 TC 카드와 단계에 표시한다. `page_title|url` assertion은 selector 대신 `operator + expected`를 요약하고 `reload|wait`는 수행 의미를 표시한다.
 - `scenarioId`가 있으면 `GET /api/v1/page-scenarios/{scenarioId}`로 검토 revision과 승인 Version을 복원한다. 승인 응답의 `versionId`, `environmentId`는 기존 실행 생성 API 입력으로 사용한다.
 
 ## 2026-09-29 실행 계획·브라우저 메타 assertion 계약

@@ -2,6 +2,15 @@
 
 마지막 갱신: 2026-09-29
 
+## 2026-09-29 페이지 분석 복원·검토 UX 프론트 완료
+
+- `GET /page-discoveries?limit=10`을 연결해 최근 분석의 상태·대상 URL·생성 시각·방문 페이지·시나리오 유무를 표시하고, `이어서 검토`에서 상세 분석과 연결된 최신 scenario revision을 복원한다.
+- 분석 중 경과 시간과 현재 단계를 실시간으로 표시한다. 1분 이상 진행되면 polling 유지, 서버 timeout 대기, 실패 후 수동 재시도 방식을 안내하며 입력값은 보존한다.
+- 구조화 TC 카드에 `SELECTOR_REQUIRED`, `PAGE_ANALYSIS_REQUIRED`, `UNSUPPORTED_ACTION`, `ASSERTION_EXPECTED_REQUIRED` 등 승인 차단 코드를 직접 표시한다. 단계 경고와 최종 실행 계획에도 오류 코드를 함께 노출한다.
+- `PAGE_TITLE`, `URL`, `WAIT`, `RELOAD` 단계는 selector 누락처럼 보이지 않도록 실제 expected/operator 또는 수행 의미를 요약한다. 단계 편집의 assertion type에도 `page_title`을 추가했다.
+- 승인 직후 Execution 생성 단축은 백엔드 단축 계약 전까지 기존 `승인 → 실행 설정 → 실행 계획 → Execution` 흐름을 유지한다. 실제 AI 호출 설정은 0회다.
+- 검증: 프론트 TypeScript 검사, Vite 프로덕션 빌드, diff 검사 통과.
+
 ## 2026-09-29 자연어 action·페이지 분석 복원 1차
 
 - 규칙 기반 구조화에서 브라우저 새로고침을 `RELOAD`, 로딩 완료 대기를 `WAIT(domcontentloaded)`로 분류하고 실행 계획·Worker까지 동일 action 계약으로 연결했다.
@@ -9,8 +18,8 @@
 - 페이지 분석은 기존 DB 영속 데이터를 사용해 `GET /page-discoveries`, `GET /page-discoveries/latest`, 기존 상세 조회에서 환경·시작 URL·시각·연결 scenarioId를 반환한다. 프론트 AI 시나리오 메뉴 재진입 시 최신 분석과 시나리오 revision을 복원한다.
 - Temporary Staging navigation/resource allowlist에 `ngle.co.kr`, `www.ngle.co.kr`을 명시적으로 추가하는 migration `0013_allow_ngle_staging`을 추가했다.
 - AI 시나리오 화면에 서버가 반환한 실제 허용 도메인 목록을 표시한다. 분석 승인 후 기존 `versionId → 실행 설정 → executionId` 흐름은 유지한다.
-- 검증: 백엔드 **137 passed, 1 skipped**, Docker 프론트 프로덕션 빌드 통과, 실제 AI 호출 0회.
-- 남은 프론트 후속: 최근 분석 목록 UI, 경과 시간/timeout 표시, 카드별 승인 불가 코드 표시, 메타 assertion 단계 요약 문구 수정.
+- 검증: 백엔드 **138 passed, 1 skipped**, Docker 프론트 프로덕션 빌드 통과, 실제 AI 호출 0회.
+- 프론트 후속이 완료되어 최근 분석 목록·경과 시간/timeout 안내·카드별 승인 불가 코드·메타 assertion 단계 요약을 제공한다.
 
 ## 2026-09-29 실행 계획 순서·메타 assertion P0 수정
 

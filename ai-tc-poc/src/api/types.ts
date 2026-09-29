@@ -387,6 +387,7 @@ export interface PageFirstDiscovery {
   scope?: {includeInternalLinks: boolean; maxDepth: number; maxPages: number}
   aiUsage: {source: 'RULE_BASED'; callCount: 0}
 }
+export interface PageFirstDiscoveryListResponse { items: PageFirstDiscovery[] }
 export interface PageScenarioDraft {
   scenarioId: string
   discoveryId: string

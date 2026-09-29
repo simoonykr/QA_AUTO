@@ -1,4 +1,4 @@
-import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportBatchDetail, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
+import type { ApiErrorBody, AuthenticatedUser, BatchApprovalResponse, CreateExecutionRequest, CreateExecutionSuiteRequest, DiscoverySelection, DiscoveryStartResponse, EnvironmentSummary, Execution, ExecutionActionResponse, ExecutionDetails, ExecutionHistoryResponse, ExecutionPlan, ExecutionPolicy, ExecutionSuite, ImportBatchDetail, ImportedTestCaseItem, LoginResponse, PageDiscovery, PageFirstDiscovery, PageFirstDiscoveryListResponse, PageFirstStartRequest, PageScenarioDraft, ScenarioApproveRequest, ScenarioCompareRequest, ScenarioComparison, ScenarioReviewRequest, StructureBatchResult, StructuredTestCase, TestAccountSummary, TestCaseImportResponse, TestCaseSummary, TestCaseVersionApproval, TestCaseVersionStepPatch } from './types'
 import { mockSteps, mockTestCases } from './mockData'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
@@ -252,6 +252,12 @@ export const api = {
     const item=items[items.length-1]
     if(!item)throw new ApiError({code:'DISCOVERY_NOT_FOUND',message:'복원할 페이지 분석이 없습니다.',requestId:'mock',retryable:false},404)
     return structuredClone(item.value)
+  },
+
+  async listPageFirstDiscoveries(limit=10):Promise<PageFirstDiscoveryListResponse> {
+    if (!USE_MOCK_API) return request(`/page-discoveries?limit=${limit}`)
+    const items=Array.from(mockPageFirstDiscoveries.values()).map(item=>structuredClone(item.value)).reverse().slice(0,limit)
+    return {items}
   },
 
   async generatePageScenario(discoveryId:string):Promise<PageScenarioDraft> {
