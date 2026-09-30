@@ -2,13 +2,21 @@
 
 마지막 갱신: 2026-09-30
 
+## 2026-09-30 Temporary Staging 단축 실행 실검증
+
+- 사용자 흐름: 테스트 계정 로그인 → AI 시나리오 진입 → 최신 KakaoGames 분석 자동 복원 → READY Scenario 계보 확인 → 단축 실행 API로 Execution 생성 → Worker 종료·증적 확인 순서로 검증했다.
+- Scenario `e3ee0f6e-6486-4577-a994-8e9a8876c6f2`, Discovery `f8d668a1-37e4-40c9-a509-0abb5b36698c`, Execution `fb4e8152-7b26-4696-b5ed-d36682d96c73`이 연결됐다.
+- 실행 결과는 **PASS**, 계획/실행 단계 **4/4**, 모든 단계 PASS, 증적 1개, errorCode 없음, AI 호출 0회다. 단축 실행 백엔드·Worker 계보는 정상이다.
+- Temporary Staging 프론트는 강제 새로고침 후에도 `승인 완료` 비활성 버튼과 기존 안내 문구를 표시했다. `e837248`의 `승인 후 바로 실행|최근 실행 모니터` UI가 배포되지 않아 브라우저 E2E는 실패했다.
+- Windows 로컬 `npm run build`가 종료 코드 0을 반환하지만 `dist`의 2026-09-16 산출물을 갱신하지 않는 현상을 확인했다. 따라서 해당 명령 결과만으로 프로덕션 빌드 통과로 판정하지 않고, 배포 시 Docker/Linux 빌드 후 번들 문구·asset hash·실제 화면을 확인해야 한다.
+
 ## 2026-09-30 승인 시나리오 즉시 실행 프론트 연결
 
 - 페이지 시나리오의 `승인 후 바로 실행`에서 승인 성공 직후 `POST /page-scenarios/{scenarioId}/executions`를 호출한다. 실행 옵션은 Chromium, 1440x900, ko-KR, timeout 10분, 재시도 0회, AI 호출 0회로 고정하며 Version·환경은 서버 계보를 사용한다.
 - 응답 Execution을 활성 실행으로 저장하고 실행 모니터로 즉시 이동한다. 브라우저 재진입 복원을 위해 기존 `tracepilot.activeExecutionId` 세션 저장 규칙을 동일하게 적용한다.
 - 네트워크 결과가 불명확한 재시도에는 같은 logical attempt의 `Idempotency-Key`를 재사용한다. 다른 Scenario로 전환하면 새 키를 발급해 중복 생성과 키 충돌을 함께 방지한다.
 - 승인됐지만 실행 생성에 실패한 Scenario는 `실행 다시 시도`를 제공한다. 이미 `latestExecutionId`가 있는 READY Scenario는 새 실행을 만들지 않고 `최근 실행 모니터`로 연결한다.
-- 기존 TC의 `실행 설정 → 계획 확인 → Execution` 흐름은 유지한다. 검증: TypeScript 검사, Vite 프로덕션 빌드, diff 검사 통과, 실제 AI 호출 0회.
+- 기존 TC의 `실행 설정 → 계획 확인 → Execution` 흐름은 유지한다. TypeScript·diff 검사는 통과했으나 Windows Vite 빌드는 종료 코드와 달리 산출물이 갱신되지 않아 배포 환경 재검증이 필요하다. 실제 AI 호출은 0회다.
 
 ## 2026-09-29 승인 시나리오 즉시 Execution 생성 백엔드
 
