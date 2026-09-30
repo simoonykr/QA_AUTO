@@ -7,6 +7,8 @@
 - 응답은 `{ scenarioId, discoveryId, approvedVersionId, environmentId, executionId, execution }`이다. Scenario 상세에도 `latestExecutionId`, `executionIds`가 저장되어 분석 → 시나리오 → 승인 Version → Execution 계보를 복원할 수 있다.
 - 미승인 시 `SCENARIO_NOT_APPROVED`, Version 연결 불일치 시 `SCENARIO_VERSION_LINK_INVALID`, 중복 키 내용 불일치 시 기존 `IDEMPOTENCY_CONFLICT`를 반환한다.
 - 프론트는 승인 응답 직후 이 API를 호출하고 성공한 `executionId`를 활성 실행 ID로 저장한 뒤 실행 모니터로 이동할 수 있다. 기존 실행 설정/계획 확인 흐름은 계속 지원된다.
+- 구현된 프론트는 승인과 실행 생성 중 버튼을 잠그고, 결과가 불명확한 재시도에 동일 `Idempotency-Key`를 재사용한다. 성공 시 응답의 `execution`을 모니터 상태로 사용하고 `executionId`를 세션에 저장한다.
+- READY Scenario에 `latestExecutionId`가 있으면 새 실행을 자동 생성하지 않고 기존 모니터를 연다. 승인만 성공하고 실행 생성이 실패한 경우에는 동일 Scenario에서 단축 실행을 직접 재시도한다.
 
 ## 2026-09-29 페이지 분석 복원·action 오류 코드 계약
 

@@ -1,13 +1,21 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-29
+마지막 갱신: 2026-09-30
+
+## 2026-09-30 승인 시나리오 즉시 실행 프론트 연결
+
+- 페이지 시나리오의 `승인 후 바로 실행`에서 승인 성공 직후 `POST /page-scenarios/{scenarioId}/executions`를 호출한다. 실행 옵션은 Chromium, 1440x900, ko-KR, timeout 10분, 재시도 0회, AI 호출 0회로 고정하며 Version·환경은 서버 계보를 사용한다.
+- 응답 Execution을 활성 실행으로 저장하고 실행 모니터로 즉시 이동한다. 브라우저 재진입 복원을 위해 기존 `tracepilot.activeExecutionId` 세션 저장 규칙을 동일하게 적용한다.
+- 네트워크 결과가 불명확한 재시도에는 같은 logical attempt의 `Idempotency-Key`를 재사용한다. 다른 Scenario로 전환하면 새 키를 발급해 중복 생성과 키 충돌을 함께 방지한다.
+- 승인됐지만 실행 생성에 실패한 Scenario는 `실행 다시 시도`를 제공한다. 이미 `latestExecutionId`가 있는 READY Scenario는 새 실행을 만들지 않고 `최근 실행 모니터`로 연결한다.
+- 기존 TC의 `실행 설정 → 계획 확인 → Execution` 흐름은 유지한다. 검증: TypeScript 검사, Vite 프로덕션 빌드, diff 검사 통과, 실제 AI 호출 0회.
 
 ## 2026-09-29 승인 시나리오 즉시 Execution 생성 백엔드
 
 - READY page scenario 전용 `POST /page-scenarios/{scenarioId}/executions`를 추가했다. 서버 저장 계보의 Version·환경만 사용하며 클라이언트가 다른 Version을 주입할 수 없다.
 - 기존 Execution repository의 계획 검증, idempotency, Outbox, 감사 로그를 그대로 사용하고 응답에 discovery/scenario/version/environment/execution ID를 함께 반환한다.
 - Scenario payload에 최근 Execution과 최대 50개의 Execution ID를 저장해 재진입 시 실행 모니터 연결을 복원한다.
-- 기존 승인 후 실행 설정 화면과 `POST /executions` 계약은 유지된다. 프론트 후속은 승인 직후 단축 API 호출 성공 시 실행 모니터로 이동하는 연결이다.
+- 기존 승인 후 실행 설정 화면과 `POST /executions` 계약은 유지된다. 프론트는 승인 직후 단축 API 호출과 실행 모니터 이동을 연결했다.
 
 ## 2026-09-29 페이지 분석 복원·검토 UX 프론트 완료
 
