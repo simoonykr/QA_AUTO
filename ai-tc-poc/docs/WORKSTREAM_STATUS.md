@@ -1,6 +1,14 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-09-30
+마지막 갱신: 2026-10-01
+
+## 2026-10-01 전체 TC Suite 실행 프론트 보완
+
+- 기존 다중 선택·Structure Batch·일괄 승인·Execution Suite 흐름에 `전체 TC 자동화` 진행률을 추가했다. 선택 Batch 전체 건수를 기준으로 구조화·READY 승인·Suite 종료 건수를 비교하며, 모든 대상이 Suite에 포함돼 PASS한 경우에만 `전체 완료/ALL PASS`로 표시한다.
+- 승인 제외·revision 충돌·구조화 실패 항목은 전체 PASS에서 제외하고, 검토 대기/구조화 실패·충돌/승인 제외·충돌 건수를 별도로 안내한다. 일부 READY Version만 실행한 Suite는 `부분 완료`로 표시해 파일 전체 성공으로 오인하지 않게 했다.
+- Batch 승인 응답의 항목별 오류 코드와 사유를 화면에 보존한다. Structure Batch와 Suite 결과는 Version UUID만 노출하지 않고 원본 TC ID·제목과 연결한다.
+- Suite의 각 Execution에서 실행 모니터 상세로 바로 이동할 수 있으며, 실패·시스템 오류 항목만 새 Suite로 재실행하는 기존 흐름을 유지한다. 실행 설정은 Chromium, AI 0회, 수동 재시도 정책을 유지한다.
+- 검증: TypeScript 검사와 diff 검사는 통과했다. Windows `vite build`는 종료 코드 0이지만 기존처럼 `dist`를 갱신하지 않았다. 현재 호스트에는 Docker CLI가 없어 Docker/Linux 프로덕션 빌드는 배포 담당 환경에서 재검증해야 한다.
 
 ## 2026-09-30 Temporary Staging 단축 실행 실검증
 
