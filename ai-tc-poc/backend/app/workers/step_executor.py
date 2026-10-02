@@ -112,6 +112,13 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
         return StepResult(action={"type": "assert", "selector": selector},
             assertion={"type": "observed_state", "selector": selector, "expected": expected})
 
+    if action_type == "scroll" and not step.get("selector"):
+        direction = str(_required(step, "value"))
+        if direction not in {"top", "bottom"}:
+            raise StepDefinitionError("scroll 단계의 value는 top 또는 bottom이어야 합니다.")
+        await page.evaluate("position => window.scrollTo(0, position === 'top' ? 0 : document.body.scrollHeight)", direction)
+        return StepResult(action={"type": "scroll", "value": direction})
+
     selector = _required(step, "selector")
     locator = selector_locator(page, selector)
     if action_type == "fill":
@@ -121,6 +128,13 @@ async def execute_step(page: Page, step: dict[str, Any], base_url: str) -> StepR
     if action_type == "click":
         await locator.click(timeout=timeout)
         return StepResult(action={"type": "click", "selector": selector})
+    if action_type == "select":
+        value = str(_required(step, "value"))
+        await locator.select_option(label=value, timeout=timeout)
+        return StepResult(action={"type": "select", "selector": selector, "value": value})
+    if action_type == "scroll":
+        await locator.scroll_into_view_if_needed(timeout=timeout)
+        return StepResult(action={"type": "scroll", "selector": selector})
     if action_type == "assert":
         operator = step.get("operator", "contains")
         expected = str(_required(step, "expected"))

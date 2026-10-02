@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import AuditEvent, Environment, OutboxEvent, OutboxStatus, PageDiscovery, Project, TestCase, TestCaseVersion
+from app.db.models import AuditEvent, Environment, ImportBatchItem, OutboxEvent, OutboxStatus, PageDiscovery, Project, StructureBatchItem, TestCase, TestCaseVersion
 from app.modules.test_cases.repository import SqlTestCaseRepository, TestCaseVersionRuleError
 from app.schemas.test_cases import DiscoveryApplyRequest, DiscoveryResponse, DiscoveryStartRequest, DiscoveryStartResponse, ExecutionPlanResponse
 
@@ -88,7 +88,7 @@ class DiscoveryRepository:
                 continue
             step["selector"] = candidate["selector"]
             step["resolutionStatus"] = "RESOLVED"
-        unresolved = [step for step in steps if step.get("action") in {"click", "fill", "assert"} and step.get("resolutionStatus") != "RESOLVED"]
+        unresolved = [step for step in steps if step.get("action") in {"click", "fill", "select", "scroll", "assert"} and step.get("resolutionStatus") != "RESOLVED"]
         if unresolved:
             raise DiscoveryRuleError("DISCOVERY_SELECTION_REQUIRED", "해결되지 않은 단계의 후보를 선택하거나 다시 분석해 주세요.")
         spec["steps"] = steps
@@ -99,6 +99,22 @@ class DiscoveryRepository:
             "model": result.get("model"), "promptVersion": result.get("promptVersion"), "aiUsage": result.get("aiUsage"),
         }
         version.structured_spec = spec
+        batch_items = (await self.session.scalars(select(StructureBatchItem).where(
+            StructureBatchItem.organization_id == self.organization_id,
+            StructureBatchItem.version_id == version.id,
+        ))).all()
+        for batch_item in batch_items:
+            batch_item.revision = spec["planRevision"]
+            batch_item.status = "STRUCTURED"
+            batch_item.error_code = None
+            batch_item.error_message = None
+        import_items = (await self.session.scalars(select(ImportBatchItem).where(
+            ImportBatchItem.organization_id == self.organization_id,
+            ImportBatchItem.latest_version_id == version.id,
+        ))).all()
+        for import_item in import_items:
+            import_item.latest_revision = spec["planRevision"]
+            import_item.status = "STRUCTURED"
         self.session.add(self._audit("page_discovery.applied", item.id, {"versionId": str(version.id), "planRevision": spec["planRevision"]}))
         await self.session.commit()
         plan_repository = SqlTestCaseRepository(self.session, self.organization_id, self.project_id, self.actor_id, self.request_id)

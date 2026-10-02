@@ -35,7 +35,7 @@ async def list_test_accounts(session: AsyncSession = Depends(get_session)) -> li
 async def get_execution_policy() -> ExecutionPolicyResponse:
     settings = get_settings()
     return ExecutionPolicyResponse(
-        allowedActions=["navigate", "reload", "click", "fill", "assert", "wait"],
+        allowedActions=["navigate", "reload", "click", "fill", "select", "scroll", "assert", "wait"],
         supportedBrowsers=["Chromium"],
         maxTimeoutMinutes=30,
         maxAiCalls=settings.ai_max_calls_per_run if settings.ai_ready else 0,

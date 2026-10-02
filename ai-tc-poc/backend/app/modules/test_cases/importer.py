@@ -140,7 +140,9 @@ def _item_raw_text(item: dict) -> str:
     return "\n".join(lines)
 
 
-def _parse_tc_items(header: list[str], content_rows: list[list[str]]) -> list[ImportedTestCaseItem]:
+def _parse_tc_items(
+    header: list[str], content_rows: list[list[str]], inherited_source_url: str | None = None,
+) -> list[ImportedTestCaseItem]:
     headers = [_normalize_header(value) for value in header]
     indices = {
         "id": _header_index(headers, {"id", "tcid", "tcno", "testcaseid", "testcaseno", "테스트케이스id", "케이스id"}),
@@ -186,6 +188,8 @@ def _parse_tc_items(header: list[str], content_rows: list[list[str]]) -> list[Im
         current["sourceUrl"] = source_match.group(0).rstrip(".,") if source_match else current.get("sourceUrl")
     results = []
     for item in items:
+        if not item.get("sourceUrl") and inherited_source_url:
+            item["sourceUrl"] = inherited_source_url
         item["expected"] = "\n".join(dict.fromkeys(item.pop("expectedParts"))) or None
         item["steps"] = list(dict.fromkeys(item["steps"]))
         raw_text = _item_raw_text(item)
@@ -214,9 +218,22 @@ def _prepare_xlsx_rows(rows: list[list[str]]) -> tuple[str, list[str], list[Impo
     excluded_content_count = len(tc_rows) - 1 - len(content_rows)
     if excluded_content_count:
         warnings.append(f"XLSX_NON_TC_ROWS_EXCLUDED:{excluded_content_count}")
-    items = _parse_tc_items(tc_rows[0], content_rows)
+    metadata_urls = _urls_in_rows(rows[:header_index])
+    all_urls = _urls_in_rows(rows)
+    inherited_source_url = metadata_urls[0] if len(set(metadata_urls)) == 1 else (
+        all_urls[0] if len(set(all_urls)) == 1 else None
+    )
+    items = _parse_tc_items(tc_rows[0], content_rows, inherited_source_url)
     safe_raw_text = _clean([item.rawText for item in items]) if items else _clean([" | ".join(value for value in row if value) for row in content_rows])
     return safe_raw_text, warnings, items
+
+
+def _urls_in_rows(rows: list[list[str]]) -> list[str]:
+    urls: list[str] = []
+    for row in rows:
+        for value in row:
+            urls.extend(match.rstrip(".,)") for match in re.findall(r"https?://[^\s|)]+", value))
+    return list(dict.fromkeys(urls))
 
 
 def _xlsx_column_index(reference: str) -> int:

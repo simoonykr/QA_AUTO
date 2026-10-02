@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 from app.db.models import Environment, TestCaseVersion
 
 
-SUPPORTED_ACTIONS = {"navigate", "reload", "fill", "click", "assert", "wait"}
+SUPPORTED_ACTIONS = {"navigate", "reload", "fill", "click", "select", "scroll", "assert", "wait"}
 
 
 class ExecutionPlanError(Exception):
@@ -78,7 +78,7 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
             "selectorHint": source.get("selectorHint") or {},
             "resolutionStatus": source.get("resolutionStatus"),
         }
-        if action in {"fill", "click", "assert"} and step.get("resolutionStatus") in {"UNRESOLVED", "RESOLVING", "AMBIGUOUS", "NOT_FOUND", "STALE"}:
+        if action in {"fill", "click", "select", "scroll", "assert"} and step.get("resolutionStatus") in {"UNRESOLVED", "RESOLVING", "AMBIGUOUS", "NOT_FOUND", "STALE"}:
             raise ExecutionPlanError(
                 "PAGE_ANALYSIS_REQUIRED", "페이지 분석으로 화면 요소를 확정해야 합니다.",
                 step_no=step_no, step_id=step["id"], missing_fields=["selector"],
@@ -95,6 +95,12 @@ def validate_execution_plan(version: TestCaseVersion, environment: Environment) 
                 raise ExecutionPlanError("STEP_PARAMETER_MISSING", "fill 단계에 value 또는 secretRef가 필요합니다.", step_no=step_no, step_id=step["id"], missing_fields=["value", "secretRef"])
         elif action == "click":
             _require_selector(step, step_no)
+        elif action == "select":
+            _require_selector(step, step_no)
+            _require(step, ["value"], step_no)
+        elif action == "scroll":
+            if step.get("selector") is None:
+                _require(step, ["value"], step_no)
         elif action == "assert":
             assertion_type = step.get("assertionType") or ("url" if step.get("url") and not step.get("selector") else "text")
             step["assertionType"] = assertion_type

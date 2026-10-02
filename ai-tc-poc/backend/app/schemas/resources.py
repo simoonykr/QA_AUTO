@@ -19,7 +19,7 @@ class TestAccountSummary(BaseModel):
 
 
 class ExecutionPolicyResponse(BaseModel):
-    allowedActions: list[Literal["navigate", "reload", "click", "fill", "assert", "wait"]]
+    allowedActions: list[Literal["navigate", "reload", "click", "fill", "select", "scroll", "assert", "wait"]]
     supportedBrowsers: list[Literal["Chromium"]]
     maxTimeoutMinutes: int = Field(ge=1)
     maxAiCalls: int = Field(ge=0)

@@ -538,6 +538,28 @@ def test_import_xlsx_excludes_report_metadata_before_tc_table() -> None:
     assert body["warnings"] == ["XLSX_METADATA_ROWS_EXCLUDED:3", "XLSX_TEST_CASES_DETECTED:2"]
 
 
+def test_import_xlsx_inherits_common_metadata_target_url() -> None:
+    workbook = BytesIO()
+    rows = [
+        ["Target URL", "https://kakaogames.com/"],
+        ["TC ID", "Test Steps", "Expected Result"],
+        ["KG-WEB-001", "메인 화면에 접속한다", "화면이 표시된다"],
+        ["KG-WEB-002", "브라우저 제목을 확인한다", "카카오게임즈가 표시된다"],
+    ]
+    row_xml = "".join(
+        "<row>" + "".join(f'<c t="inlineStr"><is><t>{cell}</t></is></c>' for cell in row) + "</row>"
+        for row in rows
+    )
+    with ZipFile(workbook, "w") as archive:
+        archive.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="TC" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        archive.writestr("xl/_rels/workbook.xml.rels", '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>')
+        archive.writestr("xl/worksheets/sheet1.xml", f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{row_xml}</sheetData></worksheet>')
+    response = client.post("/api/v1/test-cases/import", files={"file": ("common-url.xlsx", workbook.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+    assert response.status_code == 200
+    assert [item["sourceUrl"] for item in response.json()["testCases"]] == ["https://kakaogames.com/", "https://kakaogames.com/"]
+    assert all("대상 URL: https://kakaogames.com/" in item["rawText"] for item in response.json()["testCases"])
+
+
 def test_import_xlsx_excludes_repeated_headers_numbers_and_status_source_rows() -> None:
     workbook = BytesIO()
     rows = [
@@ -1126,6 +1148,12 @@ class FakeLocator:
     async def wait_for(self, **_kwargs):
         pass
 
+    async def select_option(self, **kwargs):
+        self.selected = kwargs.get("label")
+
+    async def scroll_into_view_if_needed(self, **_kwargs):
+        self.scrolled = True
+
 
 class FakePage:
     def __init__(self):
@@ -1151,6 +1179,9 @@ class FakePage:
     async def title(self):
         return "카카오게임즈"
 
+    async def evaluate(self, _expression, value):
+        self.evaluated = value
+
 
 @pytest.mark.asyncio
 async def test_step_executor_runs_navigate_fill_and_click() -> None:
@@ -1170,6 +1201,17 @@ async def test_step_executor_runs_reload_without_selector() -> None:
     page.url = "http://demo-target/current"
     result = await execute_step(page, {"action": "reload"}, "http://demo-target")
     assert result.action == {"type": "reload", "url": "http://demo-target/current"}
+
+
+@pytest.mark.asyncio
+async def test_step_executor_runs_select_and_page_scroll() -> None:
+    page = FakePage()
+    selected = await execute_step(page, {"action": "select", "selector": "#platform", "value": "모바일"}, "http://demo-target")
+    scrolled = await execute_step(page, {"action": "scroll", "value": "bottom"}, "http://demo-target")
+    assert page.locators["#platform"].selected == "모바일"
+    assert selected.action == {"type": "select", "selector": "#platform", "value": "모바일"}
+    assert scrolled.action == {"type": "scroll", "value": "bottom"}
+    assert page.evaluated == "bottom"
 
 
 @pytest.mark.asyncio

@@ -121,6 +121,17 @@ def test_rule_based_structure_classifies_reload_and_loading_wait() -> None:
     assert result.steps[2].operator == "domcontentloaded"
 
 
+def test_rule_based_structure_classifies_scroll_and_dropdown_selection() -> None:
+    result = rule_based_structure(StructureRequest(
+        title="목록 필터",
+        rawText='페이지 하단으로 스크롤한다.\n#platform 드롭다운에서 "모바일"을 선택한다.',
+    ))
+    assert [step.action for step in result.steps] == ["scroll", "select"]
+    assert result.steps[0].value == "bottom"
+    assert result.steps[1].selector == "#platform"
+    assert result.steps[1].value == "모바일"
+
+
 def test_structure_request_preserves_full_9613_character_raw_text() -> None:
     raw_text = "가" * 9_613
     request = StructureRequest(title="KakaoGames", rawText=raw_text)

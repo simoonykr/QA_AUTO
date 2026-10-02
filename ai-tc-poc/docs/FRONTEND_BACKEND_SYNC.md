@@ -458,6 +458,10 @@ assertion 검증 규칙:
 
 파일 가져오기 계약:
 
+- XLSX 헤더 이전 메타데이터 또는 파일 전체에서 안전하게 단일 값으로 확인된 공통 대상 URL은 `sourceUrl`이 없는 각 TC에 상속되며, 각 `rawText`에 `대상 URL:`로 포함된다. TC별 명시 URL이 있으면 해당 값이 우선한다.
+- Version 페이지 분석 후보 적용 성공 시 `planRevision`을 증가시키고 연결된 Structure Batch의 `revision/status`, Import Batch 항목의 `latestRevision/status`를 `STRUCTURED` 기준으로 동기화한다. 프론트는 반환된 새 revision으로 재승인을 요청해야 한다.
+- 실행 정책의 허용 action은 `navigate`, `reload`, `click`, `fill`, `select`, `scroll`, `assert`, `wait`이다. selector 없는 `scroll`은 `value=top|bottom`, 드롭다운 `select`는 검증된 selector와 value가 필요하다.
+
 - `POST /api/v1/test-cases/import`
 - 요청: `multipart/form-data`의 `file` 필드
 - 확장자: `.txt`, `.csv`, `.xlsx`, `.docx`

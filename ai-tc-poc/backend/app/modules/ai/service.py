@@ -203,7 +203,7 @@ def rule_based_structure(body: StructureRequest, budget: Decimal = Decimal("0"),
         hint_values = re.findall(r'["“”\']([^"“”\']+)["“”\']', segment)
         hint_text = hint_values[-1] if hint_values else segment[:120]
         step["selectorHint"] = {"text": hint_text}
-        if action in {"navigate", "reload", "wait"} or (action == "assert" and (step.get("url") or step.get("assertionType") in {"url", "page_title"})):
+        if action in {"navigate", "reload", "wait"} or (action == "scroll" and not step.get("selector")) or (action == "assert" and (step.get("url") or step.get("assertionType") in {"url", "page_title"})):
             step["resolutionStatus"] = "RESOLVED"
         else:
             step["resolutionStatus"] = "RESOLVED" if step.get("selector") else "UNRESOLVED"
@@ -249,9 +249,9 @@ def enforce_selector_grounding(result: StructuredTestCase, raw_text: str) -> Str
         if step.selector and step.selector not in raw_text:
             assumptions.append(f"{step.id}: 원문 근거가 없는 selector를 제거했습니다. 승인 전에 selector를 입력해 주세요.")
             updated = step.model_copy(update={"selector": None})
-        if updated.action in {"fill", "click", "assert"} and updated.assertionType not in {"url", "page_title"}:
+        if (updated.action in {"fill", "click", "select", "assert"} or (updated.action == "scroll" and updated.selector)) and updated.assertionType not in {"url", "page_title"}:
             updated = updated.model_copy(update={"resolutionStatus": "RESOLVED" if updated.selector else "UNRESOLVED"})
-        if updated.action in {"fill", "click", "assert"} and updated.assertionType not in {"url", "page_title"} and not updated.selector:
+        if updated.action in {"fill", "click", "select", "assert"} and updated.assertionType not in {"url", "page_title"} and not updated.selector:
             assumptions.append(f"{updated.id}: selector가 없어 승인 전에 검토·수정이 필요합니다.")
         steps.append(updated)
     automation_status, automation_reason = _automation_assessment(raw_text)
@@ -306,6 +306,8 @@ def _action_for(segment: str) -> str:
         return "reload"
     if re.search(r'(로딩|loading|load).*(대기|wait)|대기.*로딩', lowered):
         return 'wait'
+    if re.search(r"스크롤|scroll|맨\s*(?:아래|위)|페이지\s*(?:하단|상단)", lowered):
+        return "scroll"
     if re.search(r"(?:브라우저\s*)?(?:탭\s*)?제목|page\s*title|document\s*title", lowered):
         return "assert"
     if re.search(r"(?:주소|url).*(?:확인|검증|표시)|(?:확인|검증).*(?:주소|url)", lowered):
@@ -316,6 +318,8 @@ def _action_for(segment: str) -> str:
         return "navigate"
     if any(keyword in lowered for keyword in ("입력", "작성", "기입", "fill", "type")):
         return "fill"
+    if re.search(r"(?:드롭다운|select(?:\s+box)?|콤보\s*박스).*(?:선택|고르)", lowered):
+        return "select"
     if any(keyword in lowered for keyword in ("클릭", "선택", "누르", "click", "tap")):
         return "click"
     return "assert"
@@ -334,6 +338,10 @@ def _execution_fields(segment: str, action: str) -> dict:
         return fields
     if selector_match:
         fields["selector"] = selector_match.group(1)
+    if action == "scroll":
+        fields["value"] = "top" if re.search(r"맨\s*위|상단|top", segment, re.I) else "bottom"
+    if action == "select" and quoted:
+        fields["value"] = quoted[-1]
     if action == "fill" and quoted:
         fields["value"] = quoted[-1]
     if action == "assert":

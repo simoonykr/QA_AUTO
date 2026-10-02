@@ -476,6 +476,8 @@ QA의 실제 자연어 TC 작성 방식, XLSX TC별 분리, AI 시나리오 설�
 
 ## 최근 검증
 
+- 2026-10-02 다중 TC 구조화 품질 P0 백엔드 보완: XLSX 메타데이터·공통 전제의 단일 대상 URL을 URL 없는 모든 TC 원문에 상속하며 실제 `KakaoGames_AI_Automation.xlsx` 21/21건이 `https://kakaogames.com/`을 보존하는지 확인했다. Version별 Discovery 적용 시 `planRevision`과 연결된 Structure/Import Batch revision·상태를 함께 갱신하여 재승인 계약을 유지한다. 규칙 기반 구조화와 실행 계획·Worker에 새로고침·로딩 대기 외 `scroll` 및 드롭다운 `select`를 추가하고 실행 정책에 공개했다. 백엔드 전체 테스트 `143 passed, 1 skipped`, 실제 AI 호출 0회다. 다음 단계는 새 업로드로 제외 20건을 재구조화하고 TC별 페이지 분석 후보 적용·재승인 후 21건 Suite를 실환경 검증하는 것이다.
+
 - 2026-09-17 observed-state 실행 계획 500 수정: Version `cc384675-876b-403f-bb06-bbd56b3d0cc4`는 DB에 `READY`, revision `35`, `navigate → element assert → click → observed_state assert`로 정상 저장되어 있었으나 공개 `ExecutionPlanStep` DTO가 객체 `expected`와 `observed_state`를 허용하지 않아 응답 직렬화에서 Pydantic ValidationError가 발생했다. 응답·프론트 타입과 표시를 확장하고 실제 TC 문구가 관찰 기능 후보와 일치하면 `MATCHED`로 비교하도록 수정했다. 구버전 “일반 버튼 미수행” 경고도 안전한 일반 버튼 제한 관찰 문구로 교체했다. 실제 Chromium 포함 백엔드 `117 passed`(경고 4건), TypeScript 및 diff 검사 통과, AI 호출 0회다. 내부 링크 최대 3페이지 요청이 실제 1페이지에 머무는 문제는 별도 P1 탐색 확장 범위로 남는다.
 
 - 2026-09-16 관찰 기능 실행 프론트 연결: Mock에서 상태 복구·영역 목록 변화가 확인된 후보 적용, 중복 병합, `MISSING_IN_TC → COVERED`, 승인 후 `AUTOMATABLE` 전환을 재현했다. 번들 Node 런타임으로 TypeScript 검사와 Vite 8 프로덕션 빌드, `git diff --check` 통과. 실제 AI 호출 0회다.
