@@ -28,7 +28,7 @@ export interface EnvironmentSummary {
 export interface TestAccountSummary { id: string; name: string; status: string }
 
 export interface ExecutionPolicy {
-  allowedActions: Array<'navigate' | 'reload' | 'click' | 'fill' | 'assert' | 'wait'>
+  allowedActions: Array<'navigate' | 'reload' | 'click' | 'fill' | 'select' | 'scroll' | 'assert' | 'wait'>
   supportedBrowsers: Array<'Chromium'>
   maxTimeoutMinutes: number
   maxAiCalls: number

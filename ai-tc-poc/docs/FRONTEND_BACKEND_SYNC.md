@@ -1,5 +1,13 @@
 # 프론트엔드 ↔ 백엔드 연동 메모
 
+## 2026-10-02 Batch Version 페이지 분석·revision 동기화
+
+- 프론트는 Structure Batch 항목의 `versionId`와 원본 `itemId`를 연결해 기존 Version을 구조화 검토 화면에서 연다. 승인 제외 항목을 보완할 때 단건 구조화를 다시 호출하거나 새 Version을 만들지 않는다.
+- `POST /test-case-versions/{versionId}/discoveries/{discoveryId}/apply` 성공 후 반환된 실행 계획을 표시하고, `GET /test-case-structure-batches/{batchId}`를 즉시 다시 조회한다. 서버가 동기화한 새 `revision`만 이후 Batch 승인 요청의 `expectedRevision`으로 사용한다.
+- 분석 적용 전 Batch 승인 결과는 revision 기준으로 오래된 상태이므로 프론트에서 제거한다. 단건 승인 시에도 Batch를 재조회하여 READY 항목과 Suite 입력이 어긋나지 않게 한다.
+- 승인 제외 항목의 사용 흐름은 `분석·보완 → 페이지 분석 시작 → 후보 선택·적용 → Batch 재조회 → 일괄 승인 → READY 전체 Suite 실행`이다. 자동 재시도는 수행하지 않는다.
+- 실행 정책의 허용 action 프론트 계약은 `navigate|reload|click|fill|select|scroll|assert|wait`이다.
+
 ## 2026-09-29 승인 시나리오 즉시 실행 계약
 
 - `POST /api/v1/page-scenarios/{scenarioId}/executions`는 READY 시나리오가 서버에 저장한 `versionId`, `environmentId`를 재검증한 뒤 Execution을 생성한다.

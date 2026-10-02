@@ -1,6 +1,14 @@
 # 프론트엔드·백엔드 공용 작업 현황
 
-마지막 갱신: 2026-10-01
+마지막 갱신: 2026-10-02
+
+## 2026-10-02 Batch 차단 TC 페이지 분석·재승인 프론트 연결
+
+- Structure Batch의 승인 제외·검토 대기 항목에 `분석·보완` 동작을 추가했다. 새 Version을 만들지 않고 해당 항목의 기존 `versionId` 실행 계획을 불러와 원본 TC와 함께 구조화 검토 화면에서 연다.
+- 사용자는 동일 화면에서 페이지 분석 후보를 선택·적용할 수 있다. 적용 성공 후 Structure Batch를 서버에서 다시 조회하여 증가한 revision과 `REVIEW_REQUIRED` 상태를 반영하며, 이전 승인 결과는 폐기해 다음 일괄 승인이 최신 revision만 사용하게 했다.
+- Batch Version을 단건 승인한 경우에도 Batch 상태를 새로고침하고 READY 결과를 Suite 대상에 반영한다. 항목별 오류 코드·사유와 `분석·보완 → 페이지 분석 → 결과 적용 → 일괄 승인 → Suite 실행` 안내를 유지한다.
+- 프론트 실행 정책 타입과 Mock을 백엔드 허용 action `navigate|reload|click|fill|select|scroll|assert|wait`에 맞췄다. 실제 AI 호출 한도는 계속 0회다.
+- 검증: TypeScript 검사 통과. 프로덕션 빌드와 실제 XLSX 21건 브라우저 E2E는 최신 main 배포 후 재검증한다.
 
 ## 2026-10-01 전체 TC Suite 실행 프론트 보완
 
